@@ -1,5 +1,5 @@
 from math import sin, cos, pi
-# import arena
+
 import matplotlib.pylab as plt
 
 from kappa_planner.corridor import CorridorWorld

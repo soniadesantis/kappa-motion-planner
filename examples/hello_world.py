@@ -1,14 +1,11 @@
-from math import sin, cos, pi
-# import arena
 import matplotlib.pylab as plt
 
-from arena.Corridor import CorridorWorld
-from arena.MotionPlanner import MotionPlanner
-from arena.Vehicle import Unicycle
-from arena.helpers.corridor_geometry import get_corridor_from_vector
-from arena.helpers.poses import compute_end_pose, compute_start_pose
-from arena.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
-""" Hello World Example for Arena Framework: Motion Planning for a Unicycle Robot Within 2 Corridors"""
+from kappa_planner.corridor import CorridorWorld
+from kappa_planner.motion_planner import MotionPlanner
+from kappa_planner.vehicle import Unicycle
+from kappa_planner.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
+
+""" Hello World Example: Motion Planning for a Unicycle Robot Within 2 Corridors"""
 
 ### Define corridors ###
 width1 = 3
