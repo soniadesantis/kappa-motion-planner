@@ -94,13 +94,11 @@ mp = MotionPlanner(unicycle, corridor_list, start_pose=initial_pose, end_pose=fi
 ### Compute analytical trajectory ###
 analytical_trajectory = mp.compute_trajectory_analytical()
 print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.")
+
 ### Plot results ###
 figure = mp.plot_planner_inputs()
 plt.title('Analytical Motion Planner - Unicycle Within Multiple Corridors')
 plot_analytical_trajectory(analytical_trajectory, figure = figure)
-plt.savefig("example_multiple_path.pdf", format='pdf', bbox_inches='tight', pad_inches=0, transparent=True)
-
 plot_velocity_profiles(analytical_trajectory, unicycle)
-# plt.savefig("example_multiple_velocity.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plt.show(block = True)

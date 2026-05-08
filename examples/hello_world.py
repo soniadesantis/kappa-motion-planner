@@ -47,7 +47,6 @@ unicycle = Unicycle(
     omega_min = -vehicle_omegamax)
 
 ### Define initial pose and final pose ###
-# initial_pose = [0.6425, 0.6305, 0.0]
 initial_pose = [0.6425, -0.23, 0.0]
 
 final_pose = [3, 8.3, 2.88]
@@ -58,15 +57,11 @@ mp = MotionPlanner(unicycle, corridor_list, initial_pose, final_pose)
 ### Compute analytical trajectory ###
 analytical_trajectory = mp.compute_trajectory_analytical()
 print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.")
-### Plot results ###
-import matplotlib.pyplot as plt
 
+### Plot results ###
 figure = mp.plot_planner_inputs()
 plt.title('Analytical Motion Planner - Unicycle in Two Corridors')
 plot_analytical_trajectory(analytical_trajectory, figure)
-# plt.savefig("example_unicycle_path.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
-
 plot_velocity_profiles(analytical_trajectory, unicycle)
-# plt.savefig("example_unicycle_velocity.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plt.show(block = True)
