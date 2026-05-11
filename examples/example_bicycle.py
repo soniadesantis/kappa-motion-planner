@@ -1,6 +1,10 @@
 from math import sin, cos, pi
 import matplotlib.pyplot as plt
-import arena
+
+from kappa_planner.motion_planner import MotionPlanner
+from kappa_planner.vehicle import Bicycle
+from kappa_planner.helpers.corridor_geometry import get_corridor_from_vector
+from kappa_planner.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
 """
 Example: Analytical motion planning for a bicycle model in a two-corridor environment.
 
@@ -30,13 +34,13 @@ end_point2   = [start_point2[0] + height2 * cos(phi2),
                 start_point2[1] + height2 * sin(phi2)]
 
 # Instantiate corridors with get_corridor_from_vector method
-corridor1 = arena.get_corridor_from_vector(
+corridor1 = get_corridor_from_vector(
     start_point1,
     end_point1,
     width1,
     add_height = 0.2 * height1)
 
-corridor2 = arena.get_corridor_from_vector(
+corridor2 = get_corridor_from_vector(
     start_point2,
     end_point2,
     width2,
@@ -68,7 +72,7 @@ vehicle_wheelbase = 0.4
 vehicle_vmax = 1
 vehicle_deltamax = 0.5
 
-bicycle = arena.Bicycle(
+bicycle = Bicycle(
     [0,0,0],
     width = vehicle_width,
     length = vehicle_length,
@@ -79,7 +83,7 @@ bicycle = arena.Bicycle(
     delta_min = -vehicle_deltamax)
 
 ### Define Motion Planner ###
-mp = arena.MotionPlanner(bicycle,
+mp = MotionPlanner(bicycle,
                          corridor_list,
                          relative_start_pose=relative_start_pose,
                          relative_end_pose=relative_end_pose)
@@ -90,10 +94,10 @@ print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.
 ### Plot results ###
 figure = mp.plot_planner_inputs()
 plt.title('Analytical Motion Planner - Bicycle in Two Corridors')
-arena.plot_analytical_trajectory(analytical_trajectory, figure)
+plot_analytical_trajectory(analytical_trajectory, figure)
 plt.savefig("example_bicycle_path.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
-arena.plot_velocity_profiles(analytical_trajectory, bicycle)
+plot_velocity_profiles(analytical_trajectory, bicycle)
 plt.savefig("example_bicycle_velocity.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plt.show(block = True)

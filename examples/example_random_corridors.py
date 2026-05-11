@@ -7,15 +7,15 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pylab as plt
 
-from arena.Vehicle import Bicycle
-from arena.MotionPlanner import MotionPlanner
-from arena.helpers.poses import compute_end_pose, compute_start_pose
-from arena.helpers.corridor_geometry import get_corridor_from_vector
-from arena.helpers.plot_helpers import (
+from kappa_planner.vehicle import Bicycle
+from kappa_planner.motion_planner import MotionPlanner
+from kappa_planner.helpers.poses import compute_end_pose, compute_start_pose
+from kappa_planner.helpers.corridor_geometry import get_corridor_from_vector
+from kappa_planner.helpers.plot_helpers import (
     plot_corridors, 
     plot_analytical_trajectory,
 )
-from arena.helpers.intermediate_circles_choice import (
+from kappa_planner.helpers.intermediate_circles_choice import (
     create_intermediate_circle_choice_sequence,
     plot_intermediate_circle_choices,
 )
@@ -309,7 +309,7 @@ if __name__ == "__main__":
 
         "add_height": 2.0,
         "start_tail": (0.0, 0.0),
-        "rng_seed": 42,
+        "rng_seed": 15,
         "wrap_angles": True,
     }
 
@@ -331,7 +331,7 @@ if __name__ == "__main__":
 
     vehicle_width = 0.430
     vehicle_length = 0.508
-    vehicle_wheelbase = 0.4
+    vehicle_wheelbase = 1
     vehicle_vmax = 2
     vehicle_deltamax = 0.5
 
@@ -361,6 +361,7 @@ if __name__ == "__main__":
     plot_intermediate_circle_choices(
         ax,
         circle_choices_sequence,
+        bicycle.width/2,
     )
 
     ### Define Motion Planner ###

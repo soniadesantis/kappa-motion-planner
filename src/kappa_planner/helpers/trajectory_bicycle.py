@@ -609,7 +609,7 @@ def shift_circles_bicycle(
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 
                 circle.update_s(s=s_new)
-
+                
                 circ1 = intermediate_circles[i - 1]
                 circ2 = intermediate_circles[i]
                 circ3 = intermediate_circles[i + 1]
@@ -628,6 +628,14 @@ def shift_circles_bicycle(
 
                 segments[i] = new_segment1
                 segments[i + 1] = new_segment2
+
+                figure = plot_corridors(corridor_list)
+                plot_analytical_trajectory(segments, figure=figure)
+                plt.plot(circle.center.x, circle.center.y, 'ro')    
+                plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                plt.plot(circ3.center.x, circ3.center.y, 'ro')
+                plt.plot(circ3.xc + circ3.radius * np.cos(np.linspace(0, 2*pi, 100)), circ3.yc + circ3.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                plt.show(block = True)
 
             # Last intermediate circle
             else:
