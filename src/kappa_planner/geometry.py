@@ -52,6 +52,7 @@ class Circle:
         self.xc = center.x
         self.yc = center.y
 
+
 class Pose:
     """Representation of the pose of a robot.
     Pose [x, y, theta]: position + orientation
@@ -99,6 +100,19 @@ class Pose:
         return Pose(
             position=Point(self.x, self.y),
             theta=self.theta,
+        )
+
+    # --- reverse pose ---
+    def reversed(self):
+        """
+        Return a new pose with opposite heading.
+        Position stays unchanged.
+        """
+        theta_reversed = (self.theta + pi) % (2 * pi)
+
+        return Pose(
+            position=Point(self.x, self.y),
+            theta=theta_reversed,
         )
 
 
@@ -390,3 +404,16 @@ class IntermediateCircleChoicesSequence:
             selected_circles[i] = self._choices[i][candidate_index]
 
         return IntermediateCirclesSequence(selected_circles)
+    
+    def replace_two_with_one(self, index, new_choice):
+        """
+        Replace choices[index] and choices[index + 1] with one new choice.
+        """
+
+        if not isinstance(new_choice, IntermediateCircleChoice):
+            raise TypeError(
+                f"Expected IntermediateCircleChoice, got {type(new_choice).__name__}"
+            )
+
+        self._choices[index] = new_choice
+        del self._choices[index + 1]

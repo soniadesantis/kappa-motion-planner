@@ -327,6 +327,7 @@ if __name__ == "__main__":
         wrap_angles=generation_config["wrap_angles"],
     )
 
+    # corridors.pop(10)
     plot_corridor_sequence_with_start_points(corridors, specs, show_centers=False)
 
     vehicle_width = 0.430
