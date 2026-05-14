@@ -1,8 +1,9 @@
 import numpy as np
-from math import atan2, floor, ceil, cos, sin, pi, sqrt, asin, acos
+from math import atan2, floor, ceil, cos, sin, pi, sqrt, asin, acos, degrees
 from .helper_functions import compute_path_coordinates_curvilinear_arc, get_vehicle_vertices_no_casadi
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+from matplotlib.patches import Wedge
 from ..vehicle import Unicycle, Bicycle
 
 
@@ -200,38 +201,141 @@ def plot_circle(Arc, figure = None, color = 'b', linestyle = 'dashed', linewidth
         plt.plot(Arc.xc + Arc.radius * np.cos(np.linspace(0,2*np.pi,100)), Arc.yc + Arc.radius * np.sin(np.linspace(0,2*np.pi,100)), color = color, linestyle = linestyle, linewidth = linewidth)
     return figure
 
-def plot_analytical_trajectory(trajectory, figure=None, plot_circles=False, linewidth = 2):
+
+def plot_turn_on_spot_sector(
+    primitive,
+    ax,
+    radius=0.45,
+    color="orange",
+    alpha=0.25,
+    zorder=9,
+):
+    """
+    Plot a transparent sector showing the angular motion
+    of a turn-on-the-spot primitive.
+    """
+
+    theta0_deg = degrees(primitive.theta0)
+    thetaf_deg = degrees(primitive.thetaf)
+
+    if primitive.turn_direction > 0:
+        theta1 = theta0_deg
+        theta2 = thetaf_deg
+    else:
+        theta1 = thetaf_deg
+        theta2 = theta0_deg
+
+    sector = Wedge(
+        center=(primitive.x0, primitive.y0),
+        r=radius,
+        theta1=theta1,
+        theta2=theta2,
+        facecolor=color,
+        edgecolor=color,
+        alpha=alpha,
+        zorder=zorder,
+    )
+
+    ax.add_patch(sector)
+
+
+def plot_primitive_arrows_and_markers(
+    trajectory,
+    ax,
+    arrow_length=0.35,
+    marker_size=35,
+    start_color="black",
+    end_color="black",
+    zorder=10,
+    plot_turn_sectors=True,
+):
+    for primitive in trajectory:
+
+        if primitive.label == "turn on-the-spot" and plot_turn_sectors:
+            plot_turn_on_spot_sector(
+                primitive,
+                ax,
+                radius=arrow_length * 1.4,
+                zorder=zorder - 1,
+            )
+
+        x0, y0 = primitive.x0, primitive.y0
+        xf, yf = primitive.xf, primitive.yf
+
+        theta0 = primitive.theta0
+        thetaf = primitive.thetaf
+
+        for x, y, theta, color in [
+            (x0, y0, theta0, start_color),
+            (xf, yf, thetaf, end_color),
+        ]:
+            ax.scatter(
+                x,
+                y,
+                s=marker_size,
+                color=color,
+                zorder=zorder,
+            )
+
+            ax.arrow(
+                x,
+                y,
+                arrow_length * cos(theta),
+                arrow_length * sin(theta),
+                head_width=0.08,
+                head_length=0.08,
+                fc=color,
+                ec=color,
+                length_includes_head=True,
+                zorder=zorder + 1,
+            )
+
+
+def plot_analytical_trajectory(
+    trajectory,
+    figure=None,
+    plot_circles=False,
+    linewidth=2,
+    color="b",
+    plot_primitive_arrows=False,
+    plot_turn_sectors=True,
+):
     """
     Plot an analytical trajectory composed of multiple trajectory segments.
-
-    :param trajectory: List of trajectory segment objects.
-    :type trajectory: list
-    :param figure: Existing matplotlib figure or axes to plot on.
-                   If None, a new one is created.
-    :type figure: matplotlib.figure.Figure or matplotlib.axes.Axes, optional
-    :param plot_circles: If True, also plot circle arcs for turning maneuvers.
-    :type plot_circles: bool
-    :return: The matplotlib figure or axes used for plotting.
-    :rtype: matplotlib.axes.Axes
     """
     from ..trajectory import CurvilinearArcUnicycle, BackwardArc
 
-    # If no figure provided, create one
     if figure is None:
         fig, ax = plt.subplots()
         figure = ax
     else:
-        ax = figure  # assume it's already an axis (or works as one)
+        ax = figure
 
-    # Plot each trajectory piece
     for trajectory_piece in trajectory:
-        trajectory_piece.plot_path(ax, color = 'b', linewidth = linewidth)
+        trajectory_piece.plot_path(
+            ax,
+            color=color,
+            linewidth=linewidth,
+        )
+
     if plot_circles:
         for trajectory_piece in trajectory:
-            if isinstance(trajectory_piece, CurvilinearArcUnicycle) or isinstance(trajectory_piece, BackwardArc):
+            if (
+                isinstance(trajectory_piece, CurvilinearArcUnicycle)
+                or isinstance(trajectory_piece, BackwardArc)
+            ):
                 trajectory_piece.plot_circle(ax)
-    plt.xlabel('x [m]')
-    plt.ylabel('y [m]')
+
+    if plot_primitive_arrows:
+        plot_primitive_arrows_and_markers(
+            trajectory,
+            ax,
+            plot_turn_sectors=plot_turn_sectors,
+        )
+
+    plt.xlabel("x [m]")
+    plt.ylabel("y [m]")
+
     return figure
 
 
@@ -319,6 +423,109 @@ def plot_velocity_profiles(trajectory, vehicle=None):
 
     plt.tight_layout()
     return fig
+
+
+def get_analytical_control_profiles(trajectory):
+    time_global = []
+    v_global = []
+    omega_global = []
+
+    for segment in trajectory:
+        time_global.append(np.array(segment.time_grid))
+        v_global.append(np.array(segment.forward_velocity))
+        omega_global.append(np.array(segment.angular_velocity))
+
+    return (
+        np.concatenate(time_global),
+        np.concatenate(v_global),
+        np.concatenate(omega_global),
+    )
+
+
+def plot_velocity_profiles_comparison(
+    analytical_trajectory,
+    ocp_result,
+    vehicle=None,
+    analytical_label="Best analytical",
+    ocp_label="OCP",
+):
+    time_analytical, v_analytical, omega_analytical = get_analytical_control_profiles(
+        analytical_trajectory
+    )
+
+    time_ocp = ocp_result["ts_ctrl"]
+    v_ocp = ocp_result["vs"]
+    omega_ocp = ocp_result["omegas"]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
+
+    ax1.set_ylabel("Forward velocity v(t) [m/s]")
+    ax1.grid(True)
+
+    if vehicle is not None:
+        ax1.axhline(vehicle.v_max, color="gray", linestyle="--", linewidth=1)
+        ax1.axhline(vehicle.v_min, color="gray", linestyle="--", linewidth=1)
+
+    ax1.step(
+        time_analytical,
+        v_analytical,
+        where="post",
+        linewidth=2,
+        label=analytical_label,
+    )
+
+    ax1.step(
+        time_ocp,
+        v_ocp,
+        where="post",
+        linewidth=2,
+        linestyle="--",
+        label=ocp_label,
+    )
+
+    ax1.legend()
+
+    ax2.set_ylabel("Angular velocity ω(t) [rad/s]")
+    ax2.set_xlabel("Time [s]")
+    ax2.grid(True)
+
+    if vehicle is not None:
+        ax2.axhline(vehicle.omega_max, color="gray", linestyle="--", linewidth=1)
+        ax2.axhline(vehicle.omega_min, color="gray", linestyle="--", linewidth=1)
+        ax2.axhline(0.0, color="gray", linestyle=":", linewidth=1)
+
+    ax2.step(
+        time_analytical,
+        omega_analytical,
+        where="post",
+        linewidth=2,
+        label=analytical_label,
+    )
+
+    ax2.step(
+        time_ocp,
+        omega_ocp,
+        where="post",
+        linewidth=2,
+        linestyle="--",
+        label=ocp_label,
+    )
+
+    ax2.legend()
+
+    analytical_time = time_analytical[-1]
+    ocp_time = ocp_result["time"]
+
+    fig.suptitle(
+        f"Control comparison\n"
+        f"{analytical_label}: {analytical_time:.3f} s | "
+        f"{ocp_label}: {ocp_time:.3f} s"
+    )
+
+    plt.tight_layout()
+
+    return fig
+
 
     #### TO-DO
     # def plot_forward_velocity(self, figure = None, color = 'k', linestyle = 'solid', label = 'Forward_velocity', step=False, legend=True):
