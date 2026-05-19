@@ -15,6 +15,9 @@ from kappa_planner.helpers.corridor_geometry import get_corridor_from_vector
 from kappa_planner.helpers.plot_helpers import (
     plot_corridors, 
     plot_analytical_trajectory,
+    plot_circular_footprint,
+    plot_rectangular_footprint,
+    plot_turning_front_corner_path,
 )
 from kappa_planner.helpers.intermediate_circles_choice import (
     create_intermediate_circle_choice_sequence,
@@ -51,16 +54,90 @@ def example_corridor_sequence(num):
         end_pose = [5.497298240661621, 22.849388122558594, 0.0]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
+    elif num == 3: # Rule on merging two overlapping circles with same turn direction
+        corridor1 = CorridorWorld(5, 10, [0, 0], 0)
+        corridor2 = CorridorWorld(3, 6, [3, 3], 1.5707963267948966)
+        corridor3 = CorridorWorld(5, 10, [0, 5.5], 3.142592653589793)
+        corridor_list = [corridor1, corridor2, corridor3]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+
+        start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
+        end_pose = compute_end_pose(corridor_list[-1], vehicle, 0)
+
+    elif num == 4: # Rule on merging two overlapping circles with same turn direction
+        corridor1 = CorridorWorld(5, 10, [0, 0], 0)
+        corridor2 = CorridorWorld(0.6, 6, [3, 3], 1.5707963267948966)
+        corridor3 = CorridorWorld(5, 10, [5, 5.1], 0)
+        corridor_list = [corridor1, corridor2, corridor3]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.1, v_max=1.0, v_min=-1.0, delta_max=0.1, delta_min=-0.5)
+
+        start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
+        end_pose = compute_end_pose(corridor_list[-1], vehicle, 0)
+
+
+    elif num == 5: 
+        corridor1 = CorridorWorld(2.699999939650297, 4.949999889358878, [2.714999939315021, 2.509999943897128], 0.0)
+        corridor2 = CorridorWorld(0.7499999832361939, 3.1499999295920134, [4.814999892376363, 2.734999938867986], 1.5707963267948966)
+        corridor3 = CorridorWorld(0.32999999262392476, 3.5599999204277992, [4.639999896287918, 4.14499990735203], 3.141592653589793)
+        corridor4 = CorridorWorld(0.4499999899417163, 2.249999949708581, [4.194999906234443, 5.104999885894358], 1.5707963267948966)
+        corridor5 = CorridorWorld(0.4299999903887506, 3.5499999206513166, [4.634999896399677, 5.194999883882701], 3.141592653589793)
+        corridor6 = CorridorWorld(0.8099999818950893, 2.249999949708581, [3.264999927021563, 5.104999885894358], 1.5707963267948966)
+        corridor7 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
+        corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
+        corridor9 = CorridorWorld(0.5399999879300594, 4.3199999034404755, [4.1999999061226845, 6.689999850466847], 0.0)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9]
+        start_pose = [2.61918306350708, 2.154087543487549, -0.12029518960373457]
+        end_pose = [4.050821781158447, 6.627957344055176, 0.07130739522438935]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+
+    elif num == 6:
+
+        corridor1 = CorridorWorld(2.699999939650297, 4.949999889358878, [2.714999939315021, 2.509999943897128], 0.0)
+        corridor2 = CorridorWorld(0.7499999832361939, 3.1499999295920134, [4.814999892376363, 2.734999938867986], 1.5707963267948966)
+        corridor3 = CorridorWorld(0.32999999262392476, 3.5599999204277992, [4.639999896287918, 4.14499990735203], 3.141592653589793)
+        corridor4 = CorridorWorld(0.4499999899417163, 2.249999949708581, [4.194999906234443, 5.104999885894358], 1.5707963267948966)
+        corridor5 = CorridorWorld(0.4299999903887506, 3.5499999206513166, [4.634999896399677, 5.194999883882701], 3.141592653589793)
+        corridor6 = CorridorWorld(0.8099999818950893, 2.249999949708581, [3.264999927021563, 5.104999885894358], 1.5707963267948966)
+        corridor7 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
+        corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
+        corridor9 = CorridorWorld(0.5399999879300594, 4.3199999034404755, [4.1999999061226845, 6.689999850466847], 0.0)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9]
+        start_pose = [2.5406384468078613, 2.26594877243042, -0.0388158088104548]
+        end_pose = [5.087650299072266, 6.557488441467285, 0.15702971301306384]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+
+    elif num == 7: #Example 1
+        corridor1 = CorridorWorld(1.0999999754130843, 2.699999939650297, [5.839999869465828, 2.509999943897128], 1.5707963267948966)
+        corridor2 = CorridorWorld(0.5399999879300587, 6.149999862536788, [3.314999925903976, 3.519999921321869], 3.141592653589793)
+        corridor3 = CorridorWorld(0.4499999899417165, 5.069999886676669, [4.944999889470637, 3.694999917410314], 1.5707963267948966)
+        corridor4 = CorridorWorld(0.32999999262392476, 3.5599999204277992, [4.639999896287918, 4.14499990735203], 3.141592653589793)
+        corridor5 = CorridorWorld(0.4499999899417163, 2.249999949708581, [4.194999906234443, 5.104999885894358], 1.5707963267948966)
+        corridor6 = CorridorWorld(0.4299999903887506, 3.5499999206513166, [4.634999896399677, 5.194999883882701], 3.141592653589793)
+        corridor7 = CorridorWorld(0.8099999818950893, 2.249999949708581, [3.264999927021563, 5.104999885894358], 1.5707963267948966)
+        corridor8 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
+        corridor9 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
+        corridor10 = CorridorWorld(0.749999983236194, 4.619999896734953, [2.4349999455735087, 8.149999817833304], 1.5707963267948966)
+        corridor11 = CorridorWorld(0.709999984130263, 2.699999939650297, [1.5899999644607306, 10.10499977413565], 3.141592653589793)
+        corridor12 = CorridorWorld(0.4399999901652338, 2.5299999434500933, [1.5599999651312828, 11.014999753795564], 1.5707963267948966)
+        corridor13 = CorridorWorld(0.4299999903887507, 2.699999939650297, [1.5899999644607306, 11.34499974641949], 3.141592653589793)
+        corridor14 = CorridorWorld(0.6899999845772983, 2.5299999434500933, [0.584999986924231, 11.014999753795564], 1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9, corridor10, corridor11, corridor12, corridor13, corridor14]
+
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+        start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
+        end_pose = compute_end_pose(corridor_list[-1], vehicle, 0)
+
     return corridor_list, start_pose, end_pose, vehicle
 
 
 if __name__ == "__main__":
-    example_num = 2
+    example_num = 7
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 
     figure = plot_corridors(corridor_list)
-    for i in range(len(corridor_list)-1):
-        plot_corridors([corridor_list[i], corridor_list[i+1]])
+    # plt.show(block = True)
+    # for i in range(len(corridor_list)-1):
+    #     plot_corridors([corridor_list[i], corridor_list[i+1]])
 
     ax = plt.gca()
     # plt.show(block = True)
@@ -82,13 +159,41 @@ if __name__ == "__main__":
     ### Define Motion Planner ###
     mp = MotionPlanner(vehicle, corridor_list, start_pose, end_pose)
 
+    # mp.plot_planner_inputs()
+    # plt.show(block = True)
+
     ### Compute analytical trajectory ###
     analytical_trajectory = mp.compute_trajectory_analytical()
     print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.")
     ### Plot results ###
     figure = mp.plot_planner_inputs()
     plt.title('Analytical Motion Planner - Unicycle Within Multiple Corridors')
-    plot_analytical_trajectory(analytical_trajectory, figure = figure)
 
+    plot_analytical_trajectory(
+        analytical_trajectory,
+        figure=plt.gca(),
+        plot_circles=True
+    )
+
+    ax = plt.gca()
+    plot_rectangular_footprint(
+        analytical_trajectory,
+        width=vehicle.width,
+        front_overhang=0.2,
+        rear_overhang=0.1,
+        ax=ax,
+        step=5,
+        color="k",
+        alpha=1,
+    )
+
+    plot_turning_front_corner_path(
+        analytical_trajectory,
+        width=vehicle.width,
+        front_overhang=0.2,
+        ax=ax,
+        color="r",
+        linewidth=2,
+    )
     plt.show(block = True)
 

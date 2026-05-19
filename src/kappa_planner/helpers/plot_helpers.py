@@ -527,6 +527,195 @@ def plot_velocity_profiles_comparison(
     return fig
 
 
+def plot_circular_footprint(
+    trajectory,
+    radius,
+    ax=None,
+    step=1,
+    color="k",
+    linewidth=0.5,
+    linestyle="-",
+    alpha=0.2,
+):
+    """
+    Plot circular footprints along the trajectory path.
+    """
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    for trajectory_piece in trajectory:
+
+        if not hasattr(trajectory_piece, "path_coordinates"):
+            continue
+
+        path_coordinates = trajectory_piece.path_coordinates
+
+        for point in path_coordinates[::step]:
+
+            x, y = point
+
+            footprint = plt.Circle(
+                (x, y),
+                radius,
+                fill=False,
+                color=color,
+                linewidth=linewidth,
+                linestyle=linestyle,
+                alpha=alpha,
+            )
+
+            ax.add_patch(footprint)
+
+    ax.set_aspect("equal", adjustable="box")
+    plt.xlabel("x [m]")
+    plt.ylabel("y [m]")
+
+    return ax
+
+
+def plot_rectangular_footprint(
+    trajectory,
+    width,
+    front_overhang,
+    rear_overhang,
+    ax=None,
+    step=1,
+    color="k",
+    linewidth=0.5,
+    linestyle="-",
+    alpha=0.2,
+):
+    """
+    Plot rectangular vehicle footprints along a trajectory.
+
+    The path coordinates are assumed to represent the midpoint of the rear axle.
+    The rectangle extends:
+    - front_overhang forward from the rear axle midpoint
+    - rear_overhang backward from the rear axle midpoint
+    - width / 2 laterally on each side
+    """
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    half_width = width / 2.0
+
+    for trajectory_piece in trajectory:
+        if not hasattr(trajectory_piece, "path_coordinates"):
+            continue
+
+        if not hasattr(trajectory_piece, "theta_trajectory"):
+            continue
+
+        path_coordinates = trajectory_piece.path_coordinates
+        theta_trajectory = trajectory_piece.theta_trajectory
+
+        for point, theta in zip(
+            path_coordinates[::step],
+            theta_trajectory[::step],
+        ):
+            x, y = point
+
+            # Rectangle corners in body frame, relative to rear axle midpoint
+            body_corners = np.array([
+                [front_overhang,  half_width],
+                [front_overhang, -half_width],
+                [-rear_overhang, -half_width],
+                [-rear_overhang,  half_width],
+                [front_overhang,  half_width],
+            ])
+
+            c = np.cos(theta)
+            s = np.sin(theta)
+
+            rotation = np.array([
+                [c, -s],
+                [s,  c],
+            ])
+
+            world_corners = body_corners @ rotation.T
+            world_corners[:, 0] += x
+            world_corners[:, 1] += y
+
+            ax.plot(
+                world_corners[:, 0],
+                world_corners[:, 1],
+                color=color,
+                linewidth=linewidth,
+                linestyle=linestyle,
+                alpha=alpha,
+            )
+
+    ax.set_aspect("equal", adjustable="box")
+    plt.xlabel("x [m]")
+    plt.ylabel("y [m]")
+
+    return ax
+
+
+def plot_turning_front_corner_path(
+    trajectory,
+    width,
+    front_overhang,
+    ax=None,
+    color="r",
+    linewidth=2,
+    linestyle="--",
+):
+    """
+    Plot the front-left or front-right footprint corner path
+    for CurvilinearArcUnicycle pieces.
+
+    If turn_direction == 1, plot the front-left corner.
+    If turn_direction == -1, plot the front-right corner.
+    """
+
+    from ..trajectory import CurvilinearArcUnicycle
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    half_width = width / 2.0
+
+    for trajectory_piece in trajectory:
+        if not isinstance(trajectory_piece, CurvilinearArcUnicycle):
+            continue
+
+        path_coordinates = trajectory_piece.path_coordinates
+        theta_trajectory = trajectory_piece.theta_trajectory
+        turn_direction = trajectory_piece.turn_direction
+
+        x = path_coordinates[:, 0]
+        y = path_coordinates[:, 1]
+        theta = theta_trajectory
+
+        front_x = front_overhang * np.cos(theta)
+        front_y = front_overhang * np.sin(theta)
+
+        left_x = -half_width * np.sin(theta)
+        left_y = half_width * np.cos(theta)
+
+        if turn_direction == -1:
+            corner_x = x + front_x + left_x
+            corner_y = y + front_y + left_y
+        elif turn_direction == 1:
+            corner_x = x + front_x - left_x
+            corner_y = y + front_y - left_y
+        else:
+            continue
+
+        ax.plot(
+            corner_x,
+            corner_y,
+            color=color,
+            linewidth=linewidth,
+            linestyle=linestyle,
+        )
+
+    ax.set_aspect("equal", adjustable="box")
+
+    return ax
     #### TO-DO
     # def plot_forward_velocity(self, figure = None, color = 'k', linestyle = 'solid', label = 'Forward_velocity', step=False, legend=True):
     #     import matplotlib.pyplot as plt
