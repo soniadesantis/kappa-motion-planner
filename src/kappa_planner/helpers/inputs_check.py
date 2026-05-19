@@ -1,3 +1,4 @@
+from pyexpat.errors import messages
 import warnings
 from .corridor_geometry import (
     check_point_inside_corridor,
@@ -6,6 +7,7 @@ from .corridor_geometry import (
     remove_zeros_from_turn_direction_vector,
     compute_corner_point_vector,
 )
+from .intermediate_circle_solve_overlap import select_preferred_circle
 from .intermediate_circles_geometry import compute_center_coordinates_vector, compute_center_coordinates_vector_according_to_edges, create_intermediate_circles_sequence
 import matplotlib.pyplot as plt
 from .plot_helpers import plot_corridors, plot_analytical_trajectory
@@ -401,6 +403,33 @@ def check_standing_assumptions(planner):
 
     return check_passed, messages, intermediate_circles
 
+
+
+def check_position_out_of_circles_assumption(planner):
+    check_passed = True
+    first_circle = select_preferred_circle(
+        planner.intermediate_circles_choice_sequence.first
+    )
+
+    last_circle = select_preferred_circle(
+        planner.intermediate_circles_choice_sequence.last
+    )
+
+    messages = []
+    
+    if compute_distance_two_points(planner.start_pose[:2], (first_circle.center.x, first_circle.center.y)) < planner.vehicle.max_radius - 1e-3:
+        msg = 'The start pose is inside first intermediate circle.'
+        messages.append(msg)
+        warnings.warn(msg, UserWarning)
+        check_passed = False
+    elif compute_distance_two_points(planner.end_pose[:2], (last_circle.center.x, last_circle.center.y)) < planner.vehicle.max_radius - 1e-3:
+        msg = 'The end pose is inside last intermediate circle.'
+        messages.append(msg)
+        warnings.warn(msg, UserWarning)
+        check_passed = False
+
+    return check_passed, messages
+    
 
 def check_inputs_analytical_planner(planner):
     '''

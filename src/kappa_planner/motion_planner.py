@@ -2,7 +2,7 @@ import warnings
 from .vehicle import Unicycle, Bicycle, Bicycle_Acceleration
 from .geometry import IntermediateCircle, IntermediateCirclesSequence
 from .helpers.poses import compute_end_pose, compute_start_pose, pose_from_shrunken_corridor_relative_frame
-from .helpers.inputs_check import check_standing_assumptions, check_core_assumptions, check_inputs_analytical_planner, compute_minimum_widths
+from .helpers.inputs_check import check_standing_assumptions, check_core_assumptions, check_inputs_analytical_planner, compute_minimum_widths, check_position_out_of_circles_assumption
 from .helpers.helper_functions import Timer
 from .helpers.plot_helpers import plot_planner_inputs
 from .helpers.corridor_geometry import shrink_corridor_list
@@ -361,13 +361,15 @@ class MotionPlanner:
 
             (
                 self.inputs_check,
-                self.warn_msgs_core_assumptions,   
+                wrn_msgs_standing_assumptions,   
                 self.intermediate_circles
             ) = check_standing_assumptions(self)
 
             self.intermediate_circles_choice_sequence = not_ambiguous_circle_choices(
                 self.intermediate_circles
             )
+
+            self.warn_msgs = self.warn_msgs_core_assumptions + wrn_msgs_standing_assumptions
 
         # Extension version
         elif isinstance(self.vehicle, Bicycle):
@@ -378,6 +380,13 @@ class MotionPlanner:
             self.end_pose,
                 )
             
+        # ADD CHECK FOR POSITIONS INSIDE FIRST AND LAST CIRCLE
+        (
+            self.inputs_check,
+            warn_msgs_bicycle,   
+        ) = check_position_out_of_circles_assumption(self)
+
+        self.warn_msgs = self.warn_msgs_core_assumptions + warn_msgs_bicycle
 
         if not self.inputs_check:
             warnings.warn(
