@@ -219,7 +219,9 @@ def compute_initial_turn_direction(xc2, yc2, R, x0, y0, theta0, turn):
     :return: initial turn direction. -1 if turn right, else 1
     :rtype: float [-1, 1]
     '''
-    a = sqrt((xc2 - x0)**2 + (yc2 - y0)**2) # distance between start point and circumference center
+    a = sqrt((xc2 - x0)**2 + (yc2 - y0)**2)
+    if abs(R/a) > 1: 
+        raise ValueError("Given point is inside the circle, it is not possible to compute the initial turn direction.")
     beta = asin(R/a)
     alpha0 = wrapPositiveAngle(atan2((yc2 - y0), (xc2 - x0)))
     # if (theta0 > alpha0 - turn * beta) and (theta0 < alpha0 + pi):
@@ -472,6 +474,12 @@ def compute_traj_to_circle_bicycle(corridor1, start_pose, bicycle, circ1, tau0 =
     tau1 = circ1.turn_direction
     corner_point1 = circ1.corner_point
 
+    # plot_corridors([corridor1])
+    # plt.plot(start_pose[0], start_pose[1], 'ro')
+    # plt.plot(circ1.xc, circ1.yc, 'bo')
+    # plt.plot(circ1.xc + circ1.radius * np.cos(np.linspace(0, 2*pi, 100)), circ1.yc + circ1.radius * np.sin(np.linspace(0, 2*pi, 100)), 'b--')
+    # plt.show(block = True)
+
     tau0 = compute_initial_turn_direction(
         circ1.xc,
         circ1.yc,
@@ -540,6 +548,7 @@ def shift_circles_bicycle(
     restarts from circle max(i-1, 0), since the update may affect the
     neighboring intersection on the left.
     """
+    initial_step = 0.1
     step = 0.05
     i = 0
     tried_other_side = [False] * len(intermediate_circles)
@@ -566,7 +575,7 @@ def shift_circles_bicycle(
                         f"Intersection unresolved at circle {i} even at maximum shift."
                     )
                 if circle.s == 0:
-                    s_new = 0.5 * circle.s_max
+                    s_new = initial_step * circle.s_max
                 else:
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 
@@ -604,7 +613,7 @@ def shift_circles_bicycle(
                         f"Intersection unresolved at circle {i} even at maximum shift."
                     )
                 if circle.s == 0:
-                    s_new = 0.5 * circle.s_max
+                    s_new = initial_step * circle.s_max
                 else:
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 
@@ -645,7 +654,7 @@ def shift_circles_bicycle(
                         f"Intersection unresolved at circle {i} even at maximum shift."
                     )
                 if circle.s == 0:
-                    s_new = 0.5 * circle.s_max
+                    s_new = initial_step * circle.s_max
                 else:
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 

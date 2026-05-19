@@ -255,11 +255,23 @@ class IntermediateCircleChoice:
     In ambiguous cases, contains two circles: one left and one right.
     """
 
-
-    def __init__(self, candidates=None, index=None):
+    def __init__(
+        self,
+        candidates=None,
+        index=None,
+        corridor_index_start=None,
+        corridor_index_end=None,
+    ):
         self._candidates = list(candidates) if candidates is not None else []
+
+        # Position of this choice in the current choice sequence
         self.index = index
-        self.preferred_turn_direction = None  
+
+        # Indices of the original corridors connected by this choice
+        self.corridor_index_start = corridor_index_start
+        self.corridor_index_end = corridor_index_end
+
+        self.preferred_turn_direction = None
 
         for k, circle in enumerate(self._candidates):
             if not isinstance(circle, IntermediateCircle):
@@ -279,7 +291,13 @@ class IntermediateCircleChoice:
         return iter(self._candidates)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self._candidates!r})"
+        return (
+            f"{self.__class__.__name__}("
+            f"index={self.index!r}, "
+            f"corridors=({self.corridor_index_start!r}, "
+            f"{self.corridor_index_end!r}), "
+            f"candidates={self._candidates!r})"
+        )
 
     # --- Convenience properties ---
     @property

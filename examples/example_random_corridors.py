@@ -298,7 +298,8 @@ if __name__ == "__main__":
     generation_config = {
         "n_corridors": 15,
         "width_range": [1.5, 10],
-        "length_range": [10.0, 20.0],
+        # "length_range": [10.0, 20.0],
+        "length_range": [2.0, 20.0],
         "theta0_range": [m.pi / 2, m.pi / 2],
 
         # Only allow left turn, straight, right turn
@@ -309,10 +310,11 @@ if __name__ == "__main__":
 
         "add_height": 2.0,
         "start_tail": (0.0, 0.0),
-        "rng_seed": 15,
+        "rng_seed": 9,
         "wrap_angles": True,
     }
 
+    # Interesting rng_seed values: 15, 4, 5, 6, 7, 9, 10
     corridors, specs = generate_corridor_sequence_with_discrete_turns(
         n_corridors=generation_config["n_corridors"],
         width_range=generation_config["width_range"],

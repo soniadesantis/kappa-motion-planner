@@ -4,14 +4,16 @@ from ..vehicle import Unicycle, Bicycle
 from .intersections import compute_intersection_two_segments, compute_line_corridor_intersections
 from .corridor_geometry import get_corner_point_and_intersecting_edges
 from .intermediate_circles_geometry import compute_center_coordinates_second_circle_according_to_edges, compute_center_coordinates_second_circle_given_two_points
-from .inputs_check import compute_min_width_s_max_corridor_pair
 from .plot_helpers import plot_corridors
 from .geometry_operations import (
     select_tangency_point_from_point_circle,
     compute_turn_direction,
     compute_turn_direction_from_three_points,
     efficient_sign,
-    compute_distance_two_points
+    compute_distance_two_points,
+    project_point_onto_segment,
+    check_point_inside_segment,
+    minimum_distance_between_segments,
 )
 from math import sqrt, atan2, cos, sin, asin, tau
 from matplotlib import pyplot as plt
@@ -125,9 +127,18 @@ def overlap_status_for_intermediate_circles(circle1, circle2, tol=1e-9):
         tol=tol,
     )
 
+    min_distance = minimum_distance_between_intermediate_circle_center_segments(
+        circle1,
+        circle2,
+    )
+
+    required_distance = circle1.radius + circle2.radius 
+
     return {
         "nominal_overlap": nominal_overlap,
         "max_shift_overlap": max_shift_overlap,
+        "can_overlap": min_distance < required_distance - tol,
+        "min_distance": min_distance,
     }
 
 
@@ -208,3 +219,64 @@ def compute_circle_through_two_points_with_radius(
     )
 
     return Circle(center=center, radius=radius)
+
+
+def build_merged_intermediate_circle(
+    circle1,
+    circle2,
+    corridor,
+    merged_circle,
+    vehicle,
+    index=None,
+    s_max=0.0,
+):
+    R = vehicle.max_radius
+    r = vehicle.width/2
+
+    center_merged_circle = merged_circle.center
+
+    corner_point1 = circle1.corner_point
+    corner_point2 = circle2.corner_point
+
+    corner_point_merged = project_point_onto_segment(
+    point=center_merged_circle,
+    segment_start=corner_point1,
+    segment_end=corner_point2,
+)
+    
+    if circle1.turn_direction == 1: 
+        A = corridor.get_corners()[2]
+        B = corridor.get_corners()[3]
+    else:
+        A = corridor.get_corners()[0]
+        B = corridor.get_corners()[1]
+
+    is_corner_point_inside = check_point_inside_segment(A, B, corner_point_merged)
+
+    if is_corner_point_inside: 
+        dist1 = compute_distance_two_points(corner_point_merged, center_merged_circle)
+        s_max = dist1 + corridor.width - R - r
+
+    return IntermediateCircle(
+        center=center_merged_circle,
+        radius=R,
+        corner_point=corner_point_merged,
+        turn_direction=circle1.turn_direction,
+        index=index if index is not None else circle1.index,
+        s_max=s_max,
+    )
+  
+
+def minimum_distance_between_intermediate_circle_center_segments(circle1, circle2):
+    c1_start = intermediate_circle_center_at_s(circle1, 0.0)
+    c1_end = intermediate_circle_center_at_s(circle1, circle1.s_max)
+
+    c2_start = intermediate_circle_center_at_s(circle2, 0.0)
+    c2_end = intermediate_circle_center_at_s(circle2, circle2.s_max)
+
+    return minimum_distance_between_segments(
+        c1_start,
+        c1_end,
+        c2_start,
+        c2_end,
+    )
