@@ -1,40 +1,82 @@
-# Arena framework
+# Kappa Motion Planner
 
 <div align="center">
-<a href="https://gitlab.kuleuven.be/u0153320/arena-framework"><img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" /></a>
-<a href="https://gitlab.kuleuven.be/u0153320/arena-framework"><img src="https://img.shields.io/badge/Windows-0078D6?st&logo=windows&logoColor=white" /></a>
+
+<img src="https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black" />
+<img src="https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white" />
+
 </div>
 
 ## Description
 
-A Python framework for **A**gile and **Re**liable **Na**vigation of autonomous guided vehicles (AGV).
+Kappa Motion Planner is a Python package for motion planning and navigation of autonomous guided vehicles (AGVs), developed within the Arena research project.
 
-**Authors:** [Sonia De Santis](https://www.mech.kuleuven.be/en/pma/research/meco/people/00153320) and [Alejandro Astudillo](https://scholar.google.com/citations?user=9ONkJZAAAAAJ).
+The package provides tools and algorithms for agile and reliable robot navigation experiments.
 
+**Authors:**  
+- [Sonia De Santis](https://www.mech.kuleuven.be/en/pma/research/meco/people/00153320)  
+- [Alejandro Astudillo](https://scholar.google.com/citations?user=9ONkJZAAAAAJ)
 
+---
 
-## Installation
+> [!WARNING]
+> This package is part of ongoing research work and is currently under active development.
+> The code is provided primarily for research and experimental purposes.
 
-### Option 1: Installing with pip
-You can install this package (ideally into a virtual environment) via pip using the following command:
+# Installation
 
+The recommended installation method is using a Python virtual environment together with an editable installation.
+
+## 1. Clone the repository
+
+```bash
+git clone https://github.com/soniadesantis/kappa-motion-planner.git
+cd kappa-motion-planner
 ```
-pip install git+https://gitlab.kuleuven.be/u0153320/arena-framework.git@main
+
+## 2. Create a virtual environment
+Linux/macOS
+```bash
+python3 -m venv kappa-planner-env
+source kappa-planner-env/bin/activate
 ```
 
-### Option 2: Installing from cloned repository
-Alternatively, you can clone this repository and install the package from source. You just need to (i) clone the repository, (ii) move into Arena's root directory, and (iii) run the `setup.py` script with the `install` option. It will install your application into the virtualenv site-packages folder and also download and install all dependencies:
-
+Windows
+```bash
+python -m venv kappa-planner-env
+kappa-planner-env\Scripts\activate
 ```
-git clone https://gitlab.kuleuven.be/u0153320/arena-framework.git
-cd arena-framework
-python setup.py install 
+
+After activation, your terminal should display the environment name: 
+
+```bash
+(kappa-planner-env)
 ```
-You could also use the `develop` option, instead of `install`, during the execution of `setup.py` as `python setup.py develop`. 
-This has the advantage of just installing a link to the site-packages folder instead of copying the data over. You can then modify/update the source code without having to run `python setup.py install` again after every change.
 
-Another option is to run `pip install -e .` from Arena's root directory, instead of running `python setup.py develop`.
+## 3. Upgrade pip
 
+```bash
+pip install --upgrade pip
+```
+
+## 4. Install the package in editable mode
+```bash
+pip install -e .
+```
+
+This command:
+
+- installs the package locally
+- installs all dependencies from pyproject.toml
+- keeps the installation linked to the source code
+
+This means that modifications to the source files are immediately reflected without reinstalling the package.
+
+## Running an example
+After installation, you can run one of the example scripts: 
+```bash
+python examples/hello_world.py
+```                                          
 
 ## Submitting an issue
 
