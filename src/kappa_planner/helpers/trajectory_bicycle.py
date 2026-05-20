@@ -727,7 +727,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     # Extract the sequence of intermediate circles from the choices
     intermediate_circles = selected_sequence_from_preferences(
         intermediate_circles_choices
-)
+    )
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # plt.show(block = True)
@@ -854,3 +854,132 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     correct_angles(trajectory)
     
     return trajectory
+
+
+def compute_trajectory_bicycle_two_corridors_optimal(corridor1, corridor2, start_pose, end_pose, bicycle, intermediate_circles_choices):
+    '''
+    Compute the sequence of primitives that build the time-optimal trajectory for a bicycle vehicle within two corridors.
+    Backward maneuver both for collision avoidance and time-optimality.
+
+    :param corridor1: first corridor
+    :type corridor1: CorridorWorld
+    :param corridor2: second corridor
+    :type corridor2: CorridorWorld
+    :param start_pose: initial pose within the first corridor
+    :type start_pose: list of floats
+    :param end_pose: final pose within the second corridor
+    :type end_pose: list of floats
+    :param bicycle: bicycle vehicle
+    :type Bicycle: Bicycle
+
+    :return: sequence of primitives
+    :rtype: list of primitives
+    :return: boolean indicating whether an intersection has been detected
+    :rtype: Boolean
+    '''
+    # Extract the sequence of intermediate circles from the choices
+    intermediate_circles = selected_sequence_from_preferences(
+        intermediate_circles_choices
+    )
+    # 1 — Compute P^init
+    intermediate_circle = intermediate_circles.first
+
+    start_maneuvers = compute_traj_to_circle_bicycle(
+        corridor1,
+        start_pose,
+        bicycle,
+        intermediate_circle,
+    )
+
+    # 2 — Compute P^final
+    inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(corridor2, intermediate_circle, end_pose)
+
+    inv_end_maneuvers = compute_traj_to_circle_bicycle(
+        inv_last_corridor,
+        inv_end_pose,
+        bicycle,
+        inv_last_int_circ,
+    )
+
+    end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0 = 0)
+
+
+    intermediate_circle, start_maneuvers, end_maneuvers = shift_circles_two_corridors_bicycle(
+    intermediate_circle,
+    start_maneuvers,
+    end_maneuvers,
+    start_pose,
+    end_pose,
+    bicycle,
+    corridor1,
+    corridor2,
+    )
+    
+    intermediate_arc = compute_arc_from_two_tangents_objects(start_maneuvers[-1], end_maneuvers[0], intermediate_circle, bicycle)
+    trajectory = start_maneuvers + [intermediate_arc] + end_maneuvers
+
+    for i in range(len(trajectory)-1):
+        if trajectory[i+1].time_grid[0] != trajectory[i].time_grid[-1]:
+            trajectory[i+1].add_time_offset(abs(trajectory[i+1].time_grid[0] - trajectory[i].time_grid[-1]))
+    correct_angles(trajectory)
+
+    return trajectory
+
+
+def shift_circles_two_corridors_bicycle(
+    intermediate_circle,
+    start_maneuvers,
+    end_maneuvers,
+    start_pose, 
+    end_pose,
+    bicycle,
+    corridor1,
+    corridor2
+):
+    """
+    Shift intermediate circle to resolve possible intersection.
+    S: segment
+    C: arc
+    T: turn on-the-spot
+    """
+    processed_finished = False
+    step = 0.1 
+
+    while not processed_finished:
+        S3 = start_maneuvers[-1]
+        S5 = end_maneuvers[0]
+        changed = False
+
+        if check_intersection_case(S3, S5): 
+            if intermediate_circle.s == 0:
+                s_new = 0.5 * intermediate_circle.s_max
+            else:
+                s_new = min(
+                    intermediate_circle.s + step * intermediate_circle.s_max,
+                    intermediate_circle.s_max
+                    )
+
+            intermediate_circle.update_s(s=s_new)
+            start_maneuvers = compute_traj_to_circle_bicycle(
+                corridor1,
+                start_pose,
+                bicycle,
+                intermediate_circle,
+            )
+
+            # 2 — Compute P^final
+            inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(corridor2, intermediate_circle, end_pose)
+
+            inv_end_maneuvers = compute_traj_to_circle_bicycle(
+                inv_last_corridor,
+                inv_end_pose,
+                bicycle,
+                inv_last_int_circ,
+            )
+
+            end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0 = 0)
+            changed = True
+
+        processed_finished = not changed
+            
+    return intermediate_circle, start_maneuvers, end_maneuvers
