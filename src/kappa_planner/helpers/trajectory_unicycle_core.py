@@ -1,5 +1,6 @@
 from .plot_helpers import plot_corridors, plot_analytical_trajectory
-from .intermediate_circles_choice import selected_sequence_from_preferences
+from .intermediate_circles_choice import selected_sequence_from_preferences, reindex_intermediate_circle_choices_sequence
+from .intermediate_circle_solve_overlap import select_preferred_circle
 from .invert_inputs import invert_inputs_all, invert_inputs
 from .helper_functions import (
     compute_center_coordinates_first_circle,
@@ -27,7 +28,7 @@ from .primitives import (
 )
 
 from ..geometry import Point, Pose, Circle
-from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle
+from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpot
 from .pose_to_circle_unicycle import compute_three_maneuvers_compact
 
 import matplotlib.pyplot as plt
@@ -268,6 +269,8 @@ def compute_trajectory_unicycle_multiple_corridors_core(
     end_pose,
     unicycle,
     intermediate_circles_choices,
+    inside_first_circle = False,
+    inside_last_circle = False
 ):
     """
     Compute the sequence of primitives that build the time-optimal trajectory
@@ -287,6 +290,23 @@ def compute_trajectory_unicycle_multiple_corridors_core(
     :return: sequence of primitives
     :rtype: list of primitives
     """
+    exit_trajectory_start, exit_trajectory_end = [], []
+
+    if inside_first_circle: 
+        exit_trajectory_start, corridor_list, start_pose = compute_circle_exit_trajectory_start(
+            corridor_list,
+            unicycle,
+            start_pose,
+            intermediate_circles_choices,
+        )
+
+    if inside_last_circle:
+        exit_trajectory_end, corridor_list, end_pose = compute_circle_exit_trajectory_end(
+            corridor_list,
+            unicycle,
+            end_pose,
+            intermediate_circles_choices,
+        )
 
     # Extract the sequence of intermediate circles from the choices
     intermediate_circles = selected_sequence_from_preferences(
@@ -423,7 +443,16 @@ def compute_trajectory_unicycle_multiple_corridors_core(
     for index in range(1, len(middle_sequence), 2):
         middle_sequence[index] = middle_segments[ind_seg]
         ind_seg += 1
-    trajectory = start_maneuvers + middle_sequence + end_maneuvers
+
+    if exit_trajectory_start and exit_trajectory_end:
+        trajectory = exit_trajectory_start + start_maneuvers + middle_sequence + end_maneuvers + exit_trajectory_end
+    elif exit_trajectory_start:
+        trajectory = exit_trajectory_start + start_maneuvers + middle_sequence + end_maneuvers
+    elif exit_trajectory_end:
+        trajectory = start_maneuvers + middle_sequence + end_maneuvers + exit_trajectory_end
+    else:
+        trajectory = start_maneuvers + middle_sequence + end_maneuvers 
+
 
     # Adjust the time grid and angles
     for i in range(len(trajectory)-1):
@@ -512,6 +541,8 @@ def compute_trajectory_unicycle_two_corridors_core(
     end_pose,
     unicycle,
     intermediate_circles_choices,
+    exit_trajectory_start = [],
+    exit_trajectory_end = []
 ):
     # Extract the sequence of intermediate circles from the choices
     intermediate_circles = selected_sequence_from_preferences(
@@ -571,6 +602,14 @@ def compute_trajectory_unicycle_two_corridors_core(
 
     trajectory = start_maneuvers + [C4] + end_maneuvers
 
+    if exit_trajectory_start and exit_trajectory_end:
+        trajectory = exit_trajectory_start + trajectory + exit_trajectory_end
+    elif exit_trajectory_start:
+        trajectory = exit_trajectory_start + trajectory
+    elif exit_trajectory_end:
+        trajectory = trajectory + exit_trajectory_end
+
+
     for i in range(len(trajectory) - 1):
         if trajectory[i + 1].time_grid[0] != trajectory[i].time_grid[-1]:
             trajectory[i + 1].add_time_offset(
@@ -579,3 +618,168 @@ def compute_trajectory_unicycle_two_corridors_core(
     correct_angles(trajectory)
 
     return trajectory
+
+
+# def compute_circle_exit_trajectory(inside_first_circle, inside_last_circle, vehicle, start_pose, end_pose, intermediate_circles_choice_sequence):
+#     exit_trajectory_start, exit_trajectory_end = None, None
+
+#     if inside_first_circle:
+#         exit_trajectory_start = compute_circle_exit_trajectory_start(vehicle, start_pose, intermediate_circles_choice_sequence)
+
+#     if inside_last_circle:
+#         exit_trajectory_end = compute_circle_exit_trajectory_end(vehicle, end_pose, intermediate_circles_choice_sequence)
+    
+#     return exit_trajectory_start, exit_trajectory_end
+
+
+def compute_circle_exit_trajectory_start(
+    corridor_list,
+    vehicle,
+    start_pose,
+    intermediate_circles_choice_sequence,
+):
+    x0, y0, theta0 = start_pose
+
+    R = vehicle.max_radius
+    r = vehicle.width / 2
+
+    if intermediate_circles_choice_sequence.first.corridor_index_end == 1:
+
+        second_shrunken_corridor = corridor_list[1].shrink(vehicle.width / 2)
+        target_point = second_shrunken_corridor.closest_point_on_corridor(Point(x0, y0))
+
+
+        intermediate_circles_choice_sequence.remove_at(0)
+        reindex_intermediate_circle_choices_sequence(
+            intermediate_circles_choice_sequence
+        )
+    
+        # first_circle = select_preferred_circle(
+        #     intermediate_circles_choice_sequence.first
+        # )
+
+        # point_on_circle = Point(
+        #     first_circle.corner_point.x
+        #     + (R - r) * cos(first_circle.bisector_direction),
+        #     first_circle.corner_point.y
+        #     + (R - r) * sin(first_circle.bisector_direction),
+        # )
+
+        theta_segment = atan2(
+            target_point.y - y0,
+            target_point.x - x0,
+        )
+
+        delta_theta_tots = compute_angular_difference(
+            theta0,
+            theta_segment,
+        )
+
+        turn_direction = 1 if delta_theta_tots > 0 else -1
+
+        theta_end_tots = theta0 + delta_theta_tots
+        theta_segment = theta_end_tots
+
+        # Primitive 1: turn on the spot
+        tots = TurnOnTheSpot(
+            x=x0,
+            y=y0,
+            theta0=theta0,
+            thetaf=theta_end_tots,
+            omega=turn_direction * vehicle.omega_max,
+            unicycle=vehicle,
+            t0=0,
+            samples_number=5,
+        )
+
+        # Primitive 2: linear segment
+        segment = LinearSegmentUnicycle(
+            x0=x0,
+            y0=y0,
+            xf=target_point.x,
+            yf=target_point.y,
+            theta=theta_segment,
+            v=vehicle.v_max,
+            t0=tots.tf,
+            unicycle=vehicle,
+            samples_number=10,
+        )
+        new_start_pose = segment.end_pose
+
+        return [tots, segment], corridor_list[1:], new_start_pose
+
+
+def compute_circle_exit_trajectory_end(
+    corridor_list,
+    vehicle,
+    end_pose,
+    intermediate_circles_choice_sequence,
+): 
+    xf, yf, thetaf = end_pose
+    R = vehicle.max_radius
+    r = vehicle.width / 2
+
+    n_penultimate = len(corridor_list) - 2
+
+    if intermediate_circles_choice_sequence.first.corridor_index_end == n_penultimate:
+
+        second_shrunken_corridor = corridor_list[n_penultimate].shrink(vehicle.width / 2)
+        target_point = second_shrunken_corridor.closest_point_on_corridor(Point(xf, yf))
+
+
+        intermediate_circles_choice_sequence.remove_at(-1)
+        reindex_intermediate_circle_choices_sequence(
+            intermediate_circles_choice_sequence
+        )
+        # last_circle = select_preferred_circle(
+        #     intermediate_circles_choice_sequence.last
+        # )
+
+        # point_on_circle = Point(
+        #     last_circle.corner_point.x
+        #     + (R - r) * cos(last_circle.bisector_direction),
+        #     last_circle.corner_point.y
+        #     + (R - r) * sin(last_circle.bisector_direction),
+        # )
+
+        theta_segment = atan2(
+            yf - target_point.y,
+            xf - target_point.x,
+        )
+
+        delta_theta_tots = compute_angular_difference(
+            theta_segment,
+            thetaf
+        )
+
+
+        turn_direction = 1 if delta_theta_tots > 0 else -1
+
+        theta_end_tots = theta_segment + delta_theta_tots
+
+        # Primitive 1: linear segment
+        segment = LinearSegmentUnicycle(
+            x0=target_point.x,
+            y0=target_point.y,
+            xf=xf,
+            yf=yf,
+            theta=theta_segment,
+            v=vehicle.v_max,
+            t0=0,
+            unicycle=vehicle,
+            samples_number=10,
+        )
+
+        # Primitive 2: turn on the spot
+        tots = TurnOnTheSpot(
+            x=xf,
+            y=yf,
+            theta0=theta_segment,
+            thetaf=theta_end_tots,
+            omega=turn_direction * vehicle.omega_max,
+            unicycle=vehicle,
+            t0=0,
+            samples_number=5,
+        )
+
+        return [segment, tots], corridor_list[:-1], segment.start_pose

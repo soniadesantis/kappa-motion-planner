@@ -156,6 +156,7 @@ def example_corridor_sequence(num):
         corridor3 = CorridorWorld(0.49999998882412877, 2.849999936297536, [1.0149999616667629, 2.6099999148398636], 3.141592653589793)
         corridor_list = [corridor1, corridor2, corridor3]
         start_pose = [0.1301027536392212, -0.45102250576019287, 0.05963050567379781]
+        start_pose = [1.399, 0.268, 0.05963050567379781]
         end_pose = [0.45969676971435547, 2.532668352127075, 2.9889436231146522]
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
 
@@ -173,7 +174,8 @@ def example_corridor_sequence(num):
 
 
 if __name__ == "__main__":
-    example_num = 11
+    example_num = 10
+
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 
     figure = plot_corridors(corridor_list)
@@ -200,14 +202,6 @@ if __name__ == "__main__":
 
     ### Define Motion Planner ###
     mp = MotionPlanner(vehicle, corridor_list, start_pose, end_pose)
-
-    mp.update(
-            vehicle=vehicle, 
-            corridor_list=corridor_list, 
-            start_pose=start_pose, 
-            end_pose=end_pose, 
-            waypoints= None
-        )
 
     # mp.plot_planner_inputs()
     # plt.show(block = True)

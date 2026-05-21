@@ -2,6 +2,9 @@ from .helper_functions import compute_center_coordinates_first_circle
 from .geometry_operations import wrapPositiveAngle, compute_angular_difference_with_turn_direction
 from .pose_to_circle_dubins import compute_two_maneuvers
 from math import atan2, asin, sqrt, pi, cos, sin
+
+from matplotlib import pyplot as plt
+import numpy as np
 from ..trajectory import CurvilinearArcUnicycle
 
 
@@ -103,7 +106,14 @@ def compute_initial_turn_on_the_spot_time_optimality(start_pose, xc2, yc2, turn1
     delta_angle = 0
     # Compute the angle beta
     a = sqrt((xc2 - x0)**2 + (yc2 - y0)**2)
+    if abs(radius / a) > 1:
+        plt.plot(x0, y0, 'ro')
+        angle_array = np.linspace(0, 2 * pi, 100)
+        plt.plot(xc2 + radius * np.cos(angle_array), yc2 + radius * np.sin(angle_array), 'b-')
+        plt.show(block=True)
     beta = asin(radius / a)
+
+    
     # Compute beta_2R
     if 2*radius / a <= 1: 
         beta_2R = asin(2*radius / a)

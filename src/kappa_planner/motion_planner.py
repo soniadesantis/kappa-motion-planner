@@ -380,9 +380,44 @@ class MotionPlanner:
                 )
             
         (
-            self.inputs_check,
+            self.position_out_of_circles_assumption_check,
             warn_msgs_position_out_of_circles_assumption,   
+            self.inside_first_circle,
+            self.inside_last_circle
         ) = check_position_out_of_circles_assumption(self)
+
+        self.exit_trajectory_start = []
+        self.exit_trajectory_end = []
+
+        # if self.position_out_of_circles_assumption_check is False:
+        #     (
+        #         self.exit_trajectory_start,
+        #         self.exit_trajectory_end
+        #     ) = compute_circle_exit_trajectory(
+        #         self.inside_first_circle,
+        #         self.inside_last_circle,
+        #         self.vehicle,
+        #         self.start_pose, 
+        #         self.end_pose,
+        #         self.intermediate_circles_choice_sequence)
+            
+            # if self.inside_first_circle and self.inside_last_circle:
+            #     new_start_pose = self.exit_trajectory_start[-1].end_pose 
+            #     new_end_pose = self.exit_trajectory_end[0].start_pose
+            #     # self.update(start_pose = new_start_pose, end_pose = new_end_pose)
+            #     self.start_pose = new_start_pose
+            #     self.end_pose = new_end_pose
+            # elif self.inside_first_circle:
+            #     new_start_pose = self.exit_trajectory_start[-1].end_pose 
+            #     self.start_pose = new_start_pose
+            #     # self.update(start_pose = new_start_pose)
+            # elif self.inside_last_circle:
+            #     new_end_pose = self.exit_trajectory_end[0].start_pose
+            #     self.end_pose = new_end_pose
+            #     # self.update(end_pose = new_end_pose)
+
+        if isinstance(self.vehicle, Bicycle):
+            self.inputs_check = self.inputs_check and self.position_out_of_circles_assumption_check
 
         self.warn_msgs = self.warn_msgs_core_assumptions + warn_msgs_position_out_of_circles_assumption
 
@@ -450,6 +485,8 @@ class MotionPlanner:
                         end_pose,
                         vehicle,
                         self.intermediate_circles_choice_sequence,
+                        self.exit_trajectory_start,
+                        self.exit_trajectory_end
                     )
             elif len(corridors) > 2:
                 with Timer() as timer:
@@ -459,12 +496,16 @@ class MotionPlanner:
                     end_pose,
                     vehicle,
                     self.intermediate_circles_choice_sequence,
+                    self.inside_first_circle,
+                    self.inside_last_circle,
                 )
             elif len(corridors) == 1:
                 raise NotImplementedError(
                     "Analytical unicycle trajectory computation is not implemented for one corridor."
                 )
             self.comp_time_analytical_sol = timer()
+
+
         
         return trajectory
     

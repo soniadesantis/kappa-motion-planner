@@ -416,19 +416,23 @@ def check_position_out_of_circles_assumption(planner):
     )
 
     messages = []
+    inside_first_circle = False
+    inside_last_circle = False
     
     if compute_distance_two_points(planner.start_pose[:2], (first_circle.center.x, first_circle.center.y)) < planner.vehicle.max_radius - 1e-3:
         msg = 'The start pose is inside first intermediate circle.'
         messages.append(msg)
         warnings.warn(msg, UserWarning)
         check_passed = False
+        inside_first_circle = True
     elif compute_distance_two_points(planner.end_pose[:2], (last_circle.center.x, last_circle.center.y)) < planner.vehicle.max_radius - 1e-3:
         msg = 'The end pose is inside last intermediate circle.'
         messages.append(msg)
         warnings.warn(msg, UserWarning)
         check_passed = False
+        inside_last_circle = True
 
-    return check_passed, messages
+    return check_passed, messages, inside_first_circle, inside_last_circle
     
 
 def check_inputs_analytical_planner(planner):

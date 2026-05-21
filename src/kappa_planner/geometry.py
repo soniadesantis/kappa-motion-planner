@@ -167,6 +167,7 @@ class IntermediateCircle(Circle):
         
         self.number_of_shifts += 1
 
+
 class IntermediateCirclesSequence:
     """Ordered sequence of IntermediateCircle objects with basic sequence operations."""
 
@@ -435,3 +436,7 @@ class IntermediateCircleChoicesSequence:
 
         self._choices[index] = new_choice
         del self._choices[index + 1]
+
+    def remove_at(self, index: int):
+        """Remove choice at index in-place."""
+        del self._choices[index]
