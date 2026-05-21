@@ -442,7 +442,11 @@ class MotionPlanner:
         Compute an analytical trajectory for a unicycle model.
         """
         if not self.inputs_check:
-            return "Invalid inputs"
+            raise ValueError(
+                "Invalid inputs for analytical motion planner.\n"
+                "Check warning messages for details:\n"
+                + "\n".join(self.warn_msgs)
+            )
 
         if self.assumptions == "standing":
             if len(corridors) == 2:
