@@ -307,7 +307,7 @@ def collision_avoidance_check(start_pose, turn1, turn2, xc1, yc1, R, xc2, yc2, c
                         margin=unicycle.width * 0.5,
                         left_wall=False, right_wall=True
                     )
-                delta_angle = atan2(sin(theta0_2 - theta0), cos(theta0_2 - theta0))
+                    delta_angle = atan2(sin(theta0_2 - theta0), cos(theta0_2 - theta0))
 
     # 4. Final overlap check after possible update
     if turn1 != turn2 and circles_overlap(xc1, yc1, xc2, yc2, R):
