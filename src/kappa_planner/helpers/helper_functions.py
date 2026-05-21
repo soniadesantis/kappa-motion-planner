@@ -214,46 +214,7 @@ def compute_center_coordinates_first_circle(x0, y0, theta0, turn, R):
     return xc1, yc1
 
 
-def fit_new_circle(x0, y0, xc2, yc2, R, turn1, alpha0):
-    '''
-    In case an overlap between the first circle and the second circle is detected,
-    a new circle is computed. 
-    :param x0: x coordinate of the start pose
-    :type x0: float
-    :param y0: y coordinate of the start pose
-    :type y0: float
-    :param xc2: x coordinate of the center of the second circle
-    :type xc2: float
-    :param yc2: y coordinate of the center of the second circle
-    :type yc2: float
-    :param R: radius of the circles
-    :type R: float
-    :param turn1: initial turn direction
-    :type turn1: float
-    :param alpha0: direction between (x0, y0) and (xc2, yc2)
-    :type alpha0: float
 
-    :return: x coordinate of new circle
-    :rtype: float
-    :return: y coordinate of the new circle
-    :rtype: float
-    '''
-    
-    xint1, yint1, xint2, yint2 = circle_intersection(x0, y0, R, xc2, yc2, 2 * R)
-    vector_alpha0 = [cos(alpha0), sin(alpha0)]
-    angle1 = wrapPositiveAngle(atan2((yint1 - y0), (xint1 - x0)))
-    angle2 = wrapPositiveAngle(atan2((yint2 - y0), (xint2 - x0)))
-
-    vector1 = [cos(angle1), sin(angle1)]
-    vector2 = [cos(angle2), sin(angle2)]
-
-    turn_point1 = compute_turn_direction(vector_alpha0, vector1)
-    turn_point2 = compute_turn_direction(vector_alpha0, vector2)
-
-    if turn_point1 == turn1: 
-        return xint1, yint1
-    else: 
-        return xint2, yint2
 
 def circ_center_narrow_corridors(corridor2_tilt, corner_point, R, r, turn):
     xc2 = corner_point[0] + turn * cos(corridor2_tilt + turn * pi * 0.5) * (R-r)

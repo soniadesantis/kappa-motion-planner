@@ -168,13 +168,21 @@ def example_corridor_sequence(num):
         start_pose = [0.1301027536392212, -0.45102250576019287, 0.05963050567379781]
         end_pose = [0.7719430327415466, 1.1622517108917236, 3.141592653589793]
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
-
+        
+    elif num == 12: 
+        corridor1 = CorridorWorld(1.459999967366457, 2.9999999329447746, [0.9399999633431435, -0.31000001989305015], 0.0)
+        corridor2 = CorridorWorld(0.9999999776482585, 5.999999865889549, [1.9399999409914017, 1.959999929368496], 1.5707963267948966)
+        corridor3 = CorridorWorld(0.5099999886006114, 2.849999936297536, [1.0149999616667629, 1.1249999480322004], 3.141592653589793)
+        corridor_list = [corridor1, corridor2, corridor3]
+        start_pose = [-0.17406433820724487, 0.22661757469177246, -1.239699812246792]
+        end_pose = [1.1206774711608887, 0.885758638381958, -2.598403358706264]
+        vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
 
     return corridor_list, start_pose, end_pose, vehicle
 
 
 if __name__ == "__main__":
-    example_num = 10
+    example_num = 12
 
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 

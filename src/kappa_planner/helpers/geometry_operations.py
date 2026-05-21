@@ -240,3 +240,5 @@ def compute_distance_point_to_segment(point, segment_start, segment_end):
     )
 
     return compute_distance_two_points(point, projection)
+
+

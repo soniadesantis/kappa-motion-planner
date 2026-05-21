@@ -271,42 +271,42 @@ def collision_avoidance_check(start_pose, turn1, turn2, xc1, yc1, R, xc2, yc2, c
             )
         )  
 
-    if left_wall_int and int_points_left_wall:
-        int_points_left_wall = select_closest_intersection(x0, y0, int_points_left_wall)
-        iota_primitive = compute_central_angle(
-            x0=x0, y0=y0, xf=x1, yf=y1, xc1=xc1, yc1=yc1, turn=turn1, radius=R
-        )
-        if not check_point_inside_corridor(corridor2, int_points_left_wall[0]):
-            iota = compute_central_angle(
-                x0=x0, y0=y0,
-                xf=int_points_left_wall[0][0], yf=int_points_left_wall[0][1],
-                xc1=xc1, yc1=yc1, turn=turn1, radius=R
+        if left_wall_int and int_points_left_wall:
+            int_points_left_wall = select_closest_intersection(x0, y0, int_points_left_wall)
+            iota_primitive = compute_central_angle(
+                x0=x0, y0=y0, xf=x1, yf=y1, xc1=xc1, yc1=yc1, turn=turn1, radius=R
             )
-            if iota <= iota_primitive:
-                xc1, yc1, theta0_2 = get_theta_collision_avoidance(
-                    [x0, y0, theta0], xc2, yc2, corridor, R, turn1,
-                    margin=unicycle.width * 0.5,
-                    left_wall=True, right_wall=False
+            if not check_point_inside_corridor(corridor2, int_points_left_wall[0]):
+                iota = compute_central_angle(
+                    x0=x0, y0=y0,
+                    xf=int_points_left_wall[0][0], yf=int_points_left_wall[0][1],
+                    xc1=xc1, yc1=yc1, turn=turn1, radius=R
                 )
-                delta_angle = atan2(sin(theta0_2 - theta0), cos(theta0_2 - theta0))
+                if iota <= iota_primitive:
+                    xc1, yc1, theta0_2 = get_theta_collision_avoidance(
+                        [x0, y0, theta0], xc2, yc2, corridor, R, turn1,
+                        margin=unicycle.width * 0.5,
+                        left_wall=True, right_wall=False
+                    )
+                    delta_angle = atan2(sin(theta0_2 - theta0), cos(theta0_2 - theta0))
 
-    if right_wall_int and int_points_right_wall:
-        int_points_right_wall = select_closest_intersection(x0, y0, int_points_right_wall)
-        iota_primitive = compute_central_angle(
-            x0=x0, y0=y0, xf=x1, yf=y1, xc1=xc1, yc1=yc1, turn=turn1, radius=R
-        )
-        if not check_point_inside_corridor(corridor2, int_points_right_wall[0]):
-            iota = compute_central_angle(
-                x0=x0, y0=y0,
-                xf=int_points_right_wall[0][0], yf=int_points_right_wall[0][1],
-                xc1=xc1, yc1=yc1, turn=turn1, radius=R
+        if right_wall_int and int_points_right_wall:
+            int_points_right_wall = select_closest_intersection(x0, y0, int_points_right_wall)
+            iota_primitive = compute_central_angle(
+                x0=x0, y0=y0, xf=x1, yf=y1, xc1=xc1, yc1=yc1, turn=turn1, radius=R
             )
-            if iota <= iota_primitive:
-                xc1, yc1, theta0_2 = get_theta_collision_avoidance(
-                    [x0, y0, theta0], xc2, yc2, corridor, R, turn1,
-                    margin=unicycle.width * 0.5,
-                    left_wall=False, right_wall=True
+            if not check_point_inside_corridor(corridor2, int_points_right_wall[0]):
+                iota = compute_central_angle(
+                    x0=x0, y0=y0,
+                    xf=int_points_right_wall[0][0], yf=int_points_right_wall[0][1],
+                    xc1=xc1, yc1=yc1, turn=turn1, radius=R
                 )
+                if iota <= iota_primitive:
+                    xc1, yc1, theta0_2 = get_theta_collision_avoidance(
+                        [x0, y0, theta0], xc2, yc2, corridor, R, turn1,
+                        margin=unicycle.width * 0.5,
+                        left_wall=False, right_wall=True
+                    )
                 delta_angle = atan2(sin(theta0_2 - theta0), cos(theta0_2 - theta0))
 
     # 4. Final overlap check after possible update
