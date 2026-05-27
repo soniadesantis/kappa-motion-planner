@@ -25,6 +25,55 @@ def print_case(case):
     print(f"  OCP success     : {case['ocp_success']}")
 
 
+def direction_to_suffix(direction):
+    if direction == "left":
+        return "L"
+    elif direction == "right":
+        return "R"
+    raise ValueError(f"Unknown direction: {direction}")
+
+
+def analytical_name_to_sequence(best_name):
+    """
+    Example:
+        'TCSCT left-right'
+    becomes:
+        ['SpinL', 'ArcL', 'Straight', 'ArcR', 'SpinR']
+    """
+
+    family, directions = best_name.split(" ", 1)
+    direction0, directionf = directions.split("-")
+
+    suffix0 = direction_to_suffix(direction0)
+    suffixf = direction_to_suffix(directionf)
+
+    sequence = []
+
+    for symbol in family:
+        if symbol == "T":
+            # First T uses initial direction, final T uses final direction
+            if len(sequence) == 0:
+                sequence.append(f"Spin{suffix0}")
+            else:
+                sequence.append(f"Spin{suffixf}")
+
+        elif symbol == "C":
+            # First C uses initial direction, final C uses final direction
+            if "Straight" not in sequence:
+                sequence.append(f"Arc{suffix0}")
+            else:
+                sequence.append(f"Arc{suffixf}")
+
+        elif symbol == "S":
+            sequence.append("Straight")
+
+    return sequence
+
+
+def sequences_match(analytical_sequence, ocp_sequence):
+    return analytical_sequence == ocp_sequence
+
+
 if __name__ == "__main__":
 
     load_path = Path(
@@ -172,3 +221,83 @@ if __name__ == "__main__":
 
             if "error" in case:
                 print(f"  Error: {case['error']}")
+
+
+    # -------------------------------------------------------------------------
+    # Structure comparison between analytical and OCP sequences
+    # -------------------------------------------------------------------------
+
+    nonmatching_cases = []
+
+    for case in successful_cases:
+
+        analytical_sequence = analytical_name_to_sequence(
+            case["best_analytical_name"]
+        )
+
+        ocp_sequence = case["ocp_sequence"]
+
+        if analytical_sequence != ocp_sequence:
+
+            case_with_sequences = case.copy()
+            case_with_sequences["analytical_sequence"] = analytical_sequence
+
+            nonmatching_cases.append(case_with_sequences)
+
+
+    print("\n" + "=" * 80)
+    print("STRUCTURE COMPARISON")
+    print("=" * 80)
+
+    n_matching = len(successful_cases) - len(nonmatching_cases)
+    n_nonmatching = len(nonmatching_cases)
+
+    print(f"Matching structures    : {n_matching}")
+    print(f"Nonmatching structures : {n_nonmatching}")
+
+
+    # -------------------------------------------------------------------------
+    # Optional detailed print
+    # -------------------------------------------------------------------------
+
+    if n_nonmatching > 0:
+
+        user_input = input(
+            "\nPrint nonmatching cases? [y/n]: "
+        ).strip().lower()
+
+        if user_input == "y":
+
+            for case in nonmatching_cases:
+
+                print("\n" + "-" * 80)
+
+                print(
+                    f"Case {case['case_id']:02d}: "
+                    f"theta0={case['theta0_deg']:.1f} deg, "
+                    f"thetaf={case['thetaf_deg']:.1f} deg"
+                )
+
+                print(
+                    f"  Best analytical : "
+                    f"{case['best_analytical_name']}"
+                )
+
+                print(
+                    f"  Analytical seq  : "
+                    f"{' - '.join(case['analytical_sequence'])}"
+                )
+
+                print(
+                    f"  OCP sequence    : "
+                    f"{' - '.join(case['ocp_sequence'])}"
+                )
+
+                print(
+                    f"  Time difference : "
+                    f"{case['time_difference']:.6f} s"
+                )
+
+    else:
+
+        print("\nAll structures match.")

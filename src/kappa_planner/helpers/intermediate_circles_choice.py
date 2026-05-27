@@ -1402,6 +1402,20 @@ def create_intermediate_circle_choice_sequence(
         end_pose,
     )
 
+    # figure = plot_corridors(corridor_list, plot_vectors=True)
+    # # plt.show(block = True)
+    # # for i in range(len(corridor_list)-1):
+    # #     plot_corridors([corridor_list[i], corridor_list[i+1]])
+
+    # ax = plt.gca()
+
+    # plot_intermediate_circle_choices(
+    #     ax,
+    #     choices_sequence,
+    #     vehicle.width/2,
+    # )
+    # plt.show(block = True)
+
     choices_sequence = solve_circles_overlap(
         choices_sequence,
         corridor_list,
@@ -1526,6 +1540,9 @@ def assign_preferred_candidates(circle_choices_sequence, start_pose, end_pose):
                     p_next = end_point
 
             # ---- compute turn ----
+            # plt.plot([p_prev.x, p_curr.x, p_next.x], [p_prev.y, p_curr.y, p_next.y], "ro-"
+            #          )
+            # plt.show(block = True)
             preferred_turn = compute_turn_direction_from_three_points(
                 p_prev,
                 p_curr,

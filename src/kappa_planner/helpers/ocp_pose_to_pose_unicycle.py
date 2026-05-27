@@ -180,7 +180,7 @@ def classify_ocp_primitive(
     v_max,
     omega_max,
     v_zero_tol=0.05,
-    omega_zero_tol=0.20,
+    omega_zero_tol=0.30,
 ):
     v_eps = v_zero_tol * v_max
     omega_eps = omega_zero_tol * omega_max

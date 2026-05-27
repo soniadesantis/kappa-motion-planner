@@ -184,8 +184,8 @@ def plot_all_trajectories_grid(trajectories, rows=4, cols=4):
 
 
 if __name__ == "__main__":
-    start_pose = Pose(Point(0, 0), 0)
-    end_pose = Pose(Point(0, 10), 0)
+    start_pose = Pose(Point(0, 0), 356 * pi / 180)
+    end_pose = Pose(Point(3, 6), 344 * pi / 180)
 
     ### Define Unicycle vehicle ###
     vehicle_width = 0.430
@@ -226,14 +226,15 @@ if __name__ == "__main__":
     print(f"Shortest trajectory: {best_name}")
     print(f"Total time: {best_time:.3f} s")
 
-    analytical_initial_guess = None
+    analytical_initial_guess = best_trajectory
+    T_guess = best_time
     # OCP trajectory
     ocp_result = compute_ocp_pose_to_pose_trajectory(
         start_pose,
         end_pose,
         unicycle,
         analytical_initial_guess=analytical_initial_guess,
-        T_guess=None,
+        T_guess=T_guess,
         N = 100,
     )
     initial_guess = ocp_result["initial_guess"]

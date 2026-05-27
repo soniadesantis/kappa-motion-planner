@@ -83,22 +83,23 @@ bicycle = Bicycle(
     delta_min = -vehicle_deltamax)
 
 ### Define Motion Planner ###
-mp = MotionPlanner(bicycle,
-                         corridor_list,
-                         relative_start_pose=relative_start_pose,
-                         relative_end_pose=relative_end_pose)
+mp = MotionPlanner(
+    bicycle,
+    corridor_list,
+    relative_start_pose=relative_start_pose,
+    relative_end_pose=relative_end_pose
+    )
 
 ### Compute analytical trajectory ###
 analytical_trajectory = mp.compute_trajectory_analytical()
 print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.")
+
 ### Plot results ###
 figure = mp.plot_planner_inputs()
 plt.title('Analytical Motion Planner - Bicycle in Two Corridors')
 plot_analytical_trajectory(analytical_trajectory, figure)
-plt.savefig("example_bicycle_path.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plot_velocity_profiles(analytical_trajectory, bicycle)
-plt.savefig("example_bicycle_velocity.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plt.show(block = True)
 

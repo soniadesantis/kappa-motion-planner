@@ -119,9 +119,7 @@ print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.
 figure = mp.plot_planner_inputs()
 plt.title('Analytical Motion Planner - Bicycle Within Multiple Corridors')
 plot_analytical_trajectory(analytical_trajectory, figure = figure)
-plt.savefig("example_multiple_path.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plot_velocity_profiles(analytical_trajectory, bicycle)
-plt.savefig("example_multiple_velocity.svg", format='svg', bbox_inches='tight', pad_inches=0, transparent=True)
 
 plt.show(block = True)

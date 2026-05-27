@@ -27,7 +27,7 @@ from .primitives import (
     compute_arc_from_two_tangents_objects,
 )
 
-from ..geometry import Point, Pose, Circle
+from ..geometry import Point, IntermediateCirclesSequence
 from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpot
 from .pose_to_circle_unicycle import compute_three_maneuvers_compact
 
@@ -382,23 +382,41 @@ def compute_trajectory_unicycle_multiple_corridors_core(
     # start_maneuvers,
     # end_maneuvers,
     # )
-
-    (
-    intermediate_circles,
-    segments,
-    start_maneuvers,
-    end_maneuvers,
-    ) = shift_circles_unicycle(
-    intermediate_circles,
-    intermediate_circles_choices,
-    segments,
-    unicycle,
-    start_pose,
-    corridor_list,
-    end_pose,
-    start_maneuvers,
-    end_maneuvers,
-    )
+    
+    if len(intermediate_circles) > 1:
+        (
+        intermediate_circles,
+        segments,
+        start_maneuvers,
+        end_maneuvers,
+        ) = shift_circles_unicycle(
+        intermediate_circles,
+        intermediate_circles_choices,
+        segments,
+        unicycle,
+        start_pose,
+        corridor_list,
+        end_pose,
+        start_maneuvers,
+        end_maneuvers,
+        )
+    else: 
+        (
+         intermediate_circle,
+         start_maneuvers,
+         end_maneuvers
+         ) = shift_circles_two_corridors(
+        intermediate_circles.first,
+        start_maneuvers,
+        end_maneuvers,
+        start_pose,
+        end_pose,
+        unicycle,
+        corridor_list,
+        )
+        segments = [start_maneuvers[-1], end_maneuvers[0]]
+        intermediate_circles = IntermediateCirclesSequence([intermediate_circle])
+        
 
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory([segments[0], segments[2]], figure)
@@ -487,13 +505,19 @@ def shift_circles_two_corridors(
         changed = False
 
         if check_intersection_case(S3, S5): 
-            if intermediate_circle.s == 0:
+            current_s = intermediate_circle.s
+            if current_s == 0:
                 s_new = 0.5 * intermediate_circle.s_max
             else:
                 s_new = min(
                     intermediate_circle.s + step * intermediate_circle.s_max,
                     intermediate_circle.s_max
                     )
+            if current_s == s_new: 
+                raise ValueError(
+                    "Intersection unresolved at intermediate circle even at maximum shift." \
+                    "Only one circle in the sequence."
+                )
 
             intermediate_circle.update_s(s=s_new)
             # Compute first three maneuvers

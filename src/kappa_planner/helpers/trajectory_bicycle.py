@@ -553,12 +553,12 @@ def shift_circles_bicycle(
     i = 0
     tried_other_side = [False] * len(intermediate_circles)
 
-    figure = plot_corridors(corridor_list)
-    plot_analytical_trajectory(segments, figure=figure)
-    for circle in intermediate_circles:
-        plt.plot(circle.center.x, circle.center.y, 'ro')    
-        plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
-    plt.show(block = True)
+    # figure = plot_corridors(corridor_list)
+    # plot_analytical_trajectory(segments, figure=figure)
+    # for circle in intermediate_circles:
+    #     plt.plot(circle.center.x, circle.center.y, 'ro')    
+    #     plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+    # plt.show(block = True)
     while i < len(intermediate_circles):
         if not check_intersection_case(segments[i], segments[i + 1]):
             i += 1
@@ -603,11 +603,11 @@ def shift_circles_bicycle(
             elif 0 < i < len(intermediate_circles) - 1:
                 circle = intermediate_circles[i]
                 if circle.s >= circle.s_max and check_intersection_case(segments[i], segments[i+1]):
-                    figure = plot_corridors(corridor_list)
-                    plot_analytical_trajectory(segments, figure=figure)
-                    plt.plot(circle.center.x, circle.center.y, 'ro')    
-                    plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
-                    plt.show(block = True)
+                    # figure = plot_corridors(corridor_list)
+                    # plot_analytical_trajectory(segments, figure=figure)
+                    # plt.plot(circle.center.x, circle.center.y, 'ro')    
+                    # plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                    # plt.show(block = True)
 
                     raise ValueError(
                         f"Intersection unresolved at circle {i} even at maximum shift."
@@ -638,13 +638,13 @@ def shift_circles_bicycle(
                 segments[i] = new_segment1
                 segments[i + 1] = new_segment2
 
-                figure = plot_corridors(corridor_list)
-                plot_analytical_trajectory(segments, figure=figure)
-                plt.plot(circle.center.x, circle.center.y, 'ro')    
-                plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
-                plt.plot(circ3.center.x, circ3.center.y, 'ro')
-                plt.plot(circ3.xc + circ3.radius * np.cos(np.linspace(0, 2*pi, 100)), circ3.yc + circ3.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
-                plt.show(block = True)
+                # figure = plot_corridors(corridor_list)
+                # plot_analytical_trajectory(segments, figure=figure)
+                # plt.plot(circle.center.x, circle.center.y, 'ro')    
+                # plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                # plt.plot(circ3.center.x, circ3.center.y, 'ro')
+                # plt.plot(circ3.xc + circ3.radius * np.cos(np.linspace(0, 2*pi, 100)), circ3.yc + circ3.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                # plt.show(block = True)
 
             # Last intermediate circle
             else:
@@ -821,9 +821,9 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
 
     # plt.show(block = True)
     for i in range(len(segments)-1): 
-        print('Segment ', i)
-        circle = intermediate_circles[i]
-        angle_array = np.linspace(0, 2*pi, 100)
+        # print('Segment ', i)
+        # circle = intermediate_circles[i]
+        # angle_array = np.linspace(0, 2*pi, 100)
         # figure = plot_corridors(corridor_list)
         # plot_analytical_trajectory([segments[i], segments[i+1]], figure)
         # plt.plot(circle.xc, circle.yc, 'ro')
