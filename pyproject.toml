@@ -1,11 +1,7 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "arena"
-version = "0.0.1"
-description = "A repository for Arena project"
+name = "kappa_planner"
+version = "0.1.0"
+description = "Kappa Motion Planner for Corridor Navigation"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.7"
 license = { text = "GNU LGPLv3" }
@@ -19,8 +15,6 @@ maintainers = [
     { email = "sonia.desantis@kuleuven.be" }
 ]
 
-keywords = ["corridor", "unicycle"]
-
 dependencies = [
     "numpy>=1.20",
     "scipy>=1.8",
@@ -29,16 +23,12 @@ dependencies = [
     "sympy>=1.12",
 ]
 
-[project.urls]
-Homepage = "https://gitlab.kuleuven.be/u0153320/arena-framework"
-
 [tool.setuptools]
 package-dir = {"" = "src"}
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
 [tool.ruff]
 line-length = 88
 

@@ -1,9 +1,16 @@
-from ..geometry import Point, IntermediateCircle, IntermediateCirclesSequence, IntermediateCircleChoice, IntermediateCircleChoicesSequence
+from ..geometry import Point, Circle, IntermediateCircle, IntermediateCirclesSequence, IntermediateCircleChoice, IntermediateCircleChoicesSequence
 from ..corridor import CorridorWorld
 from ..vehicle import Unicycle, Bicycle
 from .intersections import compute_intersection_two_segments, compute_line_corridor_intersections
 from .corridor_geometry import get_corner_point_and_intersecting_edges
-from .intermediate_circles_geometry import compute_center_coordinates_second_circle_according_to_edges, compute_center_coordinates_second_circle_given_two_points
+from .intermediate_circles_geometry import compute_center_coordinates_second_circle_according_to_edges, compute_center_coordinates_second_circle_given_two_points, compute_circle_internally_tangent_to_two_circles
+from .intermediate_circle_solve_overlap import (
+    select_preferred_circle,
+    overlap_status_for_intermediate_circles,
+    compute_circle_through_two_points_with_radius,
+    build_merged_intermediate_circle,
+    intermediate_circle_center_at_s,
+)
 from .inputs_check import compute_min_width_s_max_corridor_pair
 from .plot_helpers import plot_corridors
 from .geometry_operations import (
@@ -13,8 +20,635 @@ from .geometry_operations import (
     efficient_sign,
     compute_distance_two_points
 )
-from math import sqrt, atan2, cos, sin, asin
+from math import sqrt, atan2, cos, sin, asin, tau
 from matplotlib import pyplot as plt
+import numpy as np
+
+
+import numpy as np
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def solve_circles_overlap(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
+):
+    """
+    Resolve overlaps between consecutive selected intermediate circles.
+
+    For ambiguous choices, the preferred candidate is selected.
+    """
+
+    index = 0
+
+    while index < len(circle_choices_sequence) - 1:
+
+        choice1 = circle_choices_sequence[index]
+        choice2 = circle_choices_sequence[index + 1]
+
+        circle1 = select_preferred_circle(choice1)
+        circle2 = select_preferred_circle(choice2)
+
+        status = overlap_status_for_intermediate_circles(
+            circle1,
+            circle2,
+        )
+
+        nominal_overlap = status["nominal_overlap"]
+        max_shift_overlap = status["max_shift_overlap"] 
+        can_overlap = status["can_overlap"]
+
+        if not can_overlap:
+            index += 1
+            continue
+
+        print(
+            f"Detected overlap between circles at indices "
+            f"{index} and {index + 1}"
+        )
+
+        # try replacing the two intermediate circles with one direct circle
+        # Check if the middle corridor is unnecessary
+        corridor1_index = choice1.corridor_index_start
+        corridor3_index = choice2.corridor_index_end
+
+        corridor1 = corridor_sequence[corridor1_index]
+        corridor3 = corridor_sequence[corridor3_index]
+
+        # figure = plot_corridors(corridor_sequence)
+        # angle_array = np.linspace(0, 2*np.pi, 200)
+        # plot_corridors([corridor1, corridor3], color="orange", linewidth=3, figure=figure)
+        # plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center"
+        #          , figure=figure)
+        # plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1", figure=figure)
+        # plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center", figure=figure)
+        # plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2", figure=figure)
+        # plt.show(block = True)
+
+        replacement_choice = try_build_replacement_choice_between_corridors(
+            corridor1,
+            corridor3,
+            index,
+            vehicle,
+        )
+
+        if replacement_choice is not None:
+            replacement_choice.corridor_index_start = choice1.corridor_index_start
+            replacement_choice.corridor_index_end = choice2.corridor_index_end
+
+            circle_choices_sequence.replace_two_with_one(
+                index,
+                replacement_choice,
+            )
+
+            reindex_intermediate_circle_choices_sequence(
+                circle_choices_sequence
+            )
+
+            circle_choices_sequence = assign_preferred_candidates(
+                circle_choices_sequence,
+                start_pose,
+                end_pose,
+            )
+
+            # Re-check from previous local neighborhood
+            index = max(index - 1, 0)
+            continue
+
+        # If replacement is not possible, shift circles with rule based on turn directions
+        else:
+            middle_corridor_index = choice1.corridor_index_end
+            corridor2 = corridor_sequence[middle_corridor_index]
+            if circle1.turn_direction == circle2.turn_direction:
+                R = vehicle.max_radius
+                # if (circle1.s != 0 and circle2.s == 0) or (circle1.s == 0 and circle2.s != 0):
+                #     s1, s2 = 0, 0
+                # else: 
+                #     s1 = circle1.s
+                #     s2 = circle2.s
+
+                # center1 = intermediate_circle_center_at_s(circle1, s1)
+                # center2 = intermediate_circle_center_at_s(circle2, s2)
+
+                small_circle1 = Circle(
+                    circle1.corner_point,
+                    vehicle.width / 2,
+                )
+
+                small_circle2 = Circle(
+                    circle2.corner_point,
+                    vehicle.width / 2,
+                )
+
+                # p_critical1 = Point(
+                #     center1.x + R * cos(circle1.bisector_direction),
+                #     center1.y + R * sin(circle1.bisector_direction),
+                # )
+
+                # p_critical2 = Point(
+                #     center2.x + R * cos(circle2.bisector_direction),
+                #     center2.y + R * sin(circle2.bisector_direction),
+                # )
+
+                if (
+                    compute_distance_two_points(small_circle1.center, small_circle2.center) < 2* (R-vehicle.width/2)
+                    # and compute_distance_two_points(p_critical2, circle1.center) < R
+                    # and compute_distance_two_points(p_critical1, p_critical2) < 2 * R
+                ):
+                    # merged_circle = compute_circle_through_two_points_with_radius(
+                    #     p_critical1,
+                    #     p_critical2,
+                    #     R,
+                    #     circle1.turn_direction,
+                    # )
+
+
+                    merged_circle = compute_circle_internally_tangent_to_two_circles(
+                        small_circle1,
+                        small_circle2,
+                        radius=vehicle.max_radius,
+                        turn_direction=circle1.turn_direction,
+                    )
+
+                    # figure = plot_corridors(corridor_sequence)
+                    # angle_array = np.linspace(0, 2*np.pi, 200)
+                    # ax = figure.gca()
+                    # plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center")
+                    # plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1")
+                    # plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center")
+                    # plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2")
+                    # plt.plot(circle1.corner_point.x + vehicle.width/2 * np.cos(angle_array), circle1.corner_point.y + vehicle.width/2 * np.sin(angle_array), "-", label="circle1 corner point")
+                    # plt.plot(circle2.corner_point.x + vehicle.width/2 * np.cos(angle_array), circle2.corner_point.y + vehicle.width/2 * np.sin(angle_array), "-", label="circle2 corner point")
+
+                    # plt.plot(merged_circle.center.x, merged_circle.center.y, "x", label="merged circle center")
+                    # plt.plot(merged_circle.center.x + merged_circle.radius * np.cos(angle_array), merged_circle.center.y + merged_circle.radius * np.sin(angle_array), "-", label="merged circle")
+                    # plt.plot(p_critical1.x, p_critical1.y, "o", label="p_critical1")
+                    # plt.plot(p_critical2.x, p_critical2.y, "o", label="p_critical2")
+
+                    # plt.legend()
+                    # plt.show(block = True)
+
+                    merged_intermediate_circle = build_merged_intermediate_circle(
+                            circle1,
+                            circle2,
+                            corridor2,
+                            merged_circle,
+                            vehicle,
+                            index=None,
+                            s_max=0.0,
+                        )
+
+                    
+                    replacement_choice = IntermediateCircleChoice(
+                        candidates=[merged_intermediate_circle],
+                        index=index,
+                        corridor_index_start=choice1.corridor_index_start,
+                        corridor_index_end=choice2.corridor_index_end,
+                    )
+                    
+                    circle_choices_sequence.replace_two_with_one(
+                        index,
+                        replacement_choice,
+                    )
+
+                    reindex_intermediate_circle_choices_sequence(
+                        circle_choices_sequence
+                    )
+
+                    circle_choices_sequence = assign_preferred_candidates(
+                        circle_choices_sequence,
+                        start_pose,
+                        end_pose,
+                    )
+
+                    index = max(index - 1, 0)
+                    continue
+
+            else: 
+                pass
+        index += 1
+
+    return circle_choices_sequence
+
+
+def reindex_intermediate_circle_choices_sequence(circle_choices_sequence):
+    """
+    Reassign consistent indices to choices and their candidate circles.
+    """
+
+    for i, choice in enumerate(circle_choices_sequence):
+        choice.index = i
+
+        for circle in choice:
+            circle.index = i
+
+
+def try_build_replacement_choice_between_corridors(
+    corridor1,
+    corridor3,
+    index,
+    vehicle,
+):
+    """
+    Try to build one IntermediateCircleChoice directly between corridor1 and corridor3.
+
+    Returns None if no valid direct transition exists.
+    """
+
+    try:
+        tau = corridor1.compute_relative_turn_direction(corridor3)
+
+        if tau != 0:
+            candidates = [
+                build_intermediate_circle_candidate(
+                    corridor1,
+                    corridor3,
+                    tau,
+                    index,
+                    vehicle,
+                )
+            ]
+
+        else:
+            candidates = [
+                build_intermediate_circle_candidate(
+                    corridor1,
+                    corridor3,
+                    tau=1,
+                    index=index,
+                    vehicle=vehicle,
+                ),
+                build_intermediate_circle_candidate(
+                    corridor1,
+                    corridor3,
+                    tau=-1,
+                    index=index,
+                    vehicle=vehicle,
+                ),
+            ]
+
+        return IntermediateCircleChoice(
+            candidates=candidates,
+            index=index,
+        )
+
+    except ValueError:
+        return None
+    
+    
+def plot_line_from_w(ax, w, xlim, ylim, label=None, linestyle="-"):
+    """
+    Plot implicit line w[0]*x + w[1]*y + w[2] = 0.
+    """
+    wa, wb, wc = w
+
+    if abs(wb) > 1e-9:
+        xs = np.linspace(xlim[0], xlim[1], 200)
+        ys = -(wa * xs + wc) / wb
+        ax.plot(xs, ys, linestyle=linestyle, label=label)
+
+    elif abs(wa) > 1e-9:
+        x = -wc / wa
+        ax.plot([x, x], ylim, linestyle=linestyle, label=label)
+
+
+def plot_circle(ax, center, radius, label=None, linestyle="-"):
+    theta = np.linspace(0, 2 * np.pi, 200)
+    center = np.asarray(center, dtype=float)
+
+    xs = center[0] + radius * np.cos(theta)
+    ys = center[1] + radius * np.sin(theta)
+
+    ax.plot(xs, ys, linestyle=linestyle, label=label)
+
+
+def plot_shift_debug(
+    corridor1,
+    corridor2,
+    corner_point,
+    int_point,
+    xc2,
+    yc2,
+    u,
+    s_max_endpoint,
+    s_max,
+    rho,
+    relevant_side_lines,
+    plot_corridors,
+):
+    """
+    Debug plot for the intermediate-circle shift limit.
+    """
+
+    figure = plot_corridors([corridor1, corridor2])
+    ax = figure.gca()
+
+    p0 = np.array([xc2, yc2], dtype=float)
+
+    p_endpoint = p0 + s_max_endpoint * u
+    p_final = p0 + s_max * u
+
+    # Current limits
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+
+    # Plot original geometric segment corner -> int_point
+    corner_point = np.asarray(corner_point, dtype=float)
+    int_point = np.asarray(int_point, dtype=float)
+
+    ax.plot(
+        [corner_point[0], int_point[0]],
+        [corner_point[1], int_point[1]],
+        "--",
+        label="corner_point to int_point",
+    )
+
+    # Plot center path up to endpoint limit
+    ax.plot(
+        [p0[0], p_endpoint[0]],
+        [p0[1], p_endpoint[1]],
+        "-",
+        linewidth=2,
+        label="circle-center path to s_max_endpoint",
+    )
+
+    # Plot accepted center path up to final s_max
+    ax.plot(
+        [p0[0], p_final[0]],
+        [p0[1], p_final[1]],
+        "-",
+        linewidth=4,
+        label="accepted center path to final s_max",
+    )
+
+    # Key points
+    ax.scatter(p0[0], p0[1], marker="o", label="p0 = initial circle center")
+    ax.scatter(p_endpoint[0], p_endpoint[1], marker="x", label="endpoint limit center")
+    ax.scatter(p_final[0], p_final[1], marker="*", label="final s_max center")
+    ax.scatter(corner_point[0], corner_point[1], marker="s", label="corner_point")
+    ax.scatter(int_point[0], int_point[1], marker="s", label="int_point")
+
+    # Plot circle of radius rho at start, endpoint, and final selected point
+    plot_circle(ax, p0, rho, label="rho-circle at s=0", linestyle=":")
+    plot_circle(ax, p_endpoint, rho, label="rho-circle at s_max_endpoint", linestyle=":")
+    plot_circle(ax, p_final, rho, label="rho-circle at final s_max", linestyle="--")
+
+    # Plot relevant side lines and their rho-offset lines
+    for i, side_line in enumerate(relevant_side_lines):
+        w = np.asarray(side_line, dtype=float)
+        wa, wb, wc = w
+        normal_norm = np.hypot(wa, wb)
+
+        plot_line_from_w(
+            ax,
+            w,
+            xlim,
+            ylim,
+            label=f"checked side line {i}",
+            linestyle="-",
+        )
+
+        # Offset lines at distance rho:
+        # wa*x + wb*y + wc = +/- rho * ||normal||
+        offset = rho * normal_norm
+
+        w_plus = np.array([wa, wb, wc - offset])
+        w_minus = np.array([wa, wb, wc + offset])
+
+        plot_line_from_w(
+            ax,
+            w_plus,
+            xlim,
+            ylim,
+            label=f"rho-offset + side {i}",
+            linestyle=":",
+        )
+
+        plot_line_from_w(
+            ax,
+            w_minus,
+            xlim,
+            ylim,
+            label=f"rho-offset - side {i}",
+            linestyle=":",
+        )
+
+        safe, points_at_rho, min_dist = segment_line_rho_intersections(
+            w,
+            p0=p0,
+            u=u,
+            s_max=s_max_endpoint,
+            rho=rho,
+        )
+
+        for s_hit, p_hit in points_at_rho:
+            ax.scatter(
+                p_hit[0],
+                p_hit[1],
+                marker="D",
+                label=f"side {i}: distance rho at s={s_hit:.3f}",
+            )
+
+        print(
+            f"side {i}: safe={safe}, min_dist={min_dist:.4f}, "
+            f"points_at_rho={[float(s) for s, _ in points_at_rho]}"
+        )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.legend()
+    ax.grid(True)
+
+    return figure
+
+
+def segment_line_rho_intersections(
+    w,
+    p0,
+    u,
+    s_max,
+    rho,
+    eps=1e-9,
+):
+    """
+    Check whether the segment
+
+        p(s) = p0 + s*u,    s in [0, s_max]
+
+    stays at least distance rho away from the line
+
+        w[0]*x + w[1]*y + w[2] = 0
+
+    :param w:
+        Line parameters [wa, wb, wc].
+    :type w: array-like, shape (3,)
+
+    :param p0:
+        Initial point of the segment.
+    :type p0: array-like, shape (2,)
+
+    :param u:
+        Segment direction vector.
+        Preferably unit norm so that s corresponds to distance.
+    :type u: array-like, shape (2,)
+
+    :param s_max:
+        Maximum parameter value along the segment.
+    :type s_max: float
+
+    :param rho:
+        Safety distance.
+    :type rho: float
+
+    :param eps:
+        Numerical tolerance.
+    :type eps: float
+
+    :return:
+        Tuple containing:
+
+        - safe:
+            True if the whole segment stays at least rho away.
+
+        - intersections:
+            List containing tuples (s, point) where the segment
+            reaches exactly distance rho from the line.
+
+        - min_distance:
+            Minimum distance between the segment and the line.
+    :rtype:
+        tuple(bool, list[tuple[float, numpy.ndarray]], float)
+    """
+
+    # Convert inputs to numpy arrays
+    w = np.asarray(w, dtype=float)
+    p0 = np.asarray(p0, dtype=float)
+    u = np.asarray(u, dtype=float)
+
+    wa, wb, wc = w
+
+    # Norm of the line normal vector
+    normal_norm = np.hypot(wa, wb)
+
+    if normal_norm < eps:
+        raise ValueError(
+            "Invalid line: normal vector has near-zero length."
+        )
+
+    # Signed line function along the segment:
+    #
+    # g(s) = wa*x(s) + wb*y(s) + wc
+    #
+    # with:
+    #
+    # p(s) = p0 + s*u
+    #
+    # Therefore:
+    #
+    # g(s) = g0 + s*g1
+    #
+    g0 = wa * p0[0] + wb * p0[1] + wc
+    g1 = wa * u[0] + wb * u[1]
+
+    # Distance threshold in implicit-line coordinates
+    threshold = rho * normal_norm
+
+    # Candidate points where minimum distance may occur
+    candidates = [0.0, s_max]
+
+    # If not parallel, check whether the segment crosses the line
+    if abs(g1) > eps:
+        s_cross = -g0 / g1
+
+        if 0.0 <= s_cross <= s_max:
+            candidates.append(s_cross)
+
+    # Compute minimum distance
+    min_abs_g = min(abs(g0 + s * g1) for s in candidates)
+    min_distance = min_abs_g / normal_norm
+
+    # Safety check
+    safe = min_distance >= rho - eps
+
+    intersections = []
+
+    # Parallel case
+    if abs(g1) < eps:
+
+        # Entire segment lies exactly at distance rho
+        if abs(abs(g0) - threshold) <= eps:
+
+            intersections = [
+                (0.0, p0.copy()),
+                (s_max, p0 + s_max * u),
+            ]
+
+    # General case
+    else:
+
+        # Solve:
+        #
+        # g(s) = +threshold
+        # g(s) = -threshold
+        #
+        for target in [threshold, -threshold]:
+
+            s = (target - g0) / g1
+
+            if -eps <= s <= s_max + eps:
+
+                s_clamped = min(max(s, 0.0), s_max)
+
+                point = p0 + s_clamped * u
+
+                intersections.append((s_clamped, point))
+
+    return safe, intersections, min_distance
+
+
+def get_relevant_side_edges_side_side(corridor1, corridor2, tau):
+    """
+    If tau == 1, use right edges.
+    Otherwise, use left edges.
+    """
+    if tau == 1:
+        edge_idx = CorridorWorld.RGT
+    else:
+        edge_idx = CorridorWorld.LFT
+
+    return corridor1.W[:, edge_idx], corridor2.W[:, edge_idx]
+
+
+def get_relevant_side_edges_front_side(corridor1, corridor2, tau):
+    """
+    If tau == 1, use right edges.
+    Otherwise, use left edges.
+    """
+    edge_idx1 = CorridorWorld.BCK
+    if tau == 1:
+        edge_idx2 = CorridorWorld.RGT
+    else:
+        edge_idx2 = CorridorWorld.LFT
+
+    return corridor1.W[:, edge_idx1], corridor2.W[:, edge_idx2]
+
+
+def get_relevant_side_edges_side_back(corridor1, corridor2, tau):
+    """
+    If tau == 1, use right edges.
+    Otherwise, use left edges.
+    """
+    edge_idx2 = CorridorWorld.FWD
+    if tau == 1:
+        edge_idx1 = CorridorWorld.RGT
+    else:
+        edge_idx1 = CorridorWorld.LFT
+
+    return corridor1.W[:, edge_idx1], corridor2.W[:, edge_idx2]
 
 
 def not_ambiguous_circle_choices(intermediate_circles):
@@ -131,6 +765,8 @@ def side_side_circle(
     )
 
     length_section = compute_distance_two_points(corner_point, int_point)
+    r = vehicle_width / 2
+    rho = R + r
 
     if length_section < vehicle_width:
         raise ValueError(
@@ -139,13 +775,65 @@ def side_side_circle(
             f"Minimum required distance: {vehicle_width}"
         )
 
+    s_max_endpoint = length_section - rho + (R-r)
+
+    s_max_candidates = [s_max_endpoint]
+
+    # Direction from corner_point to int_point
+    u = np.array(int_point, dtype=float) - np.array(corner_point, dtype=float)
+    u = u / np.linalg.norm(u)
+
+    w1, w2 = get_relevant_side_edges_side_side(corridor1, corridor2, tau)
+    relevant_side_lines = [w1, w2]
+    p0 = np.array([xc2, yc2], dtype=float)
+
+    for side_line in relevant_side_lines:
+        safe, points_at_rho, min_dist = segment_line_rho_intersections(
+            side_line,
+            p0=p0,
+            u=u,
+            s_max=s_max_endpoint,
+            rho=rho,
+        )
+
+        if not safe:
+            valid_s = [s for s, p in points_at_rho if 0 <= s <= s_max_endpoint]
+
+            if not valid_s:
+                raise ValueError(
+                    "The circle-center path violates a side constraint, "
+                    "but no valid rho-boundary point was found."
+                )
+
+            s_limit = min(valid_s)
+            s_max_candidates.append(s_limit)
+
+    s_max = min(s_max_candidates)
+
+    # fig = plot_shift_debug(
+    #     corridor1=corridor1,
+    #     corridor2=corridor2,
+    #     corner_point=corner_point,
+    #     int_point=int_point,
+    #     xc2=xc2,
+    #     yc2=yc2,
+    #     u=u,
+    #     s_max_endpoint=s_max_endpoint,
+    #     s_max=s_max,
+    #     rho=rho,
+    #     relevant_side_lines=relevant_side_lines,
+    #     plot_corridors=plot_corridors,
+    # )
+
+    # plt.show()
+
     return IntermediateCircle(
         Point(xc2, yc2),
         R,
         Point(corner_point[0], corner_point[1]),
         tau,
         index=circle_index,
-        s_max=length_section - vehicle_width,
+        s_max=s_max,
     )
 
 
@@ -161,7 +849,7 @@ def front_side_circle(
     corners1 = corridor1.get_corners()
     corners2 = corridor2.get_corners()
 
-    def build_circle_from_intersection(int_point):
+    def build_circle_from_intersection(int_point, add_s_check = False):
         xc2, yc2 = compute_center_coordinates_second_circle_given_two_points(
             corner_point,
             int_point,
@@ -172,6 +860,10 @@ def front_side_circle(
 
         length_section = compute_distance_two_points(corner_point, int_point)
 
+        r = vehicle.width / 2
+        R = vehicle.max_radius
+        rho = R + r
+
         if length_section < vehicle.width:
             raise ValueError(
                 "The distance between the corner point and the intersection point "
@@ -179,13 +871,50 @@ def front_side_circle(
                 f"Minimum required distance: {vehicle.width}"
             )
 
+        s_max_endpoint = length_section - vehicle.width
+
+        s_max_candidates = [s_max_endpoint]
+
+        if add_s_check:
+            # Direction from corner_point to int_point
+            u = np.array(int_point, dtype=float) - np.array(corner_point, dtype=float)
+            u = u / np.linalg.norm(u)
+
+            w1, w2 = get_relevant_side_edges_front_side(corridor1, corridor2, tau)
+
+            relevant_side_lines = [w1, w2]
+            p0 = np.array([xc2, yc2], dtype=float)
+
+            for side_line in relevant_side_lines:
+                safe, points_at_rho, min_dist = segment_line_rho_intersections(
+                    side_line,
+                    p0=p0,
+                    u=u,
+                    s_max=s_max_endpoint,
+                    rho=rho,
+                )
+
+                if not safe:
+                    valid_s = [s for s, p in points_at_rho if 0 <= s <= s_max_endpoint]
+
+                    if not valid_s:
+                        raise ValueError(
+                            "The circle-center path violates a side constraint, "
+                            "but no valid rho-boundary point was found."
+                        )
+
+                    s_limit = min(valid_s)
+                    s_max_candidates.append(s_limit)
+
+        s_max = min(s_max_candidates)
+
         return IntermediateCircle(
             Point(xc2, yc2),
             vehicle.max_radius,
             Point(corner_point[0], corner_point[1]),
             tau,
             index=circle_index,
-            s_max=length_section - vehicle.width,
+            s_max=s_max,
         )
 
     # First attempt: front edge of corridor1 with side edge of corridor2
@@ -211,6 +940,7 @@ def front_side_circle(
         return build_circle_from_intersection(int_point)
 
     # Second attempt: side edge of corridor1 with back edge of corridor2
+    # Here we need to check for s_max
     if edge_pair[1] == 1:
         A1 = corners1[2]
         A2 = corners1[3]
@@ -230,7 +960,7 @@ def front_side_circle(
     )
 
     if intersects:
-        return build_circle_from_intersection(int_point)
+        return build_circle_from_intersection(int_point, add_s_check=True)
 
     # Fallback: compute circle from edge-based rule
     xc2, yc2 = compute_center_coordinates_second_circle_according_to_edges(
@@ -281,7 +1011,7 @@ def front_side_circle(
         Point(corner_point[0], corner_point[1]),
         tau,
         index=circle_index,
-        s_max=length - vehicle.width,
+        s_max=length - 2 * vehicle.max_radius,
     )
 
 
@@ -297,7 +1027,7 @@ def side_back_circle(
     corners1 = corridor1.get_corners()
     corners2 = corridor2.get_corners()
 
-    def build_circle_from_intersection(int_point):
+    def build_circle_from_intersection(int_point, add_s_check = False):
         xc2, yc2 = compute_center_coordinates_second_circle_given_two_points(
             corner_point,
             int_point,
@@ -308,6 +1038,10 @@ def side_back_circle(
 
         length_section = compute_distance_two_points(corner_point, int_point)
 
+        r = vehicle.width / 2
+        R = vehicle.max_radius
+        rho = R + r
+
         if length_section < vehicle.width:
             raise ValueError(
                 "The distance between the corner point and the intersection point "
@@ -315,13 +1049,49 @@ def side_back_circle(
                 f"Minimum required distance: {vehicle.width}"
             )
 
+        s_max_end_point = length_section - vehicle.width
+        s_max_candidates = [s_max_end_point]
+
+        if add_s_check:
+            # Direction from corner_point to int_point
+            u = np.array(int_point, dtype=float) - np.array(corner_point, dtype=float)
+            u = u / np.linalg.norm(u)
+
+            w1, w2 = get_relevant_side_edges_side_back(corridor1, corridor2, tau)
+
+            relevant_side_lines = [w1, w2]
+            p0 = np.array([xc2, yc2], dtype=float)
+
+            for side_line in relevant_side_lines:
+                safe, points_at_rho, min_dist = segment_line_rho_intersections(
+                    side_line,
+                    p0=p0,
+                    u=u,
+                    s_max=s_max_end_point,
+                    rho=rho,
+                )
+
+                if not safe:
+                    valid_s = [s for s, p in points_at_rho if 0 <= s <= s_max_end_point]
+
+                    if not valid_s:
+                        raise ValueError(
+                            "The circle-center path violates a side constraint, "
+                            "but no valid rho-boundary point was found."
+                        )
+
+                    s_limit = min(valid_s)
+                    s_max_candidates.append(s_limit)
+
+        s_max = min(s_max_candidates)
+        
         return IntermediateCircle(
             Point(xc2, yc2),
             vehicle.max_radius,
             Point(corner_point[0], corner_point[1]),
             tau,
             index=circle_index,
-            s_max=length_section - vehicle.width,
+            s_max=s_max,
         )
 
     # First attempt: side edge of corridor1 with back edge of corridor2
@@ -419,61 +1189,160 @@ def assign_preferred_turn_directions(circle_choices_sequence):
     return circle_choices_sequence
 
 
-def create_intermediate_circle_choice_sequence(corridor_list, vehicle, start_pose, end_pose):
-    choices = []
-    left_turn = 1
-    right_turn = -1
+# def create_intermediate_circle_choice_sequence(corridor_list, vehicle, start_pose, end_pose):
+#     choices = []
+#     left_turn = 1
+#     right_turn = -1
 
-    def build_candidate(corridor1, corridor2, tau, index):
-        corner_point, edge_pair = get_corner_point_and_intersecting_edges(
+#     def build_candidate(corridor1, corridor2, tau, index):
+#         corner_point, edge_pair = get_corner_point_and_intersecting_edges(
+#             corridor1,
+#             corridor2,
+#             tau,
+#         )
+
+#         if corner_point is None or edge_pair == []:
+#             raise ValueError(
+#                 f"No valid corner point found for turn direction {tau}."
+#             )
+
+#         if edge_pair in ((1, 1), (3, 3)):
+#             return side_side_circle(
+#                 corridor1,
+#                 corridor2,
+#                 tau,
+#                 edge_pair,
+#                 corner_point,
+#                 vehicle,
+#                 circle_index=index,
+#             )
+
+#         # front (0) side (2,3) case
+#         if edge_pair in ((0, 1), (0, 3)):
+#             return front_side_circle(
+#                 corridor1,
+#                 corridor2,
+#                 tau,
+#                 edge_pair,
+#                 corner_point,
+#                 vehicle,
+#                 circle_index=index,
+#             )
+
+#         # side (1,3) back (2) case
+#         if edge_pair in ((3, 2), (1, 2)):
+#             return side_back_circle(
+#                 corridor1,
+#                 corridor2,
+#                 tau,
+#                 edge_pair,
+#                 corner_point,
+#                 vehicle,
+#                 circle_index=index,
+#             )
+#         plot_corridors([corridor1, corridor2])
+#         plt.title(f"Unexpected edge pair: {edge_pair}, tau={tau}")
+#         plt.show()
+#         raise ValueError(f"Invalid edge pair: {edge_pair}")
+
+#     for i in range(len(corridor_list) - 1):
+#         corridor1 = corridor_list[i]
+#         corridor2 = corridor_list[i + 1]
+
+#         tau = corridor1.compute_relative_turn_direction(corridor2)
+
+#         if tau != 0:
+#             candidates = [
+#                 build_candidate(corridor1, corridor2, tau, i)
+#             ]
+#         else:
+#             candidates = [
+#                 build_candidate(corridor1, corridor2, left_turn, i),
+#                 build_candidate(corridor1, corridor2, right_turn, i),
+#             ]
+
+#         choices.append(
+#             IntermediateCircleChoice(
+#                 candidates=candidates,
+#                 index=i,
+#             )
+#         )
+
+#     choices_sequence = IntermediateCircleChoicesSequence(choices)
+#     choices_sequence = assign_preferred_candidates(choices_sequence, start_pose, end_pose)
+#     choices_sequence = solve_circles_overlap(choices_sequence)
+#     return choices_sequence
+
+def build_intermediate_circle_candidate(
+    corridor1,
+    corridor2,
+    tau,
+    index,
+    vehicle,
+):
+    corner_point, edge_pair = get_corner_point_and_intersecting_edges(
+        corridor1,
+        corridor2,
+        tau,
+    )
+
+    if corner_point is None or edge_pair == []:
+        raise ValueError(
+            f"No valid corner point found for turn direction {tau}."
+        )
+
+    if edge_pair in ((1, 1), (3, 3)):
+        return side_side_circle(
             corridor1,
             corridor2,
             tau,
+            edge_pair,
+            corner_point,
+            vehicle,
+            circle_index=index,
         )
 
-        if corner_point is None or edge_pair == []:
-            raise ValueError(
-                f"No valid corner point found for turn direction {tau}."
-            )
+    if edge_pair in ((0, 1), (0, 3)):
+        return front_side_circle(
+            corridor1,
+            corridor2,
+            tau,
+            edge_pair,
+            corner_point,
+            vehicle,
+            circle_index=index,
+        )
 
-        if edge_pair in ((1, 1), (3, 3)):
-            return side_side_circle(
-                corridor1,
-                corridor2,
-                tau,
-                edge_pair,
-                corner_point,
-                vehicle,
-                circle_index=index,
-            )
+    if edge_pair in ((3, 2), (1, 2)):
+        return side_back_circle(
+            corridor1,
+            corridor2,
+            tau,
+            edge_pair,
+            corner_point,
+            vehicle,
+            circle_index=index,
+        )
 
-        # front (0) side (2,3) case
-        if edge_pair in ((0, 1), (0, 3)):
-            return front_side_circle(
-                corridor1,
-                corridor2,
-                tau,
-                edge_pair,
-                corner_point,
-                vehicle,
-                circle_index=index,
-            )
+    
+    plot_corridors([corridor1, corridor2], plot_vectors=True)
+    plt.plot(corner_point[0], corner_point[1], marker="o", label="corner point")
+    plt.legend()
+    plt.title(f"Unexpected edge pair: {edge_pair}, tau={tau}")
+    plt.show()
 
-        # side (1,3) back (2) case
-        if edge_pair in ((3, 2), (1, 2)):
-            return side_back_circle(
-                corridor1,
-                corridor2,
-                tau,
-                edge_pair,
-                corner_point,
-                vehicle,
-                circle_index=index,
-            )
-        plot_corridors([corridor1, corridor2])
-        plt.title(f"Unexpected edge pair: {edge_pair}, tau={tau}")
-        plt.show()
-        raise ValueError(f"Invalid edge pair: {edge_pair}")
+    raise ValueError(f"Invalid edge pair: {edge_pair}")
+
+
+def create_intermediate_circle_choice_sequence(
+    corridor_list,
+    vehicle,
+    start_pose,
+    end_pose,
+):
+    choices = []
+    left_turn = 1
+    right_turn = -1
 
     for i in range(len(corridor_list) - 1):
         corridor1 = corridor_list[i]
@@ -483,23 +1352,78 @@ def create_intermediate_circle_choice_sequence(corridor_list, vehicle, start_pos
 
         if tau != 0:
             candidates = [
-                build_candidate(corridor1, corridor2, tau, i)
+                build_intermediate_circle_candidate(
+                    corridor1,
+                    corridor2,
+                    tau,
+                    i,
+                    vehicle,
+                )
             ]
         else:
             candidates = [
-                build_candidate(corridor1, corridor2, left_turn, i),
-                build_candidate(corridor1, corridor2, right_turn, i),
+                build_intermediate_circle_candidate(
+                    corridor1,
+                    corridor2,
+                    left_turn,
+                    i,
+                    vehicle,
+                ),
+                build_intermediate_circle_candidate(
+                    corridor1,
+                    corridor2,
+                    right_turn,
+                    i,
+                    vehicle,
+                ),
             ]
+
+        # choices.append(
+        #     IntermediateCircleChoice(
+        #         candidates=candidates,
+        #         index=i,
+        #     )
+        # )
 
         choices.append(
             IntermediateCircleChoice(
                 candidates=candidates,
                 index=i,
+                corridor_index_start=i,
+                corridor_index_end=i + 1,
             )
         )
 
     choices_sequence = IntermediateCircleChoicesSequence(choices)
-    choices_sequence = assign_preferred_candidates(choices_sequence, start_pose, end_pose)
+
+    choices_sequence = assign_preferred_candidates(
+        choices_sequence,
+        start_pose,
+        end_pose,
+    )
+
+    # figure = plot_corridors(corridor_list, plot_vectors=True)
+    # # plt.show(block = True)
+    # # for i in range(len(corridor_list)-1):
+    # #     plot_corridors([corridor_list[i], corridor_list[i+1]])
+
+    # ax = plt.gca()
+
+    # plot_intermediate_circle_choices(
+    #     ax,
+    #     choices_sequence,
+    #     vehicle.width/2,
+    # )
+    # plt.show(block = True)
+
+    choices_sequence = solve_circles_overlap(
+        choices_sequence,
+        corridor_list,
+        vehicle,
+        start_pose,
+        end_pose,
+        )
+
     return choices_sequence
 
 
@@ -578,11 +1502,19 @@ def assign_preferred_candidates(circle_choices_sequence, start_pose, end_pose):
                         choice_index - 1
                     ].first
 
-                    p_prev = select_tangency_point_from_point_circle(
+                    if compute_distance_two_points(
+                        previous_circle.center,
                         p_curr,
-                        previous_circle,
-                        turn_direction=-previous_circle.turn_direction,
-                    )
+                    ) < previous_circle.radius:
+                        p_prev = previous_circle.center
+                        
+                    else:
+                      
+                        p_prev = select_tangency_point_from_point_circle(
+                            p_curr,
+                            previous_circle,
+                            turn_direction=-previous_circle.turn_direction,
+                        )
                 else:
                     p_prev = start_point
 
@@ -593,14 +1525,24 @@ def assign_preferred_candidates(circle_choices_sequence, start_pose, end_pose):
                 if choice_index < n_circles - 1:
                     next_circle = circle_choices_sequence[choice_index + 1].first
 
-                    p_next = select_tangency_point_from_point_circle(
+                    if compute_distance_two_points(
+                        next_circle.center,
                         p_curr,
-                        next_circle,
-                    )
+                    ) < next_circle.radius:
+                        p_next = next_circle.center
+                    else:
+
+                        p_next = select_tangency_point_from_point_circle(
+                            p_curr,
+                            next_circle,
+                        )
                 else:
                     p_next = end_point
 
             # ---- compute turn ----
+            # plt.plot([p_prev.x, p_curr.x, p_next.x], [p_prev.y, p_curr.y, p_next.y], "ro-"
+            #          )
+            # plt.show(block = True)
             preferred_turn = compute_turn_direction_from_three_points(
                 p_prev,
                 p_curr,
@@ -632,7 +1574,7 @@ def assign_preferred_candidates(circle_choices_sequence, start_pose, end_pose):
     return circle_choices_sequence
  
 
-def plot_intermediate_circle_choices(ax, circle_choices_sequence):
+def plot_intermediate_circle_choices(ax, circle_choices_sequence, r = 0):
     """
     Plot all intermediate circle candidates at their nominal position s=0.
 
@@ -649,7 +1591,8 @@ def plot_intermediate_circle_choices(ax, circle_choices_sequence):
                 xc = circle.center.x
                 yc = circle.center.y
 
-            r = circle.radius
+            R = circle.radius
+            rho = R + r
 
             is_preferred = (
                 choice.is_ambiguous
@@ -676,14 +1619,26 @@ def plot_intermediate_circle_choices(ax, circle_choices_sequence):
 
             circ = plt.Circle(
                 (xc, yc),
-                r,
+                rho,
                 fill=False,
                 color=color,
                 linestyle=linestyle,
                 linewidth=linewidth,
                 alpha=alpha,
             )
+
+            circ_path = plt.Circle(
+                (xc, yc),
+                R,
+                fill=False,
+                color=color,
+                linestyle=linestyle,
+                linewidth=linewidth,
+                alpha=alpha,
+            )
+
             ax.add_patch(circ)
+            ax.add_patch(circ_path)
 
             ax.plot(xc, yc, "o", color=color, alpha=alpha)
 
@@ -709,13 +1664,24 @@ def plot_intermediate_circle_choices(ax, circle_choices_sequence):
 
                 circ_extreme = plt.Circle(
                     (x_shift_end, y_shift_end),
-                    r,
+                    rho,
                     fill=False,
                     color="red",
                     linestyle=":",
                     alpha=0.7,
                 )
+
+                circ_extreme_path = plt.Circle(
+                    (x_shift_end, y_shift_end),
+                    R,
+                    fill=False,
+                    color="red",
+                    linestyle=":",
+                    alpha=0.7,
+                )
+
                 ax.add_patch(circ_extreme)
+                ax.add_patch(circ_extreme_path)
 
                 ax.plot(
                     x_shift_end,

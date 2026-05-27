@@ -285,12 +285,18 @@ class CurvilinearArcUnicycle(Trajectory):
         self.delta_angle    = atan2(sin(angle), cos(angle))
         self.chord  = compute_distance_two_points(self.start_position,
                                                   self.end_position)
-        if abs(self.delta_angle) < 1e-6: # If the angle is zero
-            self.iota   = 0 # signed internal angle
-        elif efficient_sign(self.delta_angle) == self.turn_direction:
-            self.iota   = 2 * asin((self.chord * 0.5)/self.radius)
+        if abs(self.delta_angle) < 1e-6:
+            self.iota = 0
+
         else:
-            self.iota   = 2 * pi - (2 * asin((self.chord * 0.5)/self.radius))
+            asin_arg = (self.chord * 0.5) / self.radius
+            asin_arg = max(-1.0, min(1.0, asin_arg))
+
+            if efficient_sign(self.delta_angle) == self.turn_direction:
+                self.iota = 2 * asin(asin_arg)
+            else:
+                self.iota = 2 * pi - 2 * asin(asin_arg)
+
         self.epsilon    = wrapPositiveAngle(atan2((self.y0 - self.yc),
                                                   (self.x0 - self.xc)))
         angles = np.linspace(

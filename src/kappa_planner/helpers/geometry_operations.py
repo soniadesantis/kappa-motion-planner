@@ -107,12 +107,11 @@ def select_tangency_point_from_point_circle(
     )
 
     if hyp < circle.radius - tol:
-        raise ValueError(
-            "The start point is inside the circle; no real tangent exists."
-        )
+        return circle.center
 
     if abs(hyp - circle.radius) <= tol:
-        return Point(start_point.x, start_point.y)
+        # return Point(start_point.x, start_point.y)
+        raise ValueError("The start point is inside the circle")
 
     length_tangent = sqrt(hyp * hyp - circle.radius * circle.radius)
 
@@ -167,3 +166,79 @@ def compute_angular_difference_with_turn_direction(theta1, theta2, turn):
         return turn * (2 * pi - abs(delta_angle))
     else: 
         return delta_angle
+    
+
+def project_point_onto_segment(point, segment_start, segment_end):
+    """
+    Project a Point orthogonally onto a segment.
+
+    If the orthogonal projection falls outside the segment,
+    the closest endpoint is returned.
+
+    :param point: point to project
+    :type point: Point
+
+    :param segment_start: start point of the segment
+    :type segment_start: Point
+
+    :param segment_end: end point of the segment
+    :type segment_end: Point
+
+    :return: projected point on the segment
+    :rtype: Point
+    """
+
+    x1, y1 = segment_start.x, segment_start.y
+    x2, y2 = segment_end.x, segment_end.y
+    xp, yp = point.x, point.y
+
+    # Direction vector of the segment
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Degenerate segment
+    if dx == 0 and dy == 0:
+        return Point(x1, y1)
+
+    # Vector from segment_start to point
+    ax = xp - x1
+    ay = yp - y1
+
+    # Projection parameter
+    t = (ax * dx + ay * dy) / (dx * dx + dy * dy)
+
+    # Clamp to segment
+    t = max(0.0, min(1.0, t))
+
+    # Projected point
+    x_proj = x1 + t * dx
+    y_proj = y1 + t * dy
+
+    return Point(x_proj, y_proj)
+
+
+def minimum_distance_between_segments(A, B, C, D):
+    """
+    Minimum distance between two 2D segments AB and CD.
+    """
+
+    candidates = [
+        compute_distance_point_to_segment(A, C, D),
+        compute_distance_point_to_segment(B, C, D),
+        compute_distance_point_to_segment(C, A, B),
+        compute_distance_point_to_segment(D, A, B),
+    ]
+
+    return min(candidates)
+
+
+def compute_distance_point_to_segment(point, segment_start, segment_end):
+    projection = project_point_onto_segment(
+        point,
+        segment_start,
+        segment_end,
+    )
+
+    return compute_distance_two_points(point, projection)
+
+

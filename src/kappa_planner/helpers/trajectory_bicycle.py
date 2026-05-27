@@ -219,7 +219,9 @@ def compute_initial_turn_direction(xc2, yc2, R, x0, y0, theta0, turn):
     :return: initial turn direction. -1 if turn right, else 1
     :rtype: float [-1, 1]
     '''
-    a = sqrt((xc2 - x0)**2 + (yc2 - y0)**2) # distance between start point and circumference center
+    a = sqrt((xc2 - x0)**2 + (yc2 - y0)**2)
+    if abs(R/a) > 1: 
+        raise ValueError("Given point is inside the circle, it is not possible to compute the initial turn direction.")
     beta = asin(R/a)
     alpha0 = wrapPositiveAngle(atan2((yc2 - y0), (xc2 - x0)))
     # if (theta0 > alpha0 - turn * beta) and (theta0 < alpha0 + pi):
@@ -472,6 +474,12 @@ def compute_traj_to_circle_bicycle(corridor1, start_pose, bicycle, circ1, tau0 =
     tau1 = circ1.turn_direction
     corner_point1 = circ1.corner_point
 
+    # plot_corridors([corridor1])
+    # plt.plot(start_pose[0], start_pose[1], 'ro')
+    # plt.plot(circ1.xc, circ1.yc, 'bo')
+    # plt.plot(circ1.xc + circ1.radius * np.cos(np.linspace(0, 2*pi, 100)), circ1.yc + circ1.radius * np.sin(np.linspace(0, 2*pi, 100)), 'b--')
+    # plt.show(block = True)
+
     tau0 = compute_initial_turn_direction(
         circ1.xc,
         circ1.yc,
@@ -540,16 +548,17 @@ def shift_circles_bicycle(
     restarts from circle max(i-1, 0), since the update may affect the
     neighboring intersection on the left.
     """
+    initial_step = 0.1
     step = 0.05
     i = 0
     tried_other_side = [False] * len(intermediate_circles)
 
-    figure = plot_corridors(corridor_list)
-    plot_analytical_trajectory(segments, figure=figure)
-    for circle in intermediate_circles:
-        plt.plot(circle.center.x, circle.center.y, 'ro')    
-        plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
-    plt.show(block = True)
+    # figure = plot_corridors(corridor_list)
+    # plot_analytical_trajectory(segments, figure=figure)
+    # for circle in intermediate_circles:
+    #     plt.plot(circle.center.x, circle.center.y, 'ro')    
+    #     plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+    # plt.show(block = True)
     while i < len(intermediate_circles):
         if not check_intersection_case(segments[i], segments[i + 1]):
             i += 1
@@ -566,7 +575,7 @@ def shift_circles_bicycle(
                         f"Intersection unresolved at circle {i} even at maximum shift."
                     )
                 if circle.s == 0:
-                    s_new = 0.5 * circle.s_max
+                    s_new = initial_step * circle.s_max
                 else:
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 
@@ -594,22 +603,22 @@ def shift_circles_bicycle(
             elif 0 < i < len(intermediate_circles) - 1:
                 circle = intermediate_circles[i]
                 if circle.s >= circle.s_max and check_intersection_case(segments[i], segments[i+1]):
-                    figure = plot_corridors(corridor_list)
-                    plot_analytical_trajectory(segments, figure=figure)
-                    plt.plot(circle.center.x, circle.center.y, 'ro')    
-                    plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
-                    plt.show(block = True)
+                    # figure = plot_corridors(corridor_list)
+                    # plot_analytical_trajectory(segments, figure=figure)
+                    # plt.plot(circle.center.x, circle.center.y, 'ro')    
+                    # plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                    # plt.show(block = True)
 
                     raise ValueError(
                         f"Intersection unresolved at circle {i} even at maximum shift."
                     )
                 if circle.s == 0:
-                    s_new = 0.5 * circle.s_max
+                    s_new = initial_step * circle.s_max
                 else:
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 
                 circle.update_s(s=s_new)
-
+                
                 circ1 = intermediate_circles[i - 1]
                 circ2 = intermediate_circles[i]
                 circ3 = intermediate_circles[i + 1]
@@ -629,6 +638,14 @@ def shift_circles_bicycle(
                 segments[i] = new_segment1
                 segments[i + 1] = new_segment2
 
+                # figure = plot_corridors(corridor_list)
+                # plot_analytical_trajectory(segments, figure=figure)
+                # plt.plot(circle.center.x, circle.center.y, 'ro')    
+                # plt.plot(circle.xc + circle.radius * np.cos(np.linspace(0, 2*pi, 100)), circle.yc + circle.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                # plt.plot(circ3.center.x, circ3.center.y, 'ro')
+                # plt.plot(circ3.xc + circ3.radius * np.cos(np.linspace(0, 2*pi, 100)), circ3.yc + circ3.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+                # plt.show(block = True)
+
             # Last intermediate circle
             else:
                 circle = intermediate_circles.last
@@ -637,7 +654,7 @@ def shift_circles_bicycle(
                         f"Intersection unresolved at circle {i} even at maximum shift."
                     )
                 if circle.s == 0:
-                    s_new = 0.5 * circle.s_max
+                    s_new = initial_step * circle.s_max
                 else:
                     s_new = min(circle.s + step * circle.s_max, circle.s_max)
 
@@ -710,7 +727,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     # Extract the sequence of intermediate circles from the choices
     intermediate_circles = selected_sequence_from_preferences(
         intermediate_circles_choices
-)
+    )
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # plt.show(block = True)
@@ -804,9 +821,9 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
 
     # plt.show(block = True)
     for i in range(len(segments)-1): 
-        print('Segment ', i)
-        circle = intermediate_circles[i]
-        angle_array = np.linspace(0, 2*pi, 100)
+        # print('Segment ', i)
+        # circle = intermediate_circles[i]
+        # angle_array = np.linspace(0, 2*pi, 100)
         # figure = plot_corridors(corridor_list)
         # plot_analytical_trajectory([segments[i], segments[i+1]], figure)
         # plt.plot(circle.xc, circle.yc, 'ro')
@@ -837,3 +854,132 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     correct_angles(trajectory)
     
     return trajectory
+
+
+def compute_trajectory_bicycle_two_corridors_optimal(corridor1, corridor2, start_pose, end_pose, bicycle, intermediate_circles_choices):
+    '''
+    Compute the sequence of primitives that build the time-optimal trajectory for a bicycle vehicle within two corridors.
+    Backward maneuver both for collision avoidance and time-optimality.
+
+    :param corridor1: first corridor
+    :type corridor1: CorridorWorld
+    :param corridor2: second corridor
+    :type corridor2: CorridorWorld
+    :param start_pose: initial pose within the first corridor
+    :type start_pose: list of floats
+    :param end_pose: final pose within the second corridor
+    :type end_pose: list of floats
+    :param bicycle: bicycle vehicle
+    :type Bicycle: Bicycle
+
+    :return: sequence of primitives
+    :rtype: list of primitives
+    :return: boolean indicating whether an intersection has been detected
+    :rtype: Boolean
+    '''
+    # Extract the sequence of intermediate circles from the choices
+    intermediate_circles = selected_sequence_from_preferences(
+        intermediate_circles_choices
+    )
+    # 1 — Compute P^init
+    intermediate_circle = intermediate_circles.first
+
+    start_maneuvers = compute_traj_to_circle_bicycle(
+        corridor1,
+        start_pose,
+        bicycle,
+        intermediate_circle,
+    )
+
+    # 2 — Compute P^final
+    inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(corridor2, intermediate_circle, end_pose)
+
+    inv_end_maneuvers = compute_traj_to_circle_bicycle(
+        inv_last_corridor,
+        inv_end_pose,
+        bicycle,
+        inv_last_int_circ,
+    )
+
+    end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0 = 0)
+
+
+    intermediate_circle, start_maneuvers, end_maneuvers = shift_circles_two_corridors_bicycle(
+    intermediate_circle,
+    start_maneuvers,
+    end_maneuvers,
+    start_pose,
+    end_pose,
+    bicycle,
+    corridor1,
+    corridor2,
+    )
+    
+    intermediate_arc = compute_arc_from_two_tangents_objects(start_maneuvers[-1], end_maneuvers[0], intermediate_circle, bicycle)
+    trajectory = start_maneuvers + [intermediate_arc] + end_maneuvers
+
+    for i in range(len(trajectory)-1):
+        if trajectory[i+1].time_grid[0] != trajectory[i].time_grid[-1]:
+            trajectory[i+1].add_time_offset(abs(trajectory[i+1].time_grid[0] - trajectory[i].time_grid[-1]))
+    correct_angles(trajectory)
+
+    return trajectory
+
+
+def shift_circles_two_corridors_bicycle(
+    intermediate_circle,
+    start_maneuvers,
+    end_maneuvers,
+    start_pose, 
+    end_pose,
+    bicycle,
+    corridor1,
+    corridor2
+):
+    """
+    Shift intermediate circle to resolve possible intersection.
+    S: segment
+    C: arc
+    T: turn on-the-spot
+    """
+    processed_finished = False
+    step = 0.1 
+
+    while not processed_finished:
+        S3 = start_maneuvers[-1]
+        S5 = end_maneuvers[0]
+        changed = False
+
+        if check_intersection_case(S3, S5): 
+            if intermediate_circle.s == 0:
+                s_new = 0.5 * intermediate_circle.s_max
+            else:
+                s_new = min(
+                    intermediate_circle.s + step * intermediate_circle.s_max,
+                    intermediate_circle.s_max
+                    )
+
+            intermediate_circle.update_s(s=s_new)
+            start_maneuvers = compute_traj_to_circle_bicycle(
+                corridor1,
+                start_pose,
+                bicycle,
+                intermediate_circle,
+            )
+
+            # 2 — Compute P^final
+            inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(corridor2, intermediate_circle, end_pose)
+
+            inv_end_maneuvers = compute_traj_to_circle_bicycle(
+                inv_last_corridor,
+                inv_end_pose,
+                bicycle,
+                inv_last_int_circ,
+            )
+
+            end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0 = 0)
+            changed = True
+
+        processed_finished = not changed
+            
+    return intermediate_circle, start_maneuvers, end_maneuvers

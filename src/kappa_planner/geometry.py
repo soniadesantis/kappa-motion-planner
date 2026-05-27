@@ -52,6 +52,7 @@ class Circle:
         self.xc = center.x
         self.yc = center.y
 
+
 class Pose:
     """Representation of the pose of a robot.
     Pose [x, y, theta]: position + orientation
@@ -99,6 +100,19 @@ class Pose:
         return Pose(
             position=Point(self.x, self.y),
             theta=self.theta,
+        )
+
+    # --- reverse pose ---
+    def reversed(self):
+        """
+        Return a new pose with opposite heading.
+        Position stays unchanged.
+        """
+        theta_reversed = (self.theta + pi) % (2 * pi)
+
+        return Pose(
+            position=Point(self.x, self.y),
+            theta=theta_reversed,
         )
 
 
@@ -152,6 +166,7 @@ class IntermediateCircle(Circle):
         self.yc = new_y
         
         self.number_of_shifts += 1
+
 
 class IntermediateCirclesSequence:
     """Ordered sequence of IntermediateCircle objects with basic sequence operations."""
@@ -241,11 +256,23 @@ class IntermediateCircleChoice:
     In ambiguous cases, contains two circles: one left and one right.
     """
 
-
-    def __init__(self, candidates=None, index=None):
+    def __init__(
+        self,
+        candidates=None,
+        index=None,
+        corridor_index_start=None,
+        corridor_index_end=None,
+    ):
         self._candidates = list(candidates) if candidates is not None else []
+
+        # Position of this choice in the current choice sequence
         self.index = index
-        self.preferred_turn_direction = None  
+
+        # Indices of the original corridors connected by this choice
+        self.corridor_index_start = corridor_index_start
+        self.corridor_index_end = corridor_index_end
+
+        self.preferred_turn_direction = None
 
         for k, circle in enumerate(self._candidates):
             if not isinstance(circle, IntermediateCircle):
@@ -265,7 +292,13 @@ class IntermediateCircleChoice:
         return iter(self._candidates)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self._candidates!r})"
+        return (
+            f"{self.__class__.__name__}("
+            f"index={self.index!r}, "
+            f"corridors=({self.corridor_index_start!r}, "
+            f"{self.corridor_index_end!r}), "
+            f"candidates={self._candidates!r})"
+        )
 
     # --- Convenience properties ---
     @property
@@ -390,3 +423,20 @@ class IntermediateCircleChoicesSequence:
             selected_circles[i] = self._choices[i][candidate_index]
 
         return IntermediateCirclesSequence(selected_circles)
+    
+    def replace_two_with_one(self, index, new_choice):
+        """
+        Replace choices[index] and choices[index + 1] with one new choice.
+        """
+
+        if not isinstance(new_choice, IntermediateCircleChoice):
+            raise TypeError(
+                f"Expected IntermediateCircleChoice, got {type(new_choice).__name__}"
+            )
+
+        self._choices[index] = new_choice
+        del self._choices[index + 1]
+
+    def remove_at(self, index: int):
+        """Remove choice at index in-place."""
+        del self._choices[index]

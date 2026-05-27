@@ -1,3 +1,4 @@
+from pyexpat.errors import messages
 import warnings
 from .corridor_geometry import (
     check_point_inside_corridor,
@@ -6,6 +7,7 @@ from .corridor_geometry import (
     remove_zeros_from_turn_direction_vector,
     compute_corner_point_vector,
 )
+from .intermediate_circle_solve_overlap import select_preferred_circle
 from .intermediate_circles_geometry import compute_center_coordinates_vector, compute_center_coordinates_vector_according_to_edges, create_intermediate_circles_sequence
 import matplotlib.pyplot as plt
 from .plot_helpers import plot_corridors, plot_analytical_trajectory
@@ -256,18 +258,17 @@ def check_core_assumptions(planner):
     """
     messages = []
     check_passed = True
-
-    R = planner.vehicle.max_radius
+    check1 = True
 
     # Check robot footprint 
     if planner.vehicle.max_radius < planner.vehicle.width * 0.5:
         msg = "The robot footprint is not valid: the maximum radius must be at least half of the width."
         messages.append(msg)
         warnings.warn(msg, UserWarning)
-        check_passed = False
+        check1 = False
 
     # Check start and end poses
-    messages, check_passed = check_start_and_end_poses(
+    messages, check2 = check_start_and_end_poses(
         planner.shrunken_corridor_list,
         planner.start_pose,
         planner.end_pose,
@@ -275,11 +276,12 @@ def check_core_assumptions(planner):
     )
 
     # Check shrunken corridor widths
-    messages, check_passed = check_corridor_widths_feasibility(
+    messages, check3 = check_corridor_widths_feasibility(
         planner.shrunken_corridor_list,
         messages
     ) 
 
+    check_passed = check1 and check2 and check3
     return check_passed, messages
 
 
@@ -306,11 +308,12 @@ def check_standing_assumptions(planner):
     corridor_list
     )
 
+    check1 = True
     if 0 in turn_direction_vector:
         msg = "At least one pair of adjacent corridors has the same tilt."
         messages.append(msg)
         warnings.warn(msg, UserWarning)
-        check_passed = False
+        check1 = False
 
     # Consecutive corridors properly intersect
     (
@@ -321,12 +324,14 @@ def check_standing_assumptions(planner):
         turn_direction_vector
     )
 
+    check2 = True
     if any(point is None for point in corner_point_vector):
         msg = "At least one pair of adjacent corridors does not properly intersect."
         messages.append(msg)
         warnings.warn(msg, UserWarning)
-        check_passed = False
+        check2 = False
 
+    check3 = True
     # Consecutive corridors intersect on the side edges
     for i, edge_pair in enumerate(intersecting_edges):
         if edge_pair is None or edge_pair == []:
@@ -339,7 +344,7 @@ def check_standing_assumptions(planner):
             )
             messages.append(msg)
             warnings.warn(msg, UserWarning)
-            check_passed = False
+            check3 = False
     
     # Intermediate circles are 2R apart
     center_circumference_vector = compute_center_coordinates_vector_according_to_edges(
@@ -350,6 +355,7 @@ def check_standing_assumptions(planner):
             planner.vehicle,
             margin = 0)  
     
+    check4 = True
     for i in range(len(center_circumference_vector)-1):
         dist_centers = compute_distance_two_points(
             center_circumference_vector[i],
@@ -358,37 +364,42 @@ def check_standing_assumptions(planner):
             msg = f'Intermediate circles {i} and {i+1} overlap.'
             messages.append(msg)
             warnings.warn(msg, UserWarning)
-            check_passed = False
+            check4 = False
 
     # The start pose is outside the first intermediate circle
     dist_start = compute_distance_two_points(
         planner.start_pose[:2],
         center_circumference_vector[0])
+    check5 = True
     if dist_start < planner.vehicle.max_radius - 1e-3:
         msg = 'The start pose is inside first intermediate circle.'
         messages.append(msg)
         warnings.warn(msg, UserWarning)
-        check_passed = False
+        check5 = False
     
     # The end pose is outside the last intermediate circle
     dist_end = compute_distance_two_points(
         planner.end_pose[:2],
         center_circumference_vector[-1])
+    check6 = True
     if dist_end < planner.vehicle.max_radius - 1e-3:
         msg = 'The end pose is inside last intermediate circle.'
         messages.append(msg)
         warnings.warn(msg, UserWarning)
-        check_passed = False
+        check6 = False
 
     # Minimum corridors widths
     min_corridor_widths = planner.min_corridor_widths
     corridor_widths = [corridor.width for corridor in corridor_list]
 
+    check7 = True
     if not all(x >= y for x, y in zip(corridor_widths, min_corridor_widths)):
         msg = "At least one corridor is not wide enough to guarantee collision-free maneuvers."
         messages.append(msg)
         warnings.warn(msg, UserWarning)
-        check_passed = False
+        check7 = False
+
+    check_passed = check1 and check2 and check3 and check4 and check5 and check6 and check7
 
     if check_passed:
         intermediate_circles = create_intermediate_circles_sequence(
@@ -401,6 +412,37 @@ def check_standing_assumptions(planner):
 
     return check_passed, messages, intermediate_circles
 
+
+
+def check_position_out_of_circles_assumption(planner):
+    check_passed = True
+    first_circle = select_preferred_circle(
+        planner.intermediate_circles_choice_sequence.first
+    )
+
+    last_circle = select_preferred_circle(
+        planner.intermediate_circles_choice_sequence.last
+    )
+
+    messages = []
+    inside_first_circle = False
+    inside_last_circle = False
+    
+    if compute_distance_two_points(planner.start_pose[:2], (first_circle.center.x, first_circle.center.y)) < planner.vehicle.max_radius - 1e-3:
+        msg = 'The start pose is inside first intermediate circle.'
+        messages.append(msg)
+        warnings.warn(msg, UserWarning)
+        check_passed = False
+        inside_first_circle = True
+    elif compute_distance_two_points(planner.end_pose[:2], (last_circle.center.x, last_circle.center.y)) < planner.vehicle.max_radius - 1e-3:
+        msg = 'The end pose is inside last intermediate circle.'
+        messages.append(msg)
+        warnings.warn(msg, UserWarning)
+        check_passed = False
+        inside_last_circle = True
+
+    return check_passed, messages, inside_first_circle, inside_last_circle
+    
 
 def check_inputs_analytical_planner(planner):
     '''

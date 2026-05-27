@@ -1,7 +1,7 @@
 from math import atan2, pi, cos, sin, sqrt
-from ..geometry import Point, IntermediateCircle, IntermediateCirclesSequence
+from ..geometry import Point, Circle, IntermediateCircle, IntermediateCirclesSequence
 from .corridor_geometry import check_point_inside_corridor, get_corner_point
-from .geometry_operations import compute_angular_difference, check_point_inside_segment
+from .geometry_operations import compute_angular_difference, check_point_inside_segment, compute_distance_two_points
 
 def compute_center_coordinates_vector(corridor_list, turn_direction_vector, corner_point_vector, unicycle, margin = 0):
     center_coordinates_vector = [0] * (len(corner_point_vector))
@@ -428,3 +428,112 @@ def compute_center_coordinates_second_circle_given_two_points(
     yc2 = corner_point[1] + offset * sin(angle_circle_center_direction)
 
     return xc2, yc2
+
+
+def compute_circle_center_internally_tangent_to_two_circles(
+    small_circle1,
+    small_circle2,
+    radius,
+    turn_direction,
+    tol=1e-9,
+):
+    """
+    Compute the center of a circle of radius `radius`
+    internally tangent to two smaller circles.
+
+    The smaller circles must have equal radius.
+
+    turn_direction:
+        +1 selects the center on the left side of
+            circle1.center -> circle2.center
+        -1 selects the center on the right side
+    """
+
+    if turn_direction not in (-1, 1):
+        raise ValueError("turn_direction must be -1 or +1")
+
+    r1 = small_circle1.radius
+    r2 = small_circle2.radius
+
+    if abs(r1 - r2) > tol:
+        raise ValueError(
+            "The two small circles must have equal radius."
+        )
+
+    r = r1
+    R = radius
+
+    if R <= r:
+        raise ValueError(
+            "The large circle radius must be larger than the small circle radius."
+        )
+
+    c1 = small_circle1.center
+    c2 = small_circle2.center
+
+    x1, y1 = c1.x, c1.y
+    x2, y2 = c2.x, c2.y
+
+    dx = x2 - x1
+    dy = y2 - y1
+
+    d = compute_distance_two_points(c1, c2)
+
+    if d < tol:
+        raise ValueError(
+            "The two small circles are concentric."
+        )
+
+    effective_radius = R - r
+
+    if d > 2 * effective_radius + tol:
+        raise ValueError(
+            "No internally tangent circle with the given radius exists."
+        )
+
+    # Midpoint between small-circle centers
+    mx = 0.5 * (x1 + x2)
+    my = 0.5 * (y1 + y2)
+
+    # Distance from midpoint to big-circle center
+    half_chord = 0.5 * d
+
+    h_sq = effective_radius**2 - half_chord**2
+
+    # Numerical safety
+    if h_sq < 0 and abs(h_sq) < tol:
+        h_sq = 0.0
+
+    h = sqrt(h_sq)
+
+    # Perpendicular unit vector
+    ux = -dy / d
+    uy = dx / d
+
+    if turn_direction == 1:
+        cx = mx + h * ux
+        cy = my + h * uy
+    else:
+        cx = mx - h * ux
+        cy = my - h * uy
+
+    return Point(cx, cy)
+
+
+def compute_circle_internally_tangent_to_two_circles(
+    small_circle1,
+    small_circle2,
+    radius,
+    turn_direction,
+):
+    center = compute_circle_center_internally_tangent_to_two_circles(
+        small_circle1,
+        small_circle2,
+        radius,
+        turn_direction,
+    )
+
+    return Circle(
+        center=center,
+        radius=radius,
+    )

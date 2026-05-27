@@ -1,11 +1,53 @@
-from .helper_functions import fit_new_circle
-from .geometry_operations import compute_angular_difference_with_turn_direction, wrapPositiveAngle, efficient_sign, compute_angular_difference
+from .geometry_operations import compute_angular_difference_with_turn_direction, wrapPositiveAngle, efficient_sign, compute_angular_difference, compute_turn_direction
 from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpot
 from .collision_avoidance import collision_avoidance_check, collision_avoidance_check_tb, collision_avoidance_check_after_overlap
 from .initial_turn_on_the_spot import compute_initial_turn_on_the_spot_time_optimality, compute_initial_turn_direction_exact_rule
+from .intersections import circle_intersection
 from .primitives import compute_extreme_poses_arc_line
-from math import atan2, pi
+from math import atan2, pi, cos, sin
 
+
+def fit_new_circle(x0, y0, xc2, yc2, R, turn1, alpha0):
+    '''
+    In case an overlap between the first circle and the second circle is detected,
+    a new circle is computed. 
+    :param x0: x coordinate of the start pose
+    :type x0: float
+    :param y0: y coordinate of the start pose
+    :type y0: float
+    :param xc2: x coordinate of the center of the second circle
+    :type xc2: float
+    :param yc2: y coordinate of the center of the second circle
+    :type yc2: float
+    :param R: radius of the circles
+    :type R: float
+    :param turn1: initial turn direction
+    :type turn1: float
+    :param alpha0: direction between (x0, y0) and (xc2, yc2)
+    :type alpha0: float
+
+    :return: x coordinate of new circle
+    :rtype: float
+    :return: y coordinate of the new circle
+    :rtype: float
+    '''
+    
+    xint1, yint1, xint2, yint2 = circle_intersection(x0, y0, R, xc2, yc2, 2 * R)
+    vector_alpha0 = [cos(alpha0), sin(alpha0)]
+    angle1 = wrapPositiveAngle(atan2((yint1 - y0), (xint1 - x0)))
+    angle2 = wrapPositiveAngle(atan2((yint2 - y0), (xint2 - x0)))
+
+    vector1 = [cos(angle1), sin(angle1)]
+    vector2 = [cos(angle2), sin(angle2)]
+
+    turn_point1 = compute_turn_direction(vector_alpha0, vector1)
+    turn_point2 = compute_turn_direction(vector_alpha0, vector2)
+
+    if turn_point1 == turn1: 
+        return xint1, yint1
+    else: 
+        return xint2, yint2
+    
 
 def compute_three_maneuvers_compact(
     corridor,

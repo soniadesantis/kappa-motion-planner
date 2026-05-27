@@ -2,19 +2,15 @@ import warnings
 from .vehicle import Unicycle, Bicycle, Bicycle_Acceleration
 from .geometry import IntermediateCircle, IntermediateCirclesSequence
 from .helpers.poses import compute_end_pose, compute_start_pose, pose_from_shrunken_corridor_relative_frame
-from .helpers.inputs_check import check_standing_assumptions, check_core_assumptions, check_inputs_analytical_planner, compute_minimum_widths
+from .helpers.inputs_check import check_standing_assumptions, check_core_assumptions, check_inputs_analytical_planner, compute_minimum_widths, check_position_out_of_circles_assumption
 from .helpers.helper_functions import Timer
 from .helpers.plot_helpers import plot_planner_inputs
 from .helpers.corridor_geometry import shrink_corridor_list
 from .helpers.trajectory_unicycle import compute_trajectory_unicycle_two_corridors, compute_trajectory_unicycle_multiple_corridors_optimal
 
-from .helpers.corridor_functions_oo import (
-    create_intermediate_circles_sequence,
-    compute_trajectory_bicycle_two_corridors,
-    compute_trajectory_bicycle_two_corridors_optimal,
-)
 
-from .helpers.trajectory_bicycle import compute_trajectory_bicycle_multiple_corridors_optimal  
+from .helpers.trajectory_bicycle import compute_trajectory_bicycle_multiple_corridors_optimal, compute_trajectory_bicycle_two_corridors_optimal
+from .helpers.trajectory_unicycle_core import compute_trajectory_unicycle_multiple_corridors_core, compute_trajectory_unicycle_two_corridors_core
 
 from .helpers.intermediate_circles_choice import (
     not_ambiguous_circle_choices,
@@ -33,7 +29,8 @@ class MotionPlanner:
                  end_pose = None,
                  relative_start_pose = None,
                  relative_end_pose = None,
-                 waypoints = None):
+                 waypoints = None,
+                 assumptions = "core"):
         """Constructor.
 
         :param vehicle: Vehicle model used for planning.
@@ -48,6 +45,8 @@ class MotionPlanner:
         :type end_pose: list[float] | numpy.ndarray
         :param waypoints: List of waypoints to make the trajectory pass through (used only if provided).
         :type waypoints: list[list[float]] | numpy.ndarray
+        :param assumptions: Which set of assumptions to check for the analytical planner. Options are "core" (default) and "standing".
+        :type assumptions: str
         """
         # Core inputs
         self.vehicle = vehicle
@@ -57,7 +56,7 @@ class MotionPlanner:
         self.relative_start_pose = relative_start_pose
         self.relative_end_pose = relative_end_pose
         self.waypoints = waypoints
-
+        self.assumptions = assumptions
         # Validate mutually exclusive inputs
         self._validate_pose_inputs()
 
@@ -353,7 +352,7 @@ class MotionPlanner:
         ) = check_core_assumptions(self)
 
         # Journal paper version
-        if isinstance(self.vehicle, Unicycle):
+        if self.assumptions == "standing":
             (
                 self.min_corridor_widths,
                 self.s_max_circles
@@ -361,7 +360,7 @@ class MotionPlanner:
 
             (
                 self.inputs_check,
-                self.warn_msgs_core_assumptions,   
+                wrn_msgs_standing_assumptions,   
                 self.intermediate_circles
             ) = check_standing_assumptions(self)
 
@@ -369,8 +368,10 @@ class MotionPlanner:
                 self.intermediate_circles
             )
 
+            self.warn_msgs = self.warn_msgs_core_assumptions + wrn_msgs_standing_assumptions
+
         # Extension version
-        elif isinstance(self.vehicle, Bicycle):
+        elif self.assumptions == "core":
             self.intermediate_circles_choice_sequence = create_intermediate_circle_choice_sequence(
             self.corridor_list,
             self.vehicle,
@@ -378,6 +379,47 @@ class MotionPlanner:
             self.end_pose,
                 )
             
+        (
+            self.position_out_of_circles_assumption_check,
+            warn_msgs_position_out_of_circles_assumption,   
+            self.inside_first_circle,
+            self.inside_last_circle
+        ) = check_position_out_of_circles_assumption(self)
+
+        self.exit_trajectory_start = []
+        self.exit_trajectory_end = []
+
+        # if self.position_out_of_circles_assumption_check is False:
+        #     (
+        #         self.exit_trajectory_start,
+        #         self.exit_trajectory_end
+        #     ) = compute_circle_exit_trajectory(
+        #         self.inside_first_circle,
+        #         self.inside_last_circle,
+        #         self.vehicle,
+        #         self.start_pose, 
+        #         self.end_pose,
+        #         self.intermediate_circles_choice_sequence)
+            
+            # if self.inside_first_circle and self.inside_last_circle:
+            #     new_start_pose = self.exit_trajectory_start[-1].end_pose 
+            #     new_end_pose = self.exit_trajectory_end[0].start_pose
+            #     # self.update(start_pose = new_start_pose, end_pose = new_end_pose)
+            #     self.start_pose = new_start_pose
+            #     self.end_pose = new_end_pose
+            # elif self.inside_first_circle:
+            #     new_start_pose = self.exit_trajectory_start[-1].end_pose 
+            #     self.start_pose = new_start_pose
+            #     # self.update(start_pose = new_start_pose)
+            # elif self.inside_last_circle:
+            #     new_end_pose = self.exit_trajectory_end[0].start_pose
+            #     self.end_pose = new_end_pose
+            #     # self.update(end_pose = new_end_pose)
+
+        if isinstance(self.vehicle, Bicycle):
+            self.inputs_check = self.inputs_check and self.position_out_of_circles_assumption_check
+
+        self.warn_msgs = self.warn_msgs_core_assumptions + warn_msgs_position_out_of_circles_assumption
 
         if not self.inputs_check:
             warnings.warn(
@@ -400,37 +442,75 @@ class MotionPlanner:
         Compute an analytical trajectory for a unicycle model.
         """
         if not self.inputs_check:
-            return "Invalid inputs"
-
-        if len(corridors) == 2:
-            with Timer() as timer:
-                trajectory, intermediate_circles = compute_trajectory_unicycle_two_corridors(
-                    corridors[0],
-                    corridors[1],
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles,
-                )
-        elif len(corridors) > 2:
-            with Timer() as timer:
-                trajectory, intermediate_circles = compute_trajectory_unicycle_multiple_corridors_optimal(
-                    corridors,
-                    self.shrunken_corridor_list,
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles,
-                )
-        elif len(corridors) == 1:
-            raise NotImplementedError(
-                "Analytical unicycle trajectory computation is not implemented for one corridor."
+            raise ValueError(
+                "Invalid inputs for analytical motion planner.\n"
+                "Check warning messages for details:\n"
+                + "\n".join(self.warn_msgs)
             )
-        self.comp_time_analytical_sol = timer()
-        if isinstance(intermediate_circles, IntermediateCirclesSequence):
-            self.intermediate_circles = intermediate_circles
-        else:
-            self.intermediate_circles = IntermediateCirclesSequence([intermediate_circles])
+
+        if self.assumptions == "standing":
+            if len(corridors) == 2:
+                with Timer() as timer:
+                    trajectory, intermediate_circles = compute_trajectory_unicycle_two_corridors(
+                        corridors[0],
+                        corridors[1],
+                        start_pose,
+                        end_pose,
+                        vehicle,
+                        self.intermediate_circles,
+                    )
+            elif len(corridors) > 2:
+                with Timer() as timer:
+                    trajectory, intermediate_circles = compute_trajectory_unicycle_multiple_corridors_optimal(
+                        corridors,
+                        self.shrunken_corridor_list,
+                        start_pose,
+                        end_pose,
+                        vehicle,
+                        self.intermediate_circles,
+                    )
+            elif len(corridors) == 1:
+                raise NotImplementedError(
+                    "Analytical unicycle trajectory computation is not implemented for one corridor."
+                )
+            self.comp_time_analytical_sol = timer()
+            if isinstance(intermediate_circles, IntermediateCirclesSequence):
+                self.intermediate_circles = intermediate_circles
+            else:
+                self.intermediate_circles = IntermediateCirclesSequence([intermediate_circles])
+
+        elif self.assumptions == "core":
+            if len(corridors) == 2:
+                with Timer() as timer:
+                    trajectory = compute_trajectory_unicycle_two_corridors_core(
+                        corridors[0],
+                        corridors[1],
+                        start_pose,
+                        end_pose,
+                        vehicle,
+                        self.intermediate_circles_choice_sequence,
+                        self.exit_trajectory_start,
+                        self.exit_trajectory_end
+                    )
+            elif len(corridors) > 2:
+                with Timer() as timer:
+                    trajectory = compute_trajectory_unicycle_multiple_corridors_core(
+                    corridors,
+                    start_pose,
+                    end_pose,
+                    vehicle,
+                    self.intermediate_circles_choice_sequence,
+                    self.inside_first_circle,
+                    self.inside_last_circle,
+                )
+            elif len(corridors) == 1:
+                raise NotImplementedError(
+                    "Analytical unicycle trajectory computation is not implemented for one corridor."
+                )
+            self.comp_time_analytical_sol = timer()
+
+
+        
         return trajectory
     
 
@@ -459,7 +539,7 @@ class MotionPlanner:
                     start_pose,
                     end_pose,
                     vehicle,
-                    self.intermediate_circles,
+                    self.intermediate_circles_choice_sequence,
                 )
         elif len(corridors) > 2:
             with Timer() as timer:

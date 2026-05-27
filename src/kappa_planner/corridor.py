@@ -2,6 +2,8 @@ import numpy as np
 from .helpers.geometry_operations import wrapPositiveAngle, efficient_sign
 from math import cos, sin, pi, sqrt, atan2
 import warnings
+from .geometry import Point
+
 
 class CorridorWorld:
     """Corridor object for representation of free space between obstacles.
@@ -297,5 +299,41 @@ class CorridorWorld:
                              label=self.label,
                              number=self.number)
 
+    def closest_point_on_corridor(self, point):
+        """
+        Return the closest point on or inside the rectangular corridor
+        to an external point.
+
+        :param point: Point-like object with x/y or index access
+        :return: Point
+        """
+        px, py = point[0], point[1]
+        cx, cy = self.center[0], self.center[1]
+
+        # Corridor longitudinal direction
+        ux = cos(self.tilt)
+        uy = sin(self.tilt)
+
+        # Perpendicular direction across corridor width
+        vx = -sin(self.tilt)
+        vy = cos(self.tilt)
+
+        # Vector from corridor center to point
+        dx = px - cx
+        dy = py - cy
+
+        # Coordinates in corridor-local frame
+        local_forward = dx * ux + dy * uy
+        local_side = dx * vx + dy * vy
+
+        # Clamp to rectangle bounds
+        local_forward = max(-self.height * 0.5, min(self.height * 0.5, local_forward))
+        local_side = max(-self.width * 0.5, min(self.width * 0.5, local_side))
+
+        # Transform back to world frame
+        closest_x = cx + local_forward * ux + local_side * vx
+        closest_y = cy + local_forward * uy + local_side * vy
+
+        return Point(closest_x, closest_y)
 
 
