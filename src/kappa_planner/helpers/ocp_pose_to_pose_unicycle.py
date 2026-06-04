@@ -108,7 +108,7 @@ def compute_ocp_pose_to_pose_trajectory(
         "error_on_fail": False,
         "ipopt": {
             "linear_solver": "mumps",
-            "print_level": 5,
+            "print_level": 0,
             "tol": 1e-6,
             "sb": "yes",
         },
@@ -179,7 +179,7 @@ def classify_ocp_primitive(
     omega,
     v_max,
     omega_max,
-    v_zero_tol=0.05,
+    v_zero_tol=0.10,
     omega_zero_tol=0.30,
 ):
     v_eps = v_zero_tol * v_max

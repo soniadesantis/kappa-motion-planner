@@ -10,8 +10,117 @@ def print_case(case):
         f"thetaf={case['thetaf_deg']:6.1f} deg"
     )
 
+    print("-" * 60)
+
+    # ------------------------------------------------------------------
+    # Analytical solution
+    # ------------------------------------------------------------------
+
     print(f"  Best analytical : {case['best_analytical_name']}")
     print(f"  Analytical time : {case['best_analytical_time']:.6f} s")
+
+    if case.get("analytical_solve_time") is not None:
+        print(
+            f"  Analytical solve: "
+            f"{case['analytical_solve_time']:.6f} s"
+        )
+
+    if case.get("best_analytical_sequence") is not None:
+
+        print(
+            f"  Analytical seq  : "
+            f"{' - '.join(case['best_analytical_sequence'])}"
+        )
+
+    # ------------------------------------------------------------------
+    # Arc / segment statistics
+    # ------------------------------------------------------------------
+
+    arc1 = case.get("arc1_length")
+    arc2 = case.get("arc2_length")
+    segment = case.get("segment_length")
+
+    r1 = case.get("arc_segment_ratio_1")
+    r2 = case.get("arc_segment_ratio_2")
+
+    if (
+        arc1 is not None
+        and arc2 is not None
+        and segment is not None
+    ):
+
+        print(
+            f"  Arc lengths     : "
+            f"{arc1:.3f}, {arc2:.3f}"
+        )
+
+        print(
+            f"  Segment length  : "
+            f"{segment:.3f}"
+        )
+
+        if r1 is not None:
+            print(
+                f"  Segment/Arc r1  : "
+                f"{r1:.3f}"
+            )
+        else:
+            print(
+                "  Segment/Arc r1  : None"
+            )
+
+        if r2 is not None:
+            print(
+                f"  Segment/Arc r2  : "
+                f"{r2:.3f}"
+            )
+        else:
+            print(
+                "  Segment/Arc r2  : None"
+            )
+
+    elif (
+        r1 is not None
+        or r2 is not None
+    ):
+
+        if r1 is not None:
+            print(
+                f"  Segment/Arc r1  : "
+                f"{r1:.3f}"
+            )
+
+        if r2 is not None:
+            print(
+                f"  Segment/Arc r2  : "
+                f"{r2:.3f}"
+            )
+
+    # ------------------------------------------------------------------
+    # Primitive details
+    # ------------------------------------------------------------------
+
+    primitives = case.get("best_analytical_primitives")
+
+    if primitives is not None:
+
+        print(
+            f"  # primitives    : "
+            f"{len(primitives)}"
+        )
+
+        for primitive in primitives:
+
+            print(
+                f"      "
+                f"{primitive['label']:15s}"
+                f"  t={primitive['maneuver_time']:.3f}"
+                f"  l={primitive['path_length']:.3f}"
+            )
+
+    # ------------------------------------------------------------------
+    # OCP solution
+    # ------------------------------------------------------------------
 
     print(f"  OCP time        : {case['ocp_time']:.6f} s")
     print(f"  Difference      : {case['time_difference']:.6f} s")
@@ -22,7 +131,10 @@ def print_case(case):
         f"{' - '.join(case['ocp_sequence'])}"
     )
 
-    print(f"  OCP success     : {case['ocp_success']}")
+    print(
+        f"  OCP success     : "
+        f"{case['ocp_success']}"
+    )
 
 
 def direction_to_suffix(direction):
@@ -74,19 +186,73 @@ def sequences_match(analytical_sequence, ocp_sequence):
     return analytical_sequence == ocp_sequence
 
 
+def analytical_primitives_to_effective_sequence(
+    primitives,
+    time_tol=1e-6,
+):
+    sequence = []
+
+    for primitive in primitives:
+
+        if primitive["maneuver_time"] <= time_tol:
+            continue
+
+        label = primitive["label"]
+
+        if label == "turn on-the-spot":
+
+            turn_direction = primitive.get("turn_direction")
+
+            if turn_direction == 1:
+                sequence.append("SpinL")
+            elif turn_direction == -1:
+                sequence.append("SpinR")
+            else:
+                sequence.append("Spin")
+
+        elif label == "arc":
+
+            turn_direction = primitive.get("turn_direction")
+
+            if turn_direction == 1:
+                sequence.append("ArcL")
+            elif turn_direction == -1:
+                sequence.append("ArcR")
+            else:
+                sequence.append("Arc")
+
+        elif label == "segment":
+
+            sequence.append("Straight")
+
+        else:
+            sequence.append(label)
+
+    return sequence
+
+
 if __name__ == "__main__":
 
-    load_path = Path(
-        "/home/sonia/Projects/kappa-motion-planner/experiments/"
-        "pose2pose_unicycle/pose_to_pose_sweep_results_90x90.json"
-    )
+    RESULTS_FILENAME = "test_before_run.json"
+
+    current_dir = Path(__file__).resolve().parent
+
+    load_path = current_dir / "results" / RESULTS_FILENAME
 
     with open(load_path, "r") as f:
-        results = json.load(f)
+        data = json.load(f)
+
+    metadata = data["metadata"]
+    results = data["results"]
 
     print("\n" + "=" * 80)
     print("LOADED SWEEP RESULTS")
     print("=" * 80)
+
+    print("\nMETADATA")
+    print("-" * 80)
+    for key, value in metadata.items():
+        print(f"{key}: {value}")
 
     for case in results:
         print_case(case)
@@ -97,14 +263,18 @@ if __name__ == "__main__":
 
     successful_cases = [
         case for case in results
-        if case.get("ocp_success", False)
+        if case.get("success", False) and case.get("ocp_success", False)
     ]
+
+    # -------------------------------------------------------------------------
+    # Maximum absolute time difference
+    # -------------------------------------------------------------------------
 
     if successful_cases:
 
         worst_case = max(
             successful_cases,
-            key=lambda c: abs(c["time_difference"])
+            key=lambda c: abs(c["time_difference"]),
         )
 
         print("\n" + "=" * 80)
@@ -117,30 +287,38 @@ if __name__ == "__main__":
             f"thetaf={worst_case['thetaf_deg']:.1f} deg"
         )
 
-        print(
-            f"Analytical time : "
-            f"{worst_case['best_analytical_time']:.6f} s"
-        )
+        print(f"Analytical time : {worst_case['best_analytical_time']:.6f} s")
+        print(f"OCP time        : {worst_case['ocp_time']:.6f} s")
+        print(f"Difference      : {worst_case['time_difference']:.6f} s")
+        print(f"OCP sequence    : {' - '.join(worst_case['ocp_sequence'])}")
 
-        print(
-            f"OCP time        : "
-            f"{worst_case['ocp_time']:.6f} s"
-        )
+    else:
+        print("\nNo successful cases found.")
 
-        print(
-            f"Difference      : "
-            f"{worst_case['time_difference']:.6f} s"
-        )
+    # -------------------------------------------------------------------------
+    # Arc/segment ratio statistics
+    # -------------------------------------------------------------------------
 
-        print(
-            f"OCP sequence    : "
-            f"{' - '.join(worst_case['ocp_sequence'])}"
-        )
+    ratio_values = []
 
+    for case in successful_cases:
+
+        r1 = case.get("arc_segment_ratio_1")
+        r2 = case.get("arc_segment_ratio_2")
+
+        if r1 is not None:
+            ratio_values.append(
+                ("r1", r1, case)
+            )
+
+        if r2 is not None:
+            ratio_values.append(
+                ("r2", r2, case)
+            )
 
     # -------------------------------------------------------------------------
     # Largest negative time difference
-    # (OCP better than analytical)
+    # OCP better than analytical
     # -------------------------------------------------------------------------
 
     negative_cases = [
@@ -152,7 +330,7 @@ if __name__ == "__main__":
 
         best_ocp_case = min(
             negative_cases,
-            key=lambda c: c["time_difference"]
+            key=lambda c: c["time_difference"],
         )
 
         print("\n" + "=" * 80)
@@ -165,29 +343,58 @@ if __name__ == "__main__":
             f"thetaf={best_ocp_case['thetaf_deg']:.1f} deg"
         )
 
-        print(
-            f"Analytical time : "
-            f"{best_ocp_case['best_analytical_time']:.6f} s"
-        )
+        print(f"Analytical time : {best_ocp_case['best_analytical_time']:.6f} s")
+        print(f"OCP time        : {best_ocp_case['ocp_time']:.6f} s")
+        print(f"Difference      : {best_ocp_case['time_difference']:.6f} s")
+        print(f"OCP sequence    : {' - '.join(best_ocp_case['ocp_sequence'])}")
 
-        print(
-            f"OCP time        : "
-            f"{best_ocp_case['ocp_time']:.6f} s"
-        )
+    else:
+        print("\nNo negative time differences found.")
 
-        print(
-            f"Difference      : "
-            f"{best_ocp_case['time_difference']:.6f} s"
-        )
 
-        print(
-            f"OCP sequence    : "
-            f"{' - '.join(best_ocp_case['ocp_sequence'])}"
-        )
+    print("\n" + "=" * 80)
+    print("ARC / SEGMENT RATIO STATISTICS")
+    print("=" * 80)
+
+    if len(ratio_values) == 0:
+
+        print("No valid ratios found.")
 
     else:
 
-        print("\nNo negative time differences found.")
+        min_ratio_type, min_ratio, min_case = min(
+            ratio_values,
+            key=lambda x: x[1]
+        )
+
+        max_ratio_type, max_ratio, max_case = max(
+            ratio_values,
+            key=lambda x: x[1]
+        )
+
+        print(
+            f"Minimum ratio ({min_ratio_type}) : "
+            f"{min_ratio:.6f}"
+        )
+
+        print(
+            f"  Case {min_case['case_id']:02d}: "
+            f"theta0={min_case['theta0_deg']:.1f} deg, "
+            f"thetaf={min_case['thetaf_deg']:.1f} deg"
+        )
+
+        print()
+
+        print(
+            f"Maximum ratio ({max_ratio_type}) : "
+            f"{max_ratio:.6f}"
+        )
+
+        print(
+            f"  Case {max_case['case_id']:02d}: "
+            f"theta0={max_case['theta0_deg']:.1f} deg, "
+            f"thetaf={max_case['thetaf_deg']:.1f} deg"
+        )
 
 
     # -------------------------------------------------------------------------
@@ -196,7 +403,7 @@ if __name__ == "__main__":
 
     failed_cases = [
         case for case in results
-        if not case.get("ocp_success", False)
+        if not case.get("success", False) or not case.get("ocp_success", False)
     ]
 
     print("\n" + "=" * 80)
@@ -219,6 +426,9 @@ if __name__ == "__main__":
                 f"thetaf={case['thetaf_deg']:.1f} deg"
             )
 
+            print(f"  success     : {case.get('success', None)}")
+            print(f"  ocp_success : {case.get('ocp_success', None)}")
+
             if "error" in case:
                 print(f"  Error: {case['error']}")
 
@@ -229,10 +439,13 @@ if __name__ == "__main__":
 
     nonmatching_cases = []
 
+    time_tol = 1e-6
+
     for case in successful_cases:
 
-        analytical_sequence = analytical_name_to_sequence(
-            case["best_analytical_name"]
+        analytical_sequence = analytical_primitives_to_effective_sequence(
+            case["best_analytical_primitives"],
+            time_tol=time_tol,
         )
 
         ocp_sequence = case["ocp_sequence"]
@@ -241,7 +454,6 @@ if __name__ == "__main__":
 
             case_with_sequences = case.copy()
             case_with_sequences["analytical_sequence"] = analytical_sequence
-
             nonmatching_cases.append(case_with_sequences)
 
 
@@ -252,6 +464,7 @@ if __name__ == "__main__":
     n_matching = len(successful_cases) - len(nonmatching_cases)
     n_nonmatching = len(nonmatching_cases)
 
+    print(f"Time tolerance         : {time_tol:.1e} s")
     print(f"Matching structures    : {n_matching}")
     print(f"Nonmatching structures : {n_nonmatching}")
 
@@ -278,10 +491,7 @@ if __name__ == "__main__":
                     f"thetaf={case['thetaf_deg']:.1f} deg"
                 )
 
-                print(
-                    f"  Best analytical : "
-                    f"{case['best_analytical_name']}"
-                )
+                print(f"  Best analytical : {case['best_analytical_name']}")
 
                 print(
                     f"  Analytical seq  : "
@@ -293,10 +503,7 @@ if __name__ == "__main__":
                     f"{' - '.join(case['ocp_sequence'])}"
                 )
 
-                print(
-                    f"  Time difference : "
-                    f"{case['time_difference']:.6f} s"
-                )
+                print(f"  Time difference : {case['time_difference']:.6f} s")
 
     else:
 

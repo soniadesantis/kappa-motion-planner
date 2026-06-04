@@ -200,8 +200,8 @@ def compute_CSCT_trajectory(start_pose, end_pose, tau0, tauf, unicycle):
     # Later: implement the CSC-T trajectory type
     start_pose_rev = start_pose.reversed()
     end_pose_rev = end_pose.reversed()
-    tau0_rev = -tau0
-    tauf_rev = -tauf
+    tau0_rev = -tauf
+    tauf_rev = -tau0
     reversed_trajectory, total_time = compute_TCSC_trajectory(end_pose_rev, start_pose_rev, tau0_rev, tauf_rev, unicycle)
     [C1, S2, C3, T4] =invert_maneuvers(reversed_trajectory, t0 = 0)
     total_motion_time = C1.maneuver_time + S2.maneuver_time + C3.maneuver_time + T4.maneuver_time

@@ -184,14 +184,14 @@ def plot_all_trajectories_grid(trajectories, rows=4, cols=4):
 
 
 if __name__ == "__main__":
-    start_pose = Pose(Point(0, 0), 356 * pi / 180)
-    end_pose = Pose(Point(3, 6), 344 * pi / 180)
+    start_pose = Pose(Point(0, 0), 90 * pi / 180)
+    end_pose = Pose(Point(0, 5), 90 * pi / 180)
 
     ### Define Unicycle vehicle ###
     vehicle_width = 0.430
     vehicle_length = 0.430
-    vehicle_vmax = 0.5
-    vehicle_omegamax = 0.5
+    vehicle_vmax = 1
+    vehicle_omegamax = 1
 
     unicycle = Unicycle(
         state = [0,0,0],

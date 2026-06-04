@@ -1,5 +1,6 @@
 from math import pi, degrees
 import json
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -124,17 +125,115 @@ def print_case_result(
     print(f"  OCP sequence    : {sequence}")
 
 
+def compute_arc_segment_ratios(trajectory):
+
+    arcs = [
+        p for p in trajectory
+        if p.label.lower() == "arc"
+    ]
+
+    segments = [
+        p for p in trajectory
+        if p.label.lower() == "segment"
+    ]
+
+    if len(arcs) != 2 or len(segments) != 1:
+        return {
+            "r1": None,
+            "r2": None,
+        }
+
+    arc1 = arcs[0]
+    arc2 = arcs[1]
+    segment = segments[0]
+
+    r1 = (
+        segment.path_length / arc1.path_length
+        if arc1.path_length > 1e-12
+        else None
+    )
+
+    r2 = (
+        segment.path_length / arc2.path_length
+        if arc2.path_length > 1e-12
+        else None
+    )
+
+    return {
+        "arc1_length": arc1.path_length,
+        "segment_length": segment.path_length,
+        "arc2_length": arc2.path_length,
+        "r1": r1,
+        "r2": r2,
+    }
+
+
+def extract_analytical_primitive_info(trajectory):
+    """
+    Extract serializable information from an analytical trajectory.
+
+    Parameters
+    ----------
+    trajectory : list
+        List of motion primitive objects.
+
+    Returns
+    -------
+    list of dict
+        One dictionary per primitive.
+    """
+
+    primitives_info = []
+
+    for i, primitive in enumerate(trajectory, start=1):
+
+        primitive_info = {
+            "index": i,
+            "label": primitive.label,
+            "maneuver_time": float(primitive.maneuver_time),
+            "path_length": float(primitive.path_length),
+        }
+
+        # Optional but useful: save turn direction when available
+        if hasattr(primitive, "turn_direction"):
+            primitive_info["turn_direction"] = int(primitive.turn_direction)
+
+        # Optional: save angular amplitude for arcs and turns
+        if hasattr(primitive, "iota"):
+            primitive_info["angular_amplitude_rad"] = float(primitive.iota)
+            primitive_info["angular_amplitude_deg"] = float(degrees(primitive.iota))
+
+        elif hasattr(primitive, "delta_angle"):
+            primitive_info["angular_amplitude_rad"] = float(primitive.delta_angle)
+            primitive_info["angular_amplitude_deg"] = float(degrees(primitive.delta_angle))
+
+        # Optional: save start/end poses
+        if hasattr(primitive, "start_pose"):
+            primitive_info["start_pose"] = [
+                float(value) for value in primitive.start_pose
+            ]
+
+        if hasattr(primitive, "end_pose"):
+            primitive_info["end_pose"] = [
+                float(value) for value in primitive.end_pose
+            ]
+
+        primitives_info.append(primitive_info)
+
+    return primitives_info
+
+
 if __name__ == "__main__":
 
     # Fixed positions
     x0, y0 = 0.0, 0.0
-    xf, yf = 0.0, 10.0
+    xf, yf = 0.0, 5.0
 
     # Vehicle
     vehicle_width = 0.430
     vehicle_length = 0.430
-    vehicle_vmax = 0.5
-    vehicle_omegamax = 0.5
+    vehicle_vmax = 1
+    vehicle_omegamax = 1
 
     unicycle = Unicycle(
         state=[0, 0, 0],
@@ -153,12 +252,17 @@ if __name__ == "__main__":
 
     n_cases = n_angles * n_angles
     case_id = 0
+    N = 30
+    M = 4
+    analytical_initial_guess = True
 
     results = []
 
     print("\n" + "=" * 80)
     print("POSE-TO-POSE UNICYCLE SWEEP")
     print("=" * 80)
+
+    t0_simulation = time.perf_counter()
 
     for theta0 in start_angles:
         for thetaf in final_angles:
@@ -169,10 +273,25 @@ if __name__ == "__main__":
             end_pose = Pose(Point(xf, yf), thetaf)
 
             try:
+                t0 = time.perf_counter()
                 trajectories = compute_all_pose_to_pose_trajectories(
                     start_pose,
                     end_pose,
                     unicycle,
+                )
+                best_name, best_data = min(
+                    trajectories.items(),
+                    key=lambda item: item[1]["time"],
+                )
+
+                best_trajectory = best_data["trajectory"]
+                best_time = best_data["time"]
+                analytical_solve_time = time.perf_counter() - t0
+                best_analytical_primitives = extract_analytical_primitive_info(
+                    best_trajectory
+                )
+                ratios = compute_arc_segment_ratios(
+                    best_trajectory
                 )
 
             except ValueError as e:
@@ -182,25 +301,42 @@ if __name__ == "__main__":
                     f"thetaf={degrees(thetaf):6.1f} deg"
                 )
                 print(f"  Skipped: {e}")
+
                 results.append({
                     "case_id": case_id,
+                    "success": False,
+
+                    "x0": float(x0),
+                    "y0": float(y0),
+                    "xf": float(xf),
+                    "yf": float(yf),
+
                     "theta0_rad": float(theta0),
                     "thetaf_rad": float(thetaf),
                     "theta0_deg": float(degrees(theta0)),
                     "thetaf_deg": float(degrees(thetaf)),
-                    "success": False,
+
+                    "v_max": float(vehicle_vmax),
+                    "omega_max": float(vehicle_omegamax),
+                    "R": float(unicycle.max_radius),
+
+                    "N": N,
+                    "M": M,
+                    "analytical_initial_guess": analytical_initial_guess,
+                    "analytical_solve_time": None,
+                    "best_analytical_primitives": None,
+
+                    "arc_segment_ratio_1": None,
+                    "arc_segment_ratio_2": None,
+                    "arc1_length": None,
+                    "segment_length": None,
+                    "arc2_length": None,
+
+                    "ocp_success": False,
                     "error": str(e),
                 })
    
                 continue
-
-            best_name, best_data = min(
-                trajectories.items(),
-                key=lambda item: item[1]["time"],
-            )
-
-            best_trajectory = best_data["trajectory"]
-            best_time = best_data["time"]
 
             ocp_result = compute_ocp_pose_to_pose_trajectory(
                 start_pose,
@@ -208,7 +344,8 @@ if __name__ == "__main__":
                 unicycle,
                 analytical_initial_guess=best_trajectory,
                 T_guess=best_time,
-                N=30,
+                N=N,
+                M=M,
             )
 
             print_case_result(
@@ -223,42 +360,86 @@ if __name__ == "__main__":
 
             case_result = {
                 "case_id": case_id,
+                "success": True,
+
+                "x0": float(x0),
+                "y0": float(y0),
+                "xf": float(xf),
+                "yf": float(yf),
 
                 "theta0_rad": float(theta0),
                 "thetaf_rad": float(thetaf),
-
                 "theta0_deg": float(degrees(theta0)),
                 "thetaf_deg": float(degrees(thetaf)),
 
-                # Analytical
+                "v_max": float(vehicle_vmax),
+                "omega_max": float(vehicle_omegamax),
+                "R": float(unicycle.max_radius),
+
+                "N": N,
+                "M": M,
+                "analytical_initial_guess": analytical_initial_guess,
+
                 "best_analytical_name": best_name,
                 "best_analytical_time": float(best_time),
+                "analytical_solve_time": float(analytical_solve_time),
 
-                # OCP
                 "ocp_time": float(ocp_result["time"]),
                 "ocp_solve_time": float(ocp_result["solve_time"]),
                 "ocp_sequence": ocp_result["sequence"],
 
-                # Comparison
-                "time_difference": float(
-                    ocp_result["time"] - best_time
-                ),
-
-                # Success
+                "time_difference": float(ocp_result["time"] - best_time),
                 "ocp_success": bool(ocp_result["success"]),
+                "best_analytical_primitives": best_analytical_primitives,
+                "arc_segment_ratio_1": ratios["r1"],
+                "arc_segment_ratio_2": ratios["r2"],
+                "arc1_length": ratios["arc1_length"],
+                "segment_length": ratios["segment_length"],
+                "arc2_length": ratios["arc2_length"],
             }
 
             results.append(case_result)
 
+    total_simulation_time = time.perf_counter() - t0_simulation
 
-    save_path = Path(
-        "/home/sonia/Projects/kappa-motion-planner/experiments/pose2pose_unicycle/pose_to_pose_sweep_results.json"
-    )
+    print("\n" + "=" * 80)
+    print("SWEEP COMPLETED")
+    print("=" * 80)
 
-    save_path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Total simulation time: {total_simulation_time:.3f} s")
+
+    metadata = {
+        "sweep_name": "orientation_sweep",
+        "description": "Fixed start and final positions. Vary theta0 and thetaf.",
+        "x0": x0,
+        "y0": y0,
+        "xf": xf,
+        "yf": yf,
+        "v_max": vehicle_vmax,
+        "omega_max": vehicle_omegamax,
+        "R": unicycle.max_radius,
+        "n_angles": n_angles,
+        "N": N,
+        "analytical_initial_guess": analytical_initial_guess,
+        "total_simulation_time": total_simulation_time,
+    }
+
+    RESULTS_FILENAME = "test_before_run.json"
+
+    current_dir = Path(__file__).resolve().parent
+
+    results_dir = current_dir / "results"
+    results_dir.mkdir(exist_ok=True)
+
+    save_path = results_dir / RESULTS_FILENAME
+
+    output = {
+        "metadata": metadata,
+        "results": results,
+    }
 
     with open(save_path, "w") as f:
-        json.dump(results, f, indent=4)
+        json.dump(output, f, indent=4)
 
     print(f"Results saved to: {save_path}")
 
