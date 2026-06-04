@@ -159,30 +159,25 @@ def compute_arc_segment_ratios(trajectory):
         else None
     )
 
+    if len(arcs) != 2 or len(segments) != 1:
+        return {
+            "arc1_length": None,
+            "segment_length": None,
+            "arc2_length": None,
+            "r1": None,
+            "r2": None,
+        }
+
     return {
-        "arc1_length": arc1.path_length,
-        "segment_length": segment.path_length,
-        "arc2_length": arc2.path_length,
-        "r1": r1,
-        "r2": r2,
+        "arc1_length": float(arc1.path_length),
+        "segment_length": float(segment.path_length),
+        "arc2_length": float(arc2.path_length),
+        "r1": float(r1) if r1 is not None else None,
+        "r2": float(r2) if r2 is not None else None,
     }
 
 
 def extract_analytical_primitive_info(trajectory):
-    """
-    Extract serializable information from an analytical trajectory.
-
-    Parameters
-    ----------
-    trajectory : list
-        List of motion primitive objects.
-
-    Returns
-    -------
-    list of dict
-        One dictionary per primitive.
-    """
-
     primitives_info = []
 
     for i, primitive in enumerate(trajectory, start=1):
@@ -194,11 +189,9 @@ def extract_analytical_primitive_info(trajectory):
             "path_length": float(primitive.path_length),
         }
 
-        # Optional but useful: save turn direction when available
         if hasattr(primitive, "turn_direction"):
             primitive_info["turn_direction"] = int(primitive.turn_direction)
 
-        # Optional: save angular amplitude for arcs and turns
         if hasattr(primitive, "iota"):
             primitive_info["angular_amplitude_rad"] = float(primitive.iota)
             primitive_info["angular_amplitude_deg"] = float(degrees(primitive.iota))
@@ -207,7 +200,6 @@ def extract_analytical_primitive_info(trajectory):
             primitive_info["angular_amplitude_rad"] = float(primitive.delta_angle)
             primitive_info["angular_amplitude_deg"] = float(degrees(primitive.delta_angle))
 
-        # Optional: save start/end poses
         if hasattr(primitive, "start_pose"):
             primitive_info["start_pose"] = [
                 float(value) for value in primitive.start_pose
@@ -223,35 +215,207 @@ def extract_analytical_primitive_info(trajectory):
     return primitives_info
 
 
+def generate_sweep_cases(sweep_id):
+    """
+    Return cases and metadata for the selected sweep.
+
+    Each case contains:
+        x0, y0, theta0, xf, yf, thetaf, v_max, omega_max
+    """
+
+    cases = []
+
+    if sweep_id == 1:
+        # Sweep 1: fixed positions, fixed R, vary theta0/thetaf
+        x0, y0 = 0.0, 0.0
+        xf, yf = 0.0, 5.0
+
+        v_max = 1.0
+        omega_max = 1.0
+
+        n_angles = 4
+        start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+        final_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+
+        for theta0 in start_angles:
+            for thetaf in final_angles:
+                cases.append({
+                    "x0": x0,
+                    "y0": y0,
+                    "xf": xf,
+                    "yf": yf,
+                    "theta0": theta0,
+                    "thetaf": thetaf,
+                    "v_max": v_max,
+                    "omega_max": omega_max,
+                })
+
+        metadata = {
+            "sweep_id": 1,
+            "sweep_name": "orientation_sweep",
+            "description": "Fixed positions and R. Vary theta0 and thetaf.",
+            "n_angles": n_angles,
+            "D_over_R": 5.0,
+        }
+
+    elif sweep_id == 2:
+        # Sweep 2: vary D/R, coarser angle grid
+        x0, y0 = 0.0, 0.0
+
+        v_max = 1.0
+        omega_max = 1.0
+        R = v_max / omega_max
+
+        d_over_r_values = [5.0, 7.5, 10.0, 15.0, 20.0]
+
+        n_angles = 30
+        start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+        final_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+
+        for d_over_r in d_over_r_values:
+            xf = 0.0
+            yf = d_over_r * R
+
+            for theta0 in start_angles:
+                for thetaf in final_angles:
+                    cases.append({
+                        "x0": x0,
+                        "y0": y0,
+                        "xf": xf,
+                        "yf": yf,
+                        "theta0": theta0,
+                        "thetaf": thetaf,
+                        "v_max": v_max,
+                        "omega_max": omega_max,
+                    })
+
+        metadata = {
+            "sweep_id": 2,
+            "sweep_name": "distance_over_radius_sweep",
+            "description": "Vary D/R and orientations.",
+            "d_over_r_values": d_over_r_values,
+            "n_angles": n_angles,
+        }
+
+    elif sweep_id == 3:
+        # Sweep 3: vary final point, enforce D > 4R
+        x0, y0 = 0.0, 0.0
+
+        v_max = 1.0
+        omega_max = 1.0
+        R = v_max / omega_max
+
+        n_positions = 15
+        x_values = np.linspace(-10.0, 10.0, n_positions)
+        y_values = np.linspace(-10.0, 10.0, n_positions)
+
+        n_angles = 16
+        start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+        final_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+
+        for xf in x_values:
+            for yf in y_values:
+
+                D = np.hypot(xf - x0, yf - y0)
+
+                if D <= 4.0 * R:
+                    continue
+
+                for theta0 in start_angles:
+                    for thetaf in final_angles:
+                        cases.append({
+                            "x0": x0,
+                            "y0": y0,
+                            "xf": float(xf),
+                            "yf": float(yf),
+                            "theta0": theta0,
+                            "thetaf": thetaf,
+                            "v_max": v_max,
+                            "omega_max": omega_max,
+                        })
+
+        metadata = {
+            "sweep_id": 3,
+            "sweep_name": "final_position_sweep",
+            "description": "Vary final point and orientations, enforcing D > 4R.",
+            "n_positions_per_axis": n_positions,
+            "n_angles": n_angles,
+            "distance_assumption": "D > 4R",
+        }
+
+    elif sweep_id == 4:
+        # Sweep 4: Sobol sampling
+        from scipy.stats import qmc
+
+        x0, y0 = 0.0, 0.0
+
+        n_samples_power = 12
+        n_samples = 2 ** n_samples_power
+
+        sampler = qmc.Sobol(d=5, scramble=True, seed=1)
+        samples = sampler.random_base2(m=n_samples_power)
+
+        x_min, x_max = -15.0, 15.0
+        y_min, y_max = -15.0, 15.0
+        r_min, r_max = 0.5, 2.0
+
+        v_max = 1.0
+
+        for sample in samples:
+            sx, sy, stheta0, sthetaf, sr = sample
+
+            xf = x_min + sx * (x_max - x_min)
+            yf = y_min + sy * (y_max - y_min)
+
+            theta0 = 2 * pi * stheta0
+            thetaf = 2 * pi * sthetaf
+
+            R = r_min + sr * (r_max - r_min)
+            omega_max = v_max / R
+
+            D = np.hypot(xf - x0, yf - y0)
+
+            if D <= 4.0 * R:
+                continue
+
+            cases.append({
+                "x0": x0,
+                "y0": y0,
+                "xf": float(xf),
+                "yf": float(yf),
+                "theta0": theta0,
+                "thetaf": thetaf,
+                "v_max": v_max,
+                "omega_max": omega_max,
+            })
+
+        metadata = {
+            "sweep_id": 4,
+            "sweep_name": "sobol_sweep",
+            "description": "Sobol sampling over final point, theta0, thetaf, and R.",
+            "n_samples_requested": n_samples,
+            "n_samples_valid": len(cases),
+            "xf_range": [x_min, x_max],
+            "yf_range": [y_min, y_max],
+            "R_range": [r_min, r_max],
+            "distance_assumption": "D > 4R",
+        }
+
+    else:
+        raise ValueError(f"Unknown sweep_id: {sweep_id}")
+
+    return cases, metadata
+
+
 if __name__ == "__main__":
 
-    # Fixed positions
-    x0, y0 = 0.0, 0.0
-    xf, yf = 0.0, 5.0
+    sweep_id = 1   # choose 1, 2, 3, or 4
 
-    # Vehicle
-    vehicle_width = 0.430
-    vehicle_length = 0.430
-    vehicle_vmax = 1
-    vehicle_omegamax = 1
+    cases, metadata = generate_sweep_cases(sweep_id)
 
-    unicycle = Unicycle(
-        state=[0, 0, 0],
-        width=vehicle_width,
-        length=vehicle_length,
-        v_max=vehicle_vmax,
-        v_min=0,
-        omega_max=vehicle_omegamax,
-        omega_min=-vehicle_omegamax,
-    )
-
-    # Angle sweep
-    n_angles = 4
-    start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
-    final_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
-
-    n_cases = n_angles * n_angles
+    n_cases = len(cases)
     case_id = 0
+
     N = 30
     M = 4
     analytical_initial_guess = True
@@ -264,103 +428,66 @@ if __name__ == "__main__":
 
     t0_simulation = time.perf_counter()
 
-    for theta0 in start_angles:
-        for thetaf in final_angles:
+    for case in cases:
 
-            case_id += 1
+        case_id += 1
 
-            start_pose = Pose(Point(x0, y0), theta0)
-            end_pose = Pose(Point(xf, yf), thetaf)
+        x0 = case["x0"]
+        y0 = case["y0"]
+        xf = case["xf"]
+        yf = case["yf"]
+        theta0 = case["theta0"]
+        thetaf = case["thetaf"]
 
-            try:
-                t0 = time.perf_counter()
-                trajectories = compute_all_pose_to_pose_trajectories(
-                    start_pose,
-                    end_pose,
-                    unicycle,
-                )
-                best_name, best_data = min(
-                    trajectories.items(),
-                    key=lambda item: item[1]["time"],
-                )
+        vehicle_vmax = case["v_max"]
+        vehicle_omegamax = case["omega_max"]
 
-                best_trajectory = best_data["trajectory"]
-                best_time = best_data["time"]
-                analytical_solve_time = time.perf_counter() - t0
-                best_analytical_primitives = extract_analytical_primitive_info(
-                    best_trajectory
-                )
-                ratios = compute_arc_segment_ratios(
-                    best_trajectory
-                )
+        unicycle = Unicycle(
+            state=[0, 0, 0],
+            width=0.430,
+            length=0.430,
+            v_max=vehicle_vmax,
+            v_min=0,
+            omega_max=vehicle_omegamax,
+            omega_min=-vehicle_omegamax,
+        )
 
-            except ValueError as e:
-                print(
-                    f"\nCase {case_id:02d}/{n_cases}: "
-                    f"theta0={degrees(theta0):6.1f} deg, "
-                    f"thetaf={degrees(thetaf):6.1f} deg"
-                )
-                print(f"  Skipped: {e}")
+        start_pose = Pose(Point(x0, y0), theta0)
+        end_pose = Pose(Point(xf, yf), thetaf)
 
-                results.append({
-                    "case_id": case_id,
-                    "success": False,
-
-                    "x0": float(x0),
-                    "y0": float(y0),
-                    "xf": float(xf),
-                    "yf": float(yf),
-
-                    "theta0_rad": float(theta0),
-                    "thetaf_rad": float(thetaf),
-                    "theta0_deg": float(degrees(theta0)),
-                    "thetaf_deg": float(degrees(thetaf)),
-
-                    "v_max": float(vehicle_vmax),
-                    "omega_max": float(vehicle_omegamax),
-                    "R": float(unicycle.max_radius),
-
-                    "N": N,
-                    "M": M,
-                    "analytical_initial_guess": analytical_initial_guess,
-                    "analytical_solve_time": None,
-                    "best_analytical_primitives": None,
-
-                    "arc_segment_ratio_1": None,
-                    "arc_segment_ratio_2": None,
-                    "arc1_length": None,
-                    "segment_length": None,
-                    "arc2_length": None,
-
-                    "ocp_success": False,
-                    "error": str(e),
-                })
-   
-                continue
-
-            ocp_result = compute_ocp_pose_to_pose_trajectory(
+        try:
+            t0 = time.perf_counter()
+            trajectories = compute_all_pose_to_pose_trajectories(
                 start_pose,
                 end_pose,
                 unicycle,
-                analytical_initial_guess=best_trajectory,
-                T_guess=best_time,
-                N=N,
-                M=M,
+            )
+            best_name, best_data = min(
+                trajectories.items(),
+                key=lambda item: item[1]["time"],
             )
 
-            print_case_result(
-                case_id,
-                n_cases,
-                theta0,
-                thetaf,
-                best_name,
-                best_time,
-                ocp_result,
+            best_trajectory = best_data["trajectory"]
+            best_time = best_data["time"]
+            analytical_solve_time = time.perf_counter() - t0
+            best_analytical_primitives = extract_analytical_primitive_info(
+                best_trajectory
+            )
+            ratios = compute_arc_segment_ratios(
+                best_trajectory
             )
 
-            case_result = {
+        except ValueError as e:
+            print(
+                f"\nCase {case_id:02d}/{n_cases}: "
+                f"theta0={degrees(theta0):6.1f} deg, "
+                f"thetaf={degrees(thetaf):6.1f} deg"
+            )
+            print(f"  Skipped: {e}")
+
+            results.append({
                 "case_id": case_id,
-                "success": True,
+                "success": False,
 
                 "x0": float(x0),
                 "y0": float(y0),
@@ -379,26 +506,82 @@ if __name__ == "__main__":
                 "N": N,
                 "M": M,
                 "analytical_initial_guess": analytical_initial_guess,
+                "analytical_solve_time": None,
+                "best_analytical_primitives": None,
 
-                "best_analytical_name": best_name,
-                "best_analytical_time": float(best_time),
-                "analytical_solve_time": float(analytical_solve_time),
+                "arc_segment_ratio_1": None,
+                "arc_segment_ratio_2": None,
+                "arc1_length": None,
+                "segment_length": None,
+                "arc2_length": None,
 
-                "ocp_time": float(ocp_result["time"]),
-                "ocp_solve_time": float(ocp_result["solve_time"]),
-                "ocp_sequence": ocp_result["sequence"],
+                "ocp_success": False,
+                "error": str(e),
+            })
 
-                "time_difference": float(ocp_result["time"] - best_time),
-                "ocp_success": bool(ocp_result["success"]),
-                "best_analytical_primitives": best_analytical_primitives,
-                "arc_segment_ratio_1": ratios["r1"],
-                "arc_segment_ratio_2": ratios["r2"],
-                "arc1_length": ratios["arc1_length"],
-                "segment_length": ratios["segment_length"],
-                "arc2_length": ratios["arc2_length"],
-            }
+            continue
 
-            results.append(case_result)
+        ocp_result = compute_ocp_pose_to_pose_trajectory(
+            start_pose,
+            end_pose,
+            unicycle,
+            analytical_initial_guess=best_trajectory,
+            T_guess=best_time,
+            N=N,
+            M=M,
+        )
+
+        print_case_result(
+            case_id,
+            n_cases,
+            theta0,
+            thetaf,
+            best_name,
+            best_time,
+            ocp_result,
+        )
+
+        case_result = {
+            "case_id": case_id,
+            "success": True,
+
+            "x0": float(x0),
+            "y0": float(y0),
+            "xf": float(xf),
+            "yf": float(yf),
+
+            "theta0_rad": float(theta0),
+            "thetaf_rad": float(thetaf),
+            "theta0_deg": float(degrees(theta0)),
+            "thetaf_deg": float(degrees(thetaf)),
+
+            "v_max": float(vehicle_vmax),
+            "omega_max": float(vehicle_omegamax),
+            "R": float(unicycle.max_radius),
+
+            "N": N,
+            "M": M,
+            "analytical_initial_guess": analytical_initial_guess,
+
+            "best_analytical_name": best_name,
+            "best_analytical_time": float(best_time),
+            "analytical_solve_time": float(analytical_solve_time),
+
+            "ocp_time": float(ocp_result["time"]),
+            "ocp_solve_time": float(ocp_result["solve_time"]),
+            "ocp_sequence": ocp_result["sequence"],
+
+            "time_difference": float(ocp_result["time"] - best_time),
+            "ocp_success": bool(ocp_result["success"]),
+            "best_analytical_primitives": best_analytical_primitives,
+            "arc_segment_ratio_1": ratios["r1"],
+            "arc_segment_ratio_2": ratios["r2"],
+            "arc1_length": ratios["arc1_length"],
+            "segment_length": ratios["segment_length"],
+            "arc2_length": ratios["arc2_length"],
+        }
+
+        results.append(case_result)
 
     total_simulation_time = time.perf_counter() - t0_simulation
 
@@ -407,24 +590,15 @@ if __name__ == "__main__":
     print("=" * 80)
 
     print(f"Total simulation time: {total_simulation_time:.3f} s")
-
-    metadata = {
-        "sweep_name": "orientation_sweep",
-        "description": "Fixed start and final positions. Vary theta0 and thetaf.",
-        "x0": x0,
-        "y0": y0,
-        "xf": xf,
-        "yf": yf,
-        "v_max": vehicle_vmax,
-        "omega_max": vehicle_omegamax,
-        "R": unicycle.max_radius,
-        "n_angles": n_angles,
+   
+    metadata.update({
         "N": N,
+        "M": M,
         "analytical_initial_guess": analytical_initial_guess,
         "total_simulation_time": total_simulation_time,
-    }
+    })
 
-    RESULTS_FILENAME = "test_before_run.json"
+    RESULTS_FILENAME = f"{metadata['sweep_name']}_test.json"
 
     current_dir = Path(__file__).resolve().parent
 

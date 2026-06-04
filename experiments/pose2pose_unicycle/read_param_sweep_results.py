@@ -233,7 +233,7 @@ def analytical_primitives_to_effective_sequence(
 
 if __name__ == "__main__":
 
-    RESULTS_FILENAME = "test_before_run.json"
+    RESULTS_FILENAME = "orientation_sweep_test.json"
 
     current_dir = Path(__file__).resolve().parent
 
