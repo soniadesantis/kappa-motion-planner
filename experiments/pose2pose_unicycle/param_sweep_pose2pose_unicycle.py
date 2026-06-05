@@ -266,7 +266,7 @@ def generate_sweep_cases(sweep_id):
         omega_max = 1.0
         R = v_max / omega_max
 
-        d_over_r_values = [5.0, 7.5, 10.0, 15.0, 20.0]
+        d_over_r_values = [5.0, 10.0, 15.0, 20.0]
 
         n_angles = 30
         start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
@@ -298,28 +298,47 @@ def generate_sweep_cases(sweep_id):
         }
 
     elif sweep_id == 3:
-        # Sweep 3: vary final point, enforce D > 4R
+        # Sweep 3: vary final point using polar coordinates,
+        # while enforcing D/R > 4.
+
         x0, y0 = 0.0, 0.0
 
         v_max = 1.0
         omega_max = 1.0
         R = v_max / omega_max
 
-        n_positions = 15
-        x_values = np.linspace(-10.0, 10.0, n_positions)
-        y_values = np.linspace(-10.0, 10.0, n_positions)
+        d_over_r_values = [5.0, 10.0, 15.0, 20.0]
 
-        n_angles = 16
-        start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
-        final_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
+        n_goal_angles = 16
+        goal_angles = np.linspace(
+            0.0,
+            2 * pi,
+            n_goal_angles,
+            endpoint=False,
+        )
 
-        for xf in x_values:
-            for yf in y_values:
+        n_angles = 12
+        start_angles = np.linspace(
+            0.0,
+            2 * pi,
+            n_angles,
+            endpoint=False,
+        )
+        final_angles = np.linspace(
+            0.0,
+            2 * pi,
+            n_angles,
+            endpoint=False,
+        )
 
-                D = np.hypot(xf - x0, yf - y0)
+        for d_over_r in d_over_r_values:
 
-                if D <= 4.0 * R:
-                    continue
+            D = d_over_r * R
+
+            for phi in goal_angles:
+
+                xf = x0 + D * np.cos(phi)
+                yf = y0 + D * np.sin(phi)
 
                 for theta0 in start_angles:
                     for thetaf in final_angles:
@@ -330,17 +349,27 @@ def generate_sweep_cases(sweep_id):
                             "yf": float(yf),
                             "theta0": theta0,
                             "thetaf": thetaf,
+                            "phi": float(phi),
+                            "phi_deg": float(np.degrees(phi)),
+                            "D": float(D),
+                            "D_over_R": float(d_over_r),
                             "v_max": v_max,
                             "omega_max": omega_max,
                         })
 
         metadata = {
             "sweep_id": 3,
-            "sweep_name": "final_position_sweep",
-            "description": "Vary final point and orientations, enforcing D > 4R.",
-            "n_positions_per_axis": n_positions,
+            "sweep_name": "polar_goal_position_sweep",
+            "description": (
+                "Vary final point using polar coordinates, together with "
+                "initial and final orientations."
+            ),
+            "d_over_r_values": d_over_r_values,
+            "n_goal_angles": n_goal_angles,
             "n_angles": n_angles,
-            "distance_assumption": "D > 4R",
+            "R": R,
+            "distance_assumption": "D/R > 4",
+            "n_cases": len(cases),
         }
 
     elif sweep_id == 4:
