@@ -266,9 +266,9 @@ def generate_sweep_cases(sweep_id):
         omega_max = 1.0
         R = v_max / omega_max
 
-        d_over_r_values = [5.0, 10.0, 15.0, 20.0]
+        d_over_r_values = [10.0, 15.0, 20.0]
 
-        n_angles = 30
+        n_angles = 50
         start_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
         final_angles = np.linspace(0.0, 2 * pi, n_angles, endpoint=False)
 
