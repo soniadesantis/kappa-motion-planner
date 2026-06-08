@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import numpy as np
 
 
 def print_case(case):
@@ -233,7 +234,7 @@ def analytical_primitives_to_effective_sequence(
 
 if __name__ == "__main__":
 
-    RESULTS_FILENAME = "orientation_sweep_test.json"
+    RESULTS_FILENAME = "orientation_sweep_test30.json"
 
     current_dir = Path(__file__).resolve().parent
 
@@ -508,3 +509,93 @@ if __name__ == "__main__":
     else:
 
         print("\nAll structures match.")
+
+    # -------------------------------------------------------------------------
+    # Relative time and time difference statistics
+    # -------------------------------------------------------------------------
+
+    relative_differences = [
+        100.0 * abs(case["time_difference"]) / case["ocp_time"]
+        for case in successful_cases
+        if case["ocp_time"] > 1e-12
+    ]
+    abs_differences = [
+        abs(case["time_difference"])
+        for case in successful_cases
+    ]
+
+    relative_differences = [
+        100.0 * abs(case["time_difference"]) / case["ocp_time"]
+        for case in successful_cases
+        if case["ocp_time"] > 1e-12
+    ]
+
+    if len(abs_differences) > 0:
+
+        mean_diff = sum(abs_differences) / len(abs_differences)
+        median_diff = float(np.median(abs_differences))
+        max_diff = max(abs_differences)
+
+        mean_rel_diff = float(np.mean(relative_differences))
+        median_rel_diff = float(np.median(relative_differences))
+        max_rel_diff = float(np.max(relative_differences))
+
+        print("\n" + "=" * 80)
+        print("TIME DIFFERENCE STATISTICS")
+        print("=" * 80)
+
+        print(f"Mean   |ΔT| : {mean_diff:.6e} s")
+        print(f"Median |ΔT| : {median_diff:.6e} s")
+        print(f"Maximum|ΔT| : {max_diff:.6e} s")
+
+        print()
+
+        print(f"Mean   relative error : {mean_rel_diff:.6e} %")
+        print(f"Median relative error : {median_rel_diff:.6e} %")
+        print(f"Maximum relative error: {max_rel_diff:.6e} %")
+
+
+    # -------------------------------------------------------------------------
+    # Computation time statistics
+    # -------------------------------------------------------------------------
+
+    analytical_solve_times = [
+        case["analytical_solve_time"]
+        for case in successful_cases
+        if case.get("analytical_solve_time") is not None
+    ]
+
+    ocp_solve_times = [
+        case["ocp_solve_time"]
+        for case in successful_cases
+        if case.get("ocp_solve_time") is not None
+    ]
+
+    if len(analytical_solve_times) > 0 and len(ocp_solve_times) > 0:
+
+        analytical_solve_times = np.array(analytical_solve_times)
+        ocp_solve_times = np.array(ocp_solve_times)
+
+        print("\n" + "=" * 80)
+        print("COMPUTATION TIME STATISTICS")
+        print("=" * 80)
+
+        print("\nAnalytical planner")
+        print("-" * 80)
+        print(f"Mean solve time   : {np.mean(analytical_solve_times):.6e} s")
+        print(f"Median solve time : {np.median(analytical_solve_times):.6e} s")
+        print(f"Maximum solve time: {np.max(analytical_solve_times):.6e} s")
+
+        print("\nOptimal control solver")
+        print("-" * 80)
+        print(f"Mean solve time   : {np.mean(ocp_solve_times):.6e} s")
+        print(f"Median solve time : {np.median(ocp_solve_times):.6e} s")
+        print(f"Maximum solve time: {np.max(ocp_solve_times):.6e} s")
+
+        speedup_mean = np.mean(ocp_solve_times) / np.mean(analytical_solve_times)
+        speedup_median = np.median(ocp_solve_times) / np.median(analytical_solve_times)
+
+        print("\nRelative speedup")
+        print("-" * 80)
+        print(f"Mean OCP / analytical   : {speedup_mean:.3e}")
+        print(f"Median OCP / analytical : {speedup_median:.3e}")
