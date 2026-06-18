@@ -1,6 +1,7 @@
 ## Geometry.py
 ## Geometrical entities for the Arena package
 from math import cos, sin, pi, sqrt, atan2
+import numpy as np
 
 class Point:
     def __init__(self, x, y):
@@ -115,12 +116,24 @@ class Pose:
             theta=theta_reversed,
         )
 
-
 class IntermediateCircle(Circle):
-    """A Circle used in the algorithm, associated with a corner point and a turn direction."""
+    """A circle used in the algorithm, associated with a corner point and a turn direction."""
 
-
-    def __init__(self, center, radius, corner_point, turn_direction, index = None, s_max = None):
+    def __init__(
+        self,
+        center,
+        radius,
+        corner_point,
+        turn_direction,
+        index=None,
+        s_max=None,
+        edge_pair=None,
+        door_point=None,
+        door_type=None,
+        start_angle_arc=None,
+        rho=None,
+        merged = False,
+    ):
         super().__init__(center=center, radius=radius)
 
         if turn_direction not in (-1, 0, 1):
@@ -141,6 +154,42 @@ class IntermediateCircle(Circle):
         self.s = 0
         self.s_max = 10000 if s_max is None else s_max  # Optional limit on how far along the bisector we can go
         self.number_of_shifts = 0
+
+        self.start_angle_arc = start_angle_arc
+        self.rho = rho
+
+        if self.start_angle_arc is not None and rho is not None:
+            self.end_angle_arc = self.start_angle_arc - turn_direction * pi / 2
+
+            n_arc_samples = 50
+
+            angles = np.linspace(
+                self.start_angle_arc,
+                self.end_angle_arc,
+                n_arc_samples
+            )
+
+            self.arc_coordinates = [
+                Point(
+                    self.corner_point.x + rho * cos(angle),
+                    self.corner_point.y + rho * sin(angle)
+                )
+                for angle in angles
+            ]
+        else:
+            self.end_angle_arc = None
+            self.arc_coordinates = None
+            
+        self.edge_pair = edge_pair
+        if self.turn_direction == 1: 
+            self.door_point_left = corner_point
+            self.door_point_right = door_point
+        else: 
+            self.door_point_right = corner_point
+            self.door_point_left = door_point
+
+        self.door_type = door_type
+        self.merged = merged
 
     def update_s(self, s):
         """Update parameter s and move the circle center along the bisector."""

@@ -54,7 +54,33 @@ class CorridorWorld:
         self.W = self._init_W_from_width_height_tilt() # edge parameter vectors
         self.wf, self.wr, self.wb, self.wl = self.W.T # individual edge parameter vectors
         self.corners = self.get_corners()
+        self.outward_normals = self._init_outward_normals()
+
         
+    def _init_outward_normals(self):
+        """Return outward unit normals for the corridor edges.
+
+        Edge order:
+            FWD = 0
+            RGT = 1
+            BCK = 2
+            LFT = 3
+        """
+
+        ux = cos(self.tilt)
+        uy = sin(self.tilt)
+
+        # Right normal to the forward direction
+        rx = sin(self.tilt)
+        ry = -cos(self.tilt)
+
+        return {
+            self.FWD: np.array([ux, uy]),
+            self.RGT: np.array([rx, ry]),
+            self.BCK: np.array([-ux, -uy]),
+            self.LFT: np.array([-rx, -ry]),
+        }
+     
     def __str__(self):
         """Return a string representation of the corridor."""
         parts = ["Corridor"]

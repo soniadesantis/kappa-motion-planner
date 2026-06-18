@@ -10,7 +10,12 @@ from .intermediate_circle_solve_overlap import (
     compute_circle_through_two_points_with_radius,
     build_merged_intermediate_circle,
     intermediate_circle_center_at_s,
+    build_circle_overlap_opposite_turn_direction,
+    compute_consecutive_overlap_pairs,
+    extract_overlap_clusters,
+    classify_overlap_cluster,
 )
+from .corridor_sequence_validity import validate_corridor_sequence
 from .inputs_check import compute_min_width_s_max_corridor_pair
 from .plot_helpers import plot_corridors
 from .geometry_operations import (
@@ -20,7 +25,7 @@ from .geometry_operations import (
     efficient_sign,
     compute_distance_two_points
 )
-from math import sqrt, atan2, cos, sin, asin, tau
+from math import sqrt, atan2, cos, sin, pi
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -30,6 +35,125 @@ import numpy as np
 import numpy as np
 import matplotlib.pyplot as plt
 
+# def solve_circles_overlap(
+#     circle_choices_sequence,
+#     corridor_sequence,
+#     vehicle,
+#     start_pose,
+#     end_pose,
+# ):
+#     """
+#     Resolve overlaps between consecutive selected intermediate circles.
+
+#     Strategy:
+#     1. First resolve overlaps between circles with the same turn direction.
+#        These cases are treated by direct replacement, when possible, or by
+#        merging the two circles.
+#     2. Then re-check the resulting sequence and resolve remaining overlaps
+#        between circles with opposite turn directions.
+
+#     For ambiguous choices, the preferred candidate is selected.
+#     """
+#     overlapping_pairs = compute_consecutive_overlap_pairs(circle_choices_sequence)
+
+#     clusters = extract_overlap_clusters(overlapping_pairs)
+
+#     print(clusters)
+
+#     circle_choices_sequence = solve_same_turn_overlaps(
+#         circle_choices_sequence,
+#         corridor_sequence,
+#         vehicle,
+#         start_pose,
+#         end_pose,
+#     )
+
+#     circle_choices_sequence = solve_opposite_turn_overlaps(
+#         circle_choices_sequence,
+#         corridor_sequence,
+#         vehicle,
+#         start_pose,
+#         end_pose,
+#     )
+
+#     return circle_choices_sequence
+
+
+# def solve_circles_overlap(
+#     circle_choices_sequence,
+#     corridor_sequence,
+#     vehicle,
+#     start_pose,
+#     end_pose,
+# ):
+#     while True:
+#         overlapping_pairs = compute_consecutive_overlap_pairs(
+#             circle_choices_sequence
+#         )
+
+#         clusters = extract_overlap_clusters(overlapping_pairs)
+
+#         if not clusters:
+#             return circle_choices_sequence
+
+#         # Solve one cluster at a time, then recompute everything.
+#         cluster = clusters[0]
+#         cluster_type = classify_overlap_cluster(cluster)
+
+#         print(
+#             f"Solving cluster {cluster['indices']} "
+#             f"of type {cluster_type}"
+#         )
+
+#         if cluster_type == "pair_same_turn":
+#             circle_choices_sequence = solve_pair_same_turn_cluster(
+#                 circle_choices_sequence,
+#                 corridor_sequence,
+#                 vehicle,
+#                 start_pose,
+#                 end_pose,
+#                 cluster,
+#             )
+
+#         # elif cluster_type == "pair_opposite_turn":
+#         #     circle_choices_sequence = solve_pair_opposite_turn_cluster(
+#         #         circle_choices_sequence,
+#         #         corridor_sequence,
+#         #         vehicle,
+#         #         start_pose,
+#         #         end_pose,
+#         #         cluster,
+#         #     )
+
+#         # elif cluster_type == "multi_same_turn":
+#         #     circle_choices_sequence = solve_multi_same_turn_cluster(
+#         #         circle_choices_sequence,
+#         #         corridor_sequence,
+#         #         vehicle,
+#         #         start_pose,
+#         #         end_pose,
+#         #         cluster,
+#         #     )
+
+#         # elif cluster_type == "multi_mixed_turn":
+#         #     circle_choices_sequence = solve_multi_mixed_turn_cluster(
+#         #         circle_choices_sequence,
+#         #         corridor_sequence,
+#         #         vehicle,
+#         #         start_pose,
+#         #         end_pose,
+#         #         cluster,
+#         #     )
+
+#         # else:
+#         #     raise ValueError(f"Unknown cluster type: {cluster_type}")
+#         else:
+#             print(
+#                 f"Stopping debug solver: cluster {cluster['indices']} "
+#                 f"has type {cluster_type}, which is not implemented yet."
+#             )
+#             return circle_choices_sequence
+
 
 def solve_circles_overlap(
     circle_choices_sequence,
@@ -37,58 +161,120 @@ def solve_circles_overlap(
     vehicle,
     start_pose,
     end_pose,
+    max_iterations=50,
+):
+    implemented_cluster_types = {
+        "pair_same_turn",
+        "pair_opposite_turn",
+    }
+
+    for iteration in range(max_iterations):
+        overlapping_pairs = compute_consecutive_overlap_pairs(
+            circle_choices_sequence
+        )
+
+        clusters = extract_overlap_clusters(overlapping_pairs)
+
+        if not clusters:
+            return circle_choices_sequence
+
+        print(f"\nIteration {iteration}")
+        print("Detected clusters:")
+
+        for cluster in clusters:
+            cluster_type = classify_overlap_cluster(cluster)
+            print(f"  {cluster['indices']} -> {cluster_type}")
+
+        solvable_cluster = None
+        solvable_cluster_type = None
+
+        for cluster in clusters:
+            cluster_type = classify_overlap_cluster(cluster)
+
+            if cluster_type in implemented_cluster_types:
+                solvable_cluster = cluster
+                solvable_cluster_type = cluster_type
+                break
+
+        if solvable_cluster is None:
+            print(
+                "No currently solvable clusters found. "
+                "Stopping debug solver."
+            )
+            return circle_choices_sequence
+
+        print(
+            f"Solving cluster {solvable_cluster['indices']} "
+            f"of type {solvable_cluster_type}"
+        )
+
+        if solvable_cluster_type == "pair_same_turn":
+            circle_choices_sequence = solve_pair_same_turn_cluster(
+                circle_choices_sequence,
+                corridor_sequence,
+                vehicle,
+                start_pose,
+                end_pose,
+                solvable_cluster,
+            )
+
+        elif solvable_cluster_type == "pair_opposite_turn":
+            circle_choices_sequence = solve_pair_opposite_turn_cluster(
+                circle_choices_sequence,
+                corridor_sequence,
+                vehicle,
+                start_pose,
+                end_pose,
+                solvable_cluster,
+            )
+
+    raise RuntimeError(
+        "Overlap solver reached max_iterations. "
+        "A solver may not be modifying the sequence."
+    )
+
+
+
+def solve_same_turn_overlaps(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
 ):
     """
-    Resolve overlaps between consecutive selected intermediate circles.
+    Resolve overlaps between consecutive selected circles with the same
+    turn direction.
 
-    For ambiguous choices, the preferred candidate is selected.
+    The function first tries to replace the two transitions with one direct
+    transition between the outer corridors. If this is not possible, it tries
+    to merge the two circles.
     """
 
     index = 0
 
     while index < len(circle_choices_sequence) - 1:
-
         choice1 = circle_choices_sequence[index]
         choice2 = circle_choices_sequence[index + 1]
 
         circle1 = select_preferred_circle(choice1)
         circle2 = select_preferred_circle(choice2)
 
-        status = overlap_status_for_intermediate_circles(
-            circle1,
-            circle2,
-        )
-
+        status = overlap_status_for_intermediate_circles(circle1, circle2)
         nominal_overlap = status["nominal_overlap"]
-        max_shift_overlap = status["max_shift_overlap"] 
-        can_overlap = status["can_overlap"]
 
-        if not can_overlap:
+        if not nominal_overlap:
             index += 1
             continue
 
-        print(
-            f"Detected overlap between circles at indices "
-            f"{index} and {index + 1}"
-        )
-
-        # try replacing the two intermediate circles with one direct circle
-        # Check if the middle corridor is unnecessary
+        # ------------------------------------------------------------
+        # Step 1: try direct replacement between the outer corridors
+        # ------------------------------------------------------------
         corridor1_index = choice1.corridor_index_start
         corridor3_index = choice2.corridor_index_end
 
         corridor1 = corridor_sequence[corridor1_index]
         corridor3 = corridor_sequence[corridor3_index]
-
-        # figure = plot_corridors(corridor_sequence)
-        # angle_array = np.linspace(0, 2*np.pi, 200)
-        # plot_corridors([corridor1, corridor3], color="orange", linewidth=3, figure=figure)
-        # plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center"
-        #          , figure=figure)
-        # plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1", figure=figure)
-        # plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center", figure=figure)
-        # plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2", figure=figure)
-        # plt.show(block = True)
 
         replacement_choice = try_build_replacement_choice_between_corridors(
             corridor1,
@@ -116,124 +302,723 @@ def solve_circles_overlap(
                 end_pose,
             )
 
-            # Re-check from previous local neighborhood
+            # Re-check local neighborhood because replacement may create
+            # a new overlap with the previous circle.
             index = max(index - 1, 0)
             continue
 
-        # If replacement is not possible, shift circles with rule based on turn directions
-        else:
-            middle_corridor_index = choice1.corridor_index_end
-            corridor2 = corridor_sequence[middle_corridor_index]
-            if circle1.turn_direction == circle2.turn_direction:
-                R = vehicle.max_radius
-                # if (circle1.s != 0 and circle2.s == 0) or (circle1.s == 0 and circle2.s != 0):
-                #     s1, s2 = 0, 0
-                # else: 
-                #     s1 = circle1.s
-                #     s2 = circle2.s
+        # ------------------------------------------------------------
+        # Step 2: if direct replacement fails, try same-turn merge
+        # ------------------------------------------------------------
 
-                # center1 = intermediate_circle_center_at_s(circle1, s1)
-                # center2 = intermediate_circle_center_at_s(circle2, s2)
+        # In this first pass, ignore opposite-turn overlaps.
+        # They will be handled in the second pass.
+        if circle1.turn_direction != circle2.turn_direction:
+            index += 1
+            continue
 
-                small_circle1 = Circle(
-                    circle1.corner_point,
-                    vehicle.width / 2,
-                )
+        print(
+            f"Detected same-turn overlap between circles at indices "
+            f"{index} and {index + 1}"
+        )
 
-                small_circle2 = Circle(
-                    circle2.corner_point,
-                    vehicle.width / 2,
-                )
+        middle_corridor_index = choice1.corridor_index_end
+        corridor2 = corridor_sequence[middle_corridor_index]
 
-                # p_critical1 = Point(
-                #     center1.x + R * cos(circle1.bisector_direction),
-                #     center1.y + R * sin(circle1.bisector_direction),
-                # )
+        R = vehicle.max_radius
 
-                # p_critical2 = Point(
-                #     center2.x + R * cos(circle2.bisector_direction),
-                #     center2.y + R * sin(circle2.bisector_direction),
-                # )
+        small_circle1 = Circle(
+            circle1.corner_point,
+            vehicle.width / 2,
+        )
 
-                if (
-                    compute_distance_two_points(small_circle1.center, small_circle2.center) < 2* (R-vehicle.width/2)
-                    # and compute_distance_two_points(p_critical2, circle1.center) < R
-                    # and compute_distance_two_points(p_critical1, p_critical2) < 2 * R
-                ):
-                    # merged_circle = compute_circle_through_two_points_with_radius(
-                    #     p_critical1,
-                    #     p_critical2,
-                    #     R,
-                    #     circle1.turn_direction,
-                    # )
+        small_circle2 = Circle(
+            circle2.corner_point,
+            vehicle.width / 2,
+        )
 
+        can_merge = (
+            compute_distance_two_points(
+                small_circle1.center,
+                small_circle2.center,
+            )
+            < 2 * (R - vehicle.width / 2)
+        )
 
-                    merged_circle = compute_circle_internally_tangent_to_two_circles(
-                        small_circle1,
-                        small_circle2,
-                        radius=vehicle.max_radius,
-                        turn_direction=circle1.turn_direction,
-                    )
+        if not can_merge:
+            index += 1
+            continue
 
-                    # figure = plot_corridors(corridor_sequence)
-                    # angle_array = np.linspace(0, 2*np.pi, 200)
-                    # ax = figure.gca()
-                    # plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center")
-                    # plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1")
-                    # plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center")
-                    # plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2")
-                    # plt.plot(circle1.corner_point.x + vehicle.width/2 * np.cos(angle_array), circle1.corner_point.y + vehicle.width/2 * np.sin(angle_array), "-", label="circle1 corner point")
-                    # plt.plot(circle2.corner_point.x + vehicle.width/2 * np.cos(angle_array), circle2.corner_point.y + vehicle.width/2 * np.sin(angle_array), "-", label="circle2 corner point")
+        merged_circle = compute_circle_internally_tangent_to_two_circles(
+            small_circle1,
+            small_circle2,
+            radius=vehicle.max_radius,
+            turn_direction=circle1.turn_direction,
+        )
 
-                    # plt.plot(merged_circle.center.x, merged_circle.center.y, "x", label="merged circle center")
-                    # plt.plot(merged_circle.center.x + merged_circle.radius * np.cos(angle_array), merged_circle.center.y + merged_circle.radius * np.sin(angle_array), "-", label="merged circle")
-                    # plt.plot(p_critical1.x, p_critical1.y, "o", label="p_critical1")
-                    # plt.plot(p_critical2.x, p_critical2.y, "o", label="p_critical2")
+        merged_intermediate_circle = build_merged_intermediate_circle(
+            circle1,
+            circle2,
+            corridor1,
+            corridor2,
+            corridor3,
+            merged_circle,
+            vehicle,
+            index=None,
+            s_max=0.0,
+        )
 
-                    # plt.legend()
-                    # plt.show(block = True)
+        # Optional but useful for debugging
+        merged_intermediate_circle.is_merged = True
+        merged_intermediate_circle.merged_from = (
+            choice1.corridor_index_start,
+            choice1.corridor_index_end,
+            choice2.corridor_index_start,
+            choice2.corridor_index_end,
+        )
 
-                    merged_intermediate_circle = build_merged_intermediate_circle(
-                            circle1,
-                            circle2,
-                            corridor2,
-                            merged_circle,
-                            vehicle,
-                            index=None,
-                            s_max=0.0,
-                        )
+        replacement_choice = IntermediateCircleChoice(
+            candidates=[merged_intermediate_circle],
+            index=index,
+            corridor_index_start=choice1.corridor_index_start,
+            corridor_index_end=choice2.corridor_index_end,
+        )
 
-                    
-                    replacement_choice = IntermediateCircleChoice(
-                        candidates=[merged_intermediate_circle],
-                        index=index,
-                        corridor_index_start=choice1.corridor_index_start,
-                        corridor_index_end=choice2.corridor_index_end,
-                    )
-                    
-                    circle_choices_sequence.replace_two_with_one(
-                        index,
-                        replacement_choice,
-                    )
+        circle_choices_sequence.replace_two_with_one(
+            index,
+            replacement_choice,
+        )
 
-                    reindex_intermediate_circle_choices_sequence(
-                        circle_choices_sequence
-                    )
+        reindex_intermediate_circle_choices_sequence(
+            circle_choices_sequence
+        )
 
-                    circle_choices_sequence = assign_preferred_candidates(
-                        circle_choices_sequence,
-                        start_pose,
-                        end_pose,
-                    )
+        circle_choices_sequence = assign_preferred_candidates(
+            circle_choices_sequence,
+            start_pose,
+            end_pose,
+        )
 
-                    index = max(index - 1, 0)
-                    continue
+        # Re-check from previous local neighborhood.
+        index = max(index - 1, 0)
 
-            else: 
-                pass
-        index += 1
+        figure = plot_corridors(corridor_sequence, plot_vectors=True)
+        ax = plt.gca()
+        plot_intermediate_circle_choices(
+            ax,
+            circle_choices_sequence,
+            vehicle.width/2,
+        )
+        plt.plot(small_circle1.center.x, small_circle1.center.y, "x", label="small_circle1 center")
+        plt.plot(small_circle1.center.x + small_circle1.radius * np.cos(np.linspace(0, 2*np.pi, 200)), small_circle1.center.y + small_circle1.radius * np.sin(np.linspace(0, 2*np.pi, 200)), "-", label="small_circle1")
+        plt.plot(small_circle2.center.x, small_circle2.center.y, "x", label="small_circle2 center")
+        plt.plot(small_circle2.center.x + small_circle2.radius * np.cos(np.linspace(0, 2*np.pi, 200)), small_circle2.center.y + small_circle2.radius * np.sin(np.linspace(0, 2*np.pi, 200)), "-", label="small_circle2")
+        plt.show(block = True)
 
     return circle_choices_sequence
+
+def solve_pair_same_turn_cluster(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
+    cluster,
+    debug_plot=False,
+):
+    """
+    Resolve one same-turn overlap cluster containing exactly two consecutive
+    selected intermediate circles.
+
+    Strategy:
+    1. Try to replace the two transitions with one direct transition between
+       the outer corridors.
+    2. If direct replacement is not possible, try to merge the two circles.
+    """
+
+    # ------------------------------------------------------------
+    # Basic checks
+    # ------------------------------------------------------------
+    indices = cluster["indices"]
+
+    if len(indices) != 2:
+        raise ValueError(
+            f"Expected a pair cluster, but got indices {indices}."
+        )
+
+    index = indices[0]
+
+    if indices[1] != index + 1:
+        raise ValueError(
+            f"Expected consecutive indices, but got {indices}."
+        )
+
+    choice1 = circle_choices_sequence[index]
+    choice2 = circle_choices_sequence[index + 1]
+
+    circle1 = select_preferred_circle(choice1)
+    circle2 = select_preferred_circle(choice2)
+
+    if circle1.turn_direction != circle2.turn_direction:
+        raise ValueError(
+            "solve_pair_same_turn_cluster was called on circles "
+            "with different turn directions."
+        )
+
+    status = overlap_status_for_intermediate_circles(circle1, circle2)
+
+    if not status["nominal_overlap"]:
+        # Nothing to solve. Return unchanged sequence.
+        return circle_choices_sequence
+
+    print(
+        f"Solving same-turn pair overlap between circles "
+        f"{index} and {index + 1}"
+    )
+
+    # ------------------------------------------------------------
+    # Retrieve corresponding corridors
+    # ------------------------------------------------------------
+    corridor1_index = choice1.corridor_index_start
+    corridor2_index = choice1.corridor_index_end
+    corridor3_index = choice2.corridor_index_end
+
+    corridor1 = corridor_sequence[corridor1_index]
+    corridor2 = corridor_sequence[corridor2_index]
+    corridor3 = corridor_sequence[corridor3_index]
+
+    # ------------------------------------------------------------
+    # Step 1: try direct replacement between outer corridors
+    # ------------------------------------------------------------
+    replacement_choice = try_build_replacement_choice_between_corridors(
+        corridor1,
+        corridor3,
+        index,
+        vehicle,
+    )
+
+    if replacement_choice is not None:
+        replacement_choice.corridor_index_start = choice1.corridor_index_start
+        replacement_choice.corridor_index_end = choice2.corridor_index_end
+
+        circle_choices_sequence.replace_two_with_one(
+            index,
+            replacement_choice,
+        )
+
+        reindex_intermediate_circle_choices_sequence(
+            circle_choices_sequence
+        )
+
+        circle_choices_sequence = assign_preferred_candidates(
+            circle_choices_sequence,
+            start_pose,
+            end_pose,
+        )
+
+        return circle_choices_sequence
+
+    # ------------------------------------------------------------
+    # Step 2: try same-turn merge
+    # ------------------------------------------------------------
+    R = vehicle.max_radius
+    r = vehicle.width / 2
+
+    small_circle1 = Circle(
+        circle1.corner_point,
+        r,
+    )
+
+    small_circle2 = Circle(
+        circle2.corner_point,
+        r,
+    )
+
+    distance_small_centers = compute_distance_two_points(
+        small_circle1.center,
+        small_circle2.center,
+    )
+
+    can_merge = distance_small_centers < 2 * (R - r)
+
+    if not can_merge:
+        print(
+            "Same-turn pair cannot be merged: small clearance circles "
+            "are too far apart."
+        )
+        return circle_choices_sequence
+
+    merged_circle = compute_circle_internally_tangent_to_two_circles(
+        small_circle1,
+        small_circle2,
+        radius=R,
+        turn_direction=circle1.turn_direction,
+    )
+
+    merged_intermediate_circle = build_merged_intermediate_circle(
+        circle1,
+        circle2,
+        corridor1,
+        corridor2,
+        corridor3,
+        merged_circle,
+        vehicle,
+        index=None,
+        s_max=0.0,
+    )
+
+    # Optional but useful for debugging
+    merged_intermediate_circle.is_merged = True
+    merged_intermediate_circle.merged_from = (
+        choice1.corridor_index_start,
+        choice1.corridor_index_end,
+        choice2.corridor_index_start,
+        choice2.corridor_index_end,
+    )
+
+    replacement_choice = IntermediateCircleChoice(
+        candidates=[merged_intermediate_circle],
+        index=index,
+        corridor_index_start=choice1.corridor_index_start,
+        corridor_index_end=choice2.corridor_index_end,
+    )
+
+    circle_choices_sequence.replace_two_with_one(
+        index,
+        replacement_choice,
+    )
+
+    reindex_intermediate_circle_choices_sequence(
+        circle_choices_sequence
+    )
+
+    circle_choices_sequence = assign_preferred_candidates(
+        circle_choices_sequence,
+        start_pose,
+        end_pose,
+    )
+
+    if debug_plot:
+        figure = plot_corridors(corridor_sequence, plot_vectors=True)
+        ax = plt.gca()
+
+        plot_intermediate_circle_choices(
+            ax,
+            circle_choices_sequence,
+            vehicle.width / 2,
+        )
+
+        angle_array = np.linspace(0, 2 * np.pi, 200)
+
+        plt.plot(
+            small_circle1.center.x,
+            small_circle1.center.y,
+            "x",
+            label="small_circle1 center",
+        )
+
+        plt.plot(
+            small_circle1.center.x + small_circle1.radius * np.cos(angle_array),
+            small_circle1.center.y + small_circle1.radius * np.sin(angle_array),
+            "-",
+            label="small_circle1",
+        )
+
+        plt.plot(
+            small_circle2.center.x,
+            small_circle2.center.y,
+            "x",
+            label="small_circle2 center",
+        )
+
+        plt.plot(
+            small_circle2.center.x + small_circle2.radius * np.cos(angle_array),
+            small_circle2.center.y + small_circle2.radius * np.sin(angle_array),
+            "-",
+            label="small_circle2",
+        )
+
+        plt.axis("equal")
+        plt.legend()
+        plt.show(block=True)
+
+    return circle_choices_sequence
+
+
+def solve_opposite_turn_overlaps(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
+):
+    """
+    Resolve remaining overlaps between consecutive selected circles with
+    opposite turn directions.
+
+    This pass is executed after all same-turn merge opportunities have been
+    processed.
+    """
+
+    index = 0
+
+    while index < len(circle_choices_sequence) - 1:
+        choice1 = circle_choices_sequence[index]
+        choice2 = circle_choices_sequence[index + 1]
+
+        circle1 = select_preferred_circle(choice1)
+        circle2 = select_preferred_circle(choice2)
+
+        status = overlap_status_for_intermediate_circles(circle1, circle2)
+        nominal_overlap = status["nominal_overlap"]
+
+        if not nominal_overlap:
+            index += 1
+            continue
+
+        # In this second pass, ignore same-turn overlaps.
+        # They were already handled in the first pass.
+        if circle1.turn_direction == circle2.turn_direction:
+            index += 1
+            continue
+
+        print(
+            f"Detected opposite-turn overlap between circles at indices "
+            f"{index} and {index + 1}"
+        )
+
+        corridor1 = corridor_sequence[choice1.corridor_index_start]
+        corridor2 = corridor_sequence[choice1.corridor_index_end]
+        corridor3 = corridor_sequence[choice2.corridor_index_end]
+
+        # Check opposite edges
+        edge1 = circle1.edge_pair[1]
+        edge2 = circle2.edge_pair[0]
+
+        allowed_opposite_pairs = {(0, 2), (2, 0), (1, 3), (3, 1)}
+
+        if (edge1, edge2) not in allowed_opposite_pairs:
+            raise ValueError(
+                "Expected the two circles to be connected through opposite edges of the middle corridor."
+            )
+
+        new_circle1 = build_circle_overlap_opposite_turn_direction(
+            circle1,
+            corridor2,
+            vehicle,
+        )
+
+        new_circle2 = build_circle_overlap_opposite_turn_direction(
+            circle2,
+            corridor2,
+            vehicle,
+        )
+
+        new_choice1 = IntermediateCircleChoice(
+            candidates=[new_circle1],
+            index=choice1.index,
+            corridor_index_start=choice1.corridor_index_start,
+            corridor_index_end=choice1.corridor_index_end,
+        )
+
+        new_choice2 = IntermediateCircleChoice(
+            candidates=[new_circle2],
+            index=choice2.index,
+            corridor_index_start=choice2.corridor_index_start,
+            corridor_index_end=choice2.corridor_index_end,
+        )
+
+        circle_choices_sequence.choices[index] = new_choice1
+        circle_choices_sequence.choices[index + 1] = new_choice2
+
+        reindex_intermediate_circle_choices_sequence(
+            circle_choices_sequence
+        )
+
+        circle_choices_sequence = assign_preferred_candidates(
+            circle_choices_sequence,
+            start_pose,
+            end_pose,
+        )
+
+        # Re-check from previous pair, because changing these circles may
+        # affect overlap with the previous circle too.
+        index = max(index - 1, 0)
+
+    return circle_choices_sequence
+
+# def solve_circles_overlap(
+#     circle_choices_sequence,
+#     corridor_sequence,
+#     vehicle,
+#     start_pose,
+#     end_pose,
+# ):
+#     """
+#     Resolve overlaps between consecutive selected intermediate circles.
+
+#     For ambiguous choices, the preferred candidate is selected.
+#     """
+
+#     index = 0
+
+#     while index < len(circle_choices_sequence) - 1:
+#         # for each pair of consecutive choices, check for overlap
+
+#         choice1 = circle_choices_sequence[index]
+#         choice2 = circle_choices_sequence[index + 1]
+
+#         circle1 = select_preferred_circle(choice1)
+#         circle2 = select_preferred_circle(choice2)
+
+#         status = overlap_status_for_intermediate_circles(
+#             circle1,
+#             circle2,
+#         )
+
+#         nominal_overlap = status["nominal_overlap"]
+#         max_shift_overlap = status["max_shift_overlap"] 
+#         can_overlap = status["can_overlap"]
+
+#         if not nominal_overlap:
+#             index += 1
+#             continue
+
+#         print(
+#             f"Detected overlap between circles at indices "
+#             f"{index} and {index + 1}"
+#         )
+
+#         # try replacing the two intermediate circles with one direct circle
+#         # Check if the middle corridor is unnecessary
+#         corridor1_index = choice1.corridor_index_start
+#         corridor3_index = choice2.corridor_index_end
+
+#         corridor1 = corridor_sequence[corridor1_index]
+#         corridor3 = corridor_sequence[corridor3_index]
+
+#         # figure = plot_corridors(corridor_sequence)
+#         # angle_array = np.linspace(0, 2*np.pi, 200)
+#         # plot_corridors([corridor1, corridor3], color="orange", linewidth=3, figure=figure)
+#         # plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center"
+#         #          , figure=figure)
+#         # plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1", figure=figure)
+#         # plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center", figure=figure)
+#         # plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2", figure=figure)
+#         # plt.show(block = True)
+
+#         replacement_choice = try_build_replacement_choice_between_corridors(
+#             corridor1,
+#             corridor3,
+#             index,
+#             vehicle,
+#         )
+
+#         if replacement_choice is not None:
+#             replacement_choice.corridor_index_start = choice1.corridor_index_start
+#             replacement_choice.corridor_index_end = choice2.corridor_index_end
+
+#             circle_choices_sequence.replace_two_with_one(
+#                 index,
+#                 replacement_choice,
+#             )
+
+#             reindex_intermediate_circle_choices_sequence(
+#                 circle_choices_sequence
+#             )
+
+#             circle_choices_sequence = assign_preferred_candidates(
+#                 circle_choices_sequence,
+#                 start_pose,
+#                 end_pose,
+#             )
+
+#             # Re-check from previous local neighborhood
+#             index = max(index - 1, 0)
+#             continue
+
+#         # If replacement is not possible, shift circles with rule based on turn directions
+#         else:
+#             middle_corridor_index = choice1.corridor_index_end
+#             corridor2 = corridor_sequence[middle_corridor_index]
+#             if circle1.turn_direction == circle2.turn_direction:
+#                 R = vehicle.max_radius
+#                 # if (circle1.s != 0 and circle2.s == 0) or (circle1.s == 0 and circle2.s != 0):
+#                 #     s1, s2 = 0, 0
+#                 # else: 
+#                 #     s1 = circle1.s
+#                 #     s2 = circle2.s
+
+#                 # center1 = intermediate_circle_center_at_s(circle1, s1)
+#                 # center2 = intermediate_circle_center_at_s(circle2, s2)
+
+#                 small_circle1 = Circle(
+#                     circle1.corner_point,
+#                     vehicle.width / 2,
+#                 )
+
+#                 small_circle2 = Circle(
+#                     circle2.corner_point,
+#                     vehicle.width / 2,
+#                 )
+
+#                 # p_critical1 = Point(
+#                 #     center1.x + R * cos(circle1.bisector_direction),
+#                 #     center1.y + R * sin(circle1.bisector_direction),
+#                 # )
+
+#                 # p_critical2 = Point(
+#                 #     center2.x + R * cos(circle2.bisector_direction),
+#                 #     center2.y + R * sin(circle2.bisector_direction),
+#                 # )
+
+#                 if (
+#                     compute_distance_two_points(small_circle1.center, small_circle2.center) < 2* (R-vehicle.width/2)
+#                     # and compute_distance_two_points(p_critical2, circle1.center) < R
+#                     # and compute_distance_two_points(p_critical1, p_critical2) < 2 * R
+#                 ):
+#                     # merged_circle = compute_circle_through_two_points_with_radius(
+#                     #     p_critical1,
+#                     #     p_critical2,
+#                     #     R,
+#                     #     circle1.turn_direction,
+#                     # )
+
+
+#                     merged_circle = compute_circle_internally_tangent_to_two_circles(
+#                         small_circle1,
+#                         small_circle2,
+#                         radius=vehicle.max_radius,
+#                         turn_direction=circle1.turn_direction,
+#                     )
+
+#                     figure = plot_corridors(corridor_sequence)
+#                     angle_array = np.linspace(0, 2*np.pi, 200)
+#                     ax = figure.gca()
+#                     plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center")
+#                     plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1")
+#                     plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center")
+#                     plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2")
+#                     plt.plot(circle1.corner_point.x + vehicle.width/2 * np.cos(angle_array), circle1.corner_point.y + vehicle.width/2 * np.sin(angle_array), "-", label="circle1 corner point")
+#                     plt.plot(circle2.corner_point.x + vehicle.width/2 * np.cos(angle_array), circle2.corner_point.y + vehicle.width/2 * np.sin(angle_array), "-", label="circle2 corner point")
+
+#                     plt.plot(merged_circle.center.x, merged_circle.center.y, "x", label="merged circle center")
+#                     plt.plot(merged_circle.center.x + merged_circle.radius * np.cos(angle_array), merged_circle.center.y + merged_circle.radius * np.sin(angle_array), "-", label="merged circle")
+#                     # plt.plot(p_critical1.x, p_critical1.y, "o", label="p_critical1")
+#                     # plt.plot(p_critical2.x, p_critical2.y, "o", label="p_critical2")
+
+#                     plt.legend()
+#                     plt.show(block = True)
+#                     print(f"center of merged circle: {merged_circle.center}, radius: {merged_circle.radius}")
+
+#                     merged_intermediate_circle = build_merged_intermediate_circle(
+#                             circle1,
+#                             circle2,
+#                             corridor2,
+#                             merged_circle,
+#                             vehicle,
+#                             index=None,
+#                             s_max=0.0,
+#                         )
+
+#                     print(f"center of merged intermediate circle: {merged_intermediate_circle.center}, radius: {merged_intermediate_circle.radius}")
+#                     replacement_choice = IntermediateCircleChoice(
+#                         candidates=[merged_intermediate_circle],
+#                         index=index,
+#                         corridor_index_start=choice1.corridor_index_start,
+#                         corridor_index_end=choice2.corridor_index_end,
+#                     )
+                    
+#                     circle_choices_sequence.replace_two_with_one(
+#                         index,
+#                         replacement_choice,
+#                     )
+
+#                     reindex_intermediate_circle_choices_sequence(
+#                         circle_choices_sequence
+#                     )
+
+#                     circle_choices_sequence = assign_preferred_candidates(
+#                         circle_choices_sequence,
+#                         start_pose,
+#                         end_pose,
+#                     )
+#                     print(f"center of merged intermediate circle after assign_preferred_candidates: {select_preferred_circle(circle_choices_sequence[index]).center}, radius: {select_preferred_circle(circle_choices_sequence[index]).radius}")
+#                     index = max(index - 1, 0)
+
+#                     figure = plot_corridors(corridor_sequence, plot_vectors=True)
+#                     ax = plt.gca()
+#                     plot_intermediate_circle_choices(
+#                         ax,
+#                         circle_choices_sequence,
+#                         vehicle.width/2,
+#                     )
+#                     plt.show(block = True)
+#                     continue
+
+#             # overlap with opposite turn directions
+#             else:
+#                 corridor2 = corridor_sequence[choice1.corridor_index_end]
+#                 orientation_middle_corridor = corridor2.tilt
+
+#                 new_circle1 = build_circle_overlap_opposite_turn_direction(
+#                     circle1,
+#                     corridor2,
+#                     vehicle,
+#                 )
+
+#                 new_circle2 = build_circle_overlap_opposite_turn_direction(
+#                     circle2,
+#                     corridor2,
+#                     vehicle,
+#                 )
+
+#                 figure = plot_corridors(corridor_sequence)
+#                 angle_array = np.linspace(0, 2*np.pi, 200)
+#                 ax = figure.gca()
+#                 plt.plot(circle1.center.x, circle1.center.y, "x", label="circle1 center")
+#                 plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), "-", label="circle1")
+#                 plt.plot(circle2.center.x, circle2.center.y, "x", label="circle2 center")
+#                 plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), "-", label="circle2")
+#                 plt.plot(new_circle1.center.x, new_circle1.center.y, "x", label="circle1 center")
+#                 plt.plot(new_circle1.center.x + new_circle1.radius * np.cos(angle_array), new_circle1.center.y + new_circle1.radius * np.sin(angle_array), "-", label="circle1")
+#                 plt.plot(new_circle2.center.x, new_circle2.center.y, "x", label="circle2 center")
+#                 plt.plot(new_circle2.center.x + new_circle2.radius * np.cos(angle_array), new_circle2.center.y + new_circle2.radius * np.sin(angle_array), "-", label="circle2")
+
+#                 new_choice1 = IntermediateCircleChoice(
+#                     candidates=[new_circle1],
+#                     index=choice1.index,
+#                     corridor_index_start=choice1.corridor_index_start,
+#                     corridor_index_end=choice1.corridor_index_end,
+#                 )
+
+#                 new_choice2 = IntermediateCircleChoice(
+#                     candidates=[new_circle2],
+#                     index=choice2.index,
+#                     corridor_index_start=choice2.corridor_index_start,
+#                     corridor_index_end=choice2.corridor_index_end,
+#                 )
+
+#                 circle_choices_sequence.choices[index] = new_choice1
+#                 circle_choices_sequence.choices[index + 1] = new_choice2
+
+#                 # Re-check from the previous pair, because changing these circles
+#                 # may affect overlap with the previous circle too.
+#                 index = max(index - 1, 0)
+#                 continue
+
+#         index += 1
+
+#     figure = plot_corridors(corridor_sequence, plot_vectors=True)
+#     ax = plt.gca()
+#     plot_intermediate_circle_choices(
+#         ax,
+#         circle_choices_sequence,
+#         vehicle.width/2,
+#     )
+#     plt.show(block = True)
+
+#     return circle_choices_sequence
 
 
 def reindex_intermediate_circle_choices_sequence(circle_choices_sequence):
@@ -676,6 +1461,17 @@ def not_ambiguous_circle_choices(intermediate_circles):
     return IntermediateCircleChoicesSequence(choices)
 
 
+def point_matches_any_corner(point, corners, tol=1e-9):
+    for corner in corners:
+        dx = point[0] - corner[0]
+        dy = point[1] - corner[1]
+
+        if dx * dx + dy * dy <= tol * tol:
+            return True
+
+    return False
+
+
 def side_side_circle(
     corridor1,
     corridor2,
@@ -689,7 +1485,8 @@ def side_side_circle(
     Compute the intermediate circle for a side-side corridor intersection.
 
     This function handles the case where two consecutive corridors intersect
-    through their side edges. If the opposite corridor edges also intersect,
+    through their side edges. If the front edge of corridor1 and the back edge
+    of corridor2 intersect, then
     the circle center is computed from the corner point and that intersection
     point. Otherwise, the circle center is computed using the edge-based rule.
 
@@ -710,8 +1507,10 @@ def side_side_circle(
     corners1 = corridor1.get_corners()
     corners2 = corridor2.get_corners()
 
+    # Front edge of corridor1
     A1 = corners1[3]  # top left
     A2 = corners1[0]  # top right
+    # Back edge of corridor2
     B1 = corners2[2]  # bottom left
     B2 = corners2[1]  # bottom right
 
@@ -723,6 +1522,17 @@ def side_side_circle(
         tol=1e-12,
     )
 
+    if intersects:
+        is_corner_intersection = (
+            point_matches_any_corner(int_point, corners1, tol=1e-9)
+            or point_matches_any_corner(int_point, corners2, tol=1e-9)
+        )
+
+        if is_corner_intersection:
+            intersects = False
+            int_point = None
+
+    # Side-Side open case: no intersection between front edge of corridor1 and back edge of corridor2
     if not intersects:
         xc2, yc2 = compute_center_coordinates_second_circle_according_to_edges(
             corner_point,
@@ -741,12 +1551,77 @@ def side_side_circle(
             vehicle,
         )
 
-        if corridor1.width < min_width or corridor2.width < min_width:
-            raise ValueError(
-                "Corridor widths are too small for the vehicle to make the turn. "
-                f"Minimum required width: {min_width}"
-            )
+        # Check for narrow corridor case. 
+        # If it can be solved, return shifted circle, otherwise raise error about infeasibility of the turn.
+        if corridor1.width < min_width:
+            if corridor2.width < R + vehicle_width/2:
+                raise ValueError(
+                    "Corridor widths are too small for the vehicle to make the turn. "
+                    f"Minimum required width: {min_width}"
+                )
+            else: 
+                orientation_narrow_corridor = corridor1.tilt
+                xc2 = corner_point[0] + (R - vehicle_width/2) * cos(orientation_narrow_corridor + tau * pi/2)
+                yc2 = corner_point[1] + (R - vehicle_width/2) * sin(orientation_narrow_corridor + tau * pi/2)
+                s_max = corridor1.width - vehicle_width
+                door_point = Point(corner_point[0] + corridor1.width * cos(orientation_narrow_corridor - tau * pi/2),
+                                   corner_point[1] + corridor1.width * sin(orientation_narrow_corridor - tau * pi/2))
+                
+                normal = corridor2.outward_normals[edge_pair[1]]
+                theta0 = np.arctan2(normal[1], normal[0])
+                
+                return IntermediateCircle(
+                    Point(xc2, yc2),
+                    R,
+                    Point(corner_point[0], corner_point[1]),
+                    tau,
+                    index=circle_index,
+                    s_max=s_max,
+                    edge_pair=edge_pair,
+                    door_point=door_point,
+                    door_type="45-degree modified narrow corridor1",
+                    start_angle_arc = theta0,
+                    rho = R - vehicle_width/2,
+                )
 
+        if corridor2.width < min_width:
+            if corridor1.width < R + vehicle_width/2:
+                raise ValueError(
+                    "Corridor widths are too small for the vehicle to make the turn. "
+                    f"Minimum required width: {min_width}"
+                )
+            else: 
+                orientation_narrow_corridor = corridor2.tilt
+                xc2 = corner_point[0] + (R - vehicle_width/2) * cos(orientation_narrow_corridor + tau * pi/2)
+                yc2 = corner_point[1] + (R - vehicle_width/2) * sin(orientation_narrow_corridor + tau * pi/2)
+                s_max = corridor2.width - vehicle_width
+                door_point = Point(corner_point[0] + corridor2.width * cos(orientation_narrow_corridor - tau * pi/2),
+                                   corner_point[1] + corridor2.width * sin(orientation_narrow_corridor - tau * pi/2))
+                
+                normal = corridor2.outward_normals[edge_pair[1]]
+                theta0 = np.arctan2(normal[1], normal[0])
+
+                return IntermediateCircle(
+                    Point(xc2, yc2),
+                    R,
+                    Point(corner_point[0], corner_point[1]),
+                    tau,
+                    index=circle_index,
+                    s_max=s_max,
+                    edge_pair=edge_pair,
+                    door_point=door_point,
+                    door_type="45-degree modified narrow corridor2",
+                    start_angle_arc = theta0,
+                    rho = R - vehicle_width/2,
+                )
+
+        # Return regular side-side open case circle
+        door_direction = atan2(corner_point[1] - yc2, corner_point[0] - xc2)
+        door_point = Point(xc2 + (s_max + vehicle_width/2) * cos(door_direction),
+                           yc2 + (s_max + vehicle_width/2) * sin(door_direction)
+                           )
+        normal = corridor2.outward_normals[edge_pair[1]]
+        theta0 = np.arctan2(normal[1], normal[0])
         return IntermediateCircle(
             Point(xc2, yc2),
             R,
@@ -754,8 +1629,14 @@ def side_side_circle(
             tau,
             index=circle_index,
             s_max=s_max,
+            edge_pair=edge_pair,
+            door_point=door_point,
+            door_type="45-degree side-side",
+            start_angle_arc = theta0,
+            rho = R - vehicle_width/2,
         )
 
+    # Side-Side closed case: front edge of corridor1 and back edge of corridor2 intersect
     xc2, yc2 = compute_center_coordinates_second_circle_given_two_points(
         corner_point,
         int_point,
@@ -827,6 +1708,9 @@ def side_side_circle(
 
     # plt.show()
 
+    normal = corridor2.outward_normals[edge_pair[1]]
+    theta0 = np.arctan2(normal[1], normal[0])
+
     return IntermediateCircle(
         Point(xc2, yc2),
         R,
@@ -834,6 +1718,11 @@ def side_side_circle(
         tau,
         index=circle_index,
         s_max=s_max,
+        edge_pair=edge_pair,
+        door_point = int_point,
+        door_type="diagonal side-side",
+        start_angle_arc = theta0,
+        rho = R - vehicle_width/2,
     )
 
 
@@ -849,7 +1738,7 @@ def front_side_circle(
     corners1 = corridor1.get_corners()
     corners2 = corridor2.get_corners()
 
-    def build_circle_from_intersection(int_point, add_s_check = False):
+    def build_circle_from_intersection(int_point, edge_pair, door_type = None, add_s_check = False):
         xc2, yc2 = compute_center_coordinates_second_circle_given_two_points(
             corner_point,
             int_point,
@@ -908,6 +1797,9 @@ def front_side_circle(
 
         s_max = min(s_max_candidates)
 
+        normal = corridor2.outward_normals[edge_pair[1]]
+        theta0 = np.arctan2(normal[1], normal[0])
+
         return IntermediateCircle(
             Point(xc2, yc2),
             vehicle.max_radius,
@@ -915,9 +1807,14 @@ def front_side_circle(
             tau,
             index=circle_index,
             s_max=s_max,
+            edge_pair=edge_pair,
+            door_point=int_point,
+            door_type=door_type,
+            start_angle_arc = theta0,
+            rho = R - vehicle.width/2,
         )
 
-    # First attempt: front edge of corridor1 with side edge of corridor2
+    # First attempt: front edge of corridor1 with other side edge of corridor2
     A1 = corners1[3]
     A2 = corners1[0]
 
@@ -937,7 +1834,7 @@ def front_side_circle(
     )
 
     if intersects:
-        return build_circle_from_intersection(int_point)
+        return build_circle_from_intersection(int_point, edge_pair, door_type="axis-aligned front-side")
 
     # Second attempt: side edge of corridor1 with back edge of corridor2
     # Here we need to check for s_max
@@ -960,7 +1857,7 @@ def front_side_circle(
     )
 
     if intersects:
-        return build_circle_from_intersection(int_point, add_s_check=True)
+        return build_circle_from_intersection(int_point, edge_pair, door_type="diagonal front-side", add_s_check=True)
 
     # Fallback: compute circle from edge-based rule
     xc2, yc2 = compute_center_coordinates_second_circle_according_to_edges(
@@ -1004,7 +1901,8 @@ def front_side_circle(
             "for the vehicle to make the turn. "
             f"Minimum required distance: {vehicle.width}"
         )
-
+    normal = corridor2.outward_normals[edge_pair[1]]
+    theta0 = np.arctan2(normal[1], normal[0])
     return IntermediateCircle(
         Point(xc2, yc2),
         vehicle.max_radius,
@@ -1012,6 +1910,10 @@ def front_side_circle(
         tau,
         index=circle_index,
         s_max=length - 2 * vehicle.max_radius,
+        edge_pair=edge_pair,
+        door_type="edge-based front-side fallback",
+        start_angle_arc = theta0,
+        rho = vehicle.max_radius - vehicle.width/2,
     )
 
 
@@ -1027,7 +1929,7 @@ def side_back_circle(
     corners1 = corridor1.get_corners()
     corners2 = corridor2.get_corners()
 
-    def build_circle_from_intersection(int_point, add_s_check = False):
+    def build_circle_from_intersection(int_point, edge_pair, door_type=None, add_s_check = False):
         xc2, yc2 = compute_center_coordinates_second_circle_given_two_points(
             corner_point,
             int_point,
@@ -1084,6 +1986,9 @@ def side_back_circle(
                     s_max_candidates.append(s_limit)
 
         s_max = min(s_max_candidates)
+
+        normal = corridor2.outward_normals[edge_pair[1]]
+        theta0 = np.arctan2(normal[1], normal[0])
         
         return IntermediateCircle(
             Point(xc2, yc2),
@@ -1092,9 +1997,14 @@ def side_back_circle(
             tau,
             index=circle_index,
             s_max=s_max,
+            edge_pair=edge_pair,
+            door_point=int_point,
+            door_type=door_type,
+            start_angle_arc = theta0,
+            rho = R - vehicle.width/2,
         )
 
-    # First attempt: side edge of corridor1 with back edge of corridor2
+    # First attempt: other side edge of corridor1 with back edge of corridor2
     if edge_pair[0] == 1:
         A1 = corners1[2]  # bottom left
         A2 = corners1[3]  # top left
@@ -1114,7 +2024,7 @@ def side_back_circle(
     )
 
     if intersects:
-        return build_circle_from_intersection(int_point)
+        return build_circle_from_intersection(int_point, edge_pair, door_type="axis-aligned side-back")
 
     # Second attempt: front edge of corridor1 with side edge of corridor2
     A1 = corners1[3]  # top left
@@ -1141,7 +2051,7 @@ def side_back_circle(
             "This may indicate invalid corridor geometry or an unexpected edge pair."
         )
 
-    return build_circle_from_intersection(int_point)
+    return build_circle_from_intersection(int_point, edge_pair, door_type="diagonal side-back")
         
 
 def assign_preferred_turn_directions(circle_choices_sequence):
@@ -1189,90 +2099,6 @@ def assign_preferred_turn_directions(circle_choices_sequence):
     return circle_choices_sequence
 
 
-# def create_intermediate_circle_choice_sequence(corridor_list, vehicle, start_pose, end_pose):
-#     choices = []
-#     left_turn = 1
-#     right_turn = -1
-
-#     def build_candidate(corridor1, corridor2, tau, index):
-#         corner_point, edge_pair = get_corner_point_and_intersecting_edges(
-#             corridor1,
-#             corridor2,
-#             tau,
-#         )
-
-#         if corner_point is None or edge_pair == []:
-#             raise ValueError(
-#                 f"No valid corner point found for turn direction {tau}."
-#             )
-
-#         if edge_pair in ((1, 1), (3, 3)):
-#             return side_side_circle(
-#                 corridor1,
-#                 corridor2,
-#                 tau,
-#                 edge_pair,
-#                 corner_point,
-#                 vehicle,
-#                 circle_index=index,
-#             )
-
-#         # front (0) side (2,3) case
-#         if edge_pair in ((0, 1), (0, 3)):
-#             return front_side_circle(
-#                 corridor1,
-#                 corridor2,
-#                 tau,
-#                 edge_pair,
-#                 corner_point,
-#                 vehicle,
-#                 circle_index=index,
-#             )
-
-#         # side (1,3) back (2) case
-#         if edge_pair in ((3, 2), (1, 2)):
-#             return side_back_circle(
-#                 corridor1,
-#                 corridor2,
-#                 tau,
-#                 edge_pair,
-#                 corner_point,
-#                 vehicle,
-#                 circle_index=index,
-#             )
-#         plot_corridors([corridor1, corridor2])
-#         plt.title(f"Unexpected edge pair: {edge_pair}, tau={tau}")
-#         plt.show()
-#         raise ValueError(f"Invalid edge pair: {edge_pair}")
-
-#     for i in range(len(corridor_list) - 1):
-#         corridor1 = corridor_list[i]
-#         corridor2 = corridor_list[i + 1]
-
-#         tau = corridor1.compute_relative_turn_direction(corridor2)
-
-#         if tau != 0:
-#             candidates = [
-#                 build_candidate(corridor1, corridor2, tau, i)
-#             ]
-#         else:
-#             candidates = [
-#                 build_candidate(corridor1, corridor2, left_turn, i),
-#                 build_candidate(corridor1, corridor2, right_turn, i),
-#             ]
-
-#         choices.append(
-#             IntermediateCircleChoice(
-#                 candidates=candidates,
-#                 index=i,
-#             )
-#         )
-
-#     choices_sequence = IntermediateCircleChoicesSequence(choices)
-#     choices_sequence = assign_preferred_candidates(choices_sequence, start_pose, end_pose)
-#     choices_sequence = solve_circles_overlap(choices_sequence)
-#     return choices_sequence
-
 def build_intermediate_circle_candidate(
     corridor1,
     corridor2,
@@ -1290,7 +2116,8 @@ def build_intermediate_circle_candidate(
         raise ValueError(
             f"No valid corner point found for turn direction {tau}."
         )
-
+    
+    # Side-side case
     if edge_pair in ((1, 1), (3, 3)):
         return side_side_circle(
             corridor1,
@@ -1302,6 +2129,7 @@ def build_intermediate_circle_candidate(
             circle_index=index,
         )
 
+    # Front-side case
     if edge_pair in ((0, 1), (0, 3)):
         return front_side_circle(
             corridor1,
@@ -1313,6 +2141,7 @@ def build_intermediate_circle_candidate(
             circle_index=index,
         )
 
+    # Side-back case
     if edge_pair in ((3, 2), (1, 2)):
         return side_back_circle(
             corridor1,
@@ -1324,12 +2153,12 @@ def build_intermediate_circle_candidate(
             circle_index=index,
         )
 
-    
-    plot_corridors([corridor1, corridor2], plot_vectors=True)
-    plt.plot(corner_point[0], corner_point[1], marker="o", label="corner point")
-    plt.legend()
-    plt.title(f"Unexpected edge pair: {edge_pair}, tau={tau}")
-    plt.show()
+    # Unexpected case
+    # plot_corridors([corridor1, corridor2], plot_vectors=True)
+    # plt.plot(corner_point[0], corner_point[1], marker="o", label="corner point")
+    # plt.legend()
+    # plt.title(f"Unexpected edge pair: {edge_pair}, tau={tau}")
+    # plt.show()
 
     raise ValueError(f"Invalid edge pair: {edge_pair}")
 
@@ -1340,11 +2169,21 @@ def create_intermediate_circle_choice_sequence(
     start_pose,
     end_pose,
 ):
+    
+    validate_corridor_sequence(
+        corridor_list=corridor_list,
+        vehicle=vehicle,
+        min_centerline_distance=2.0 * vehicle.max_radius,
+        plot_invalid = True,
+    )
     choices = []
     left_turn = 1
     right_turn = -1
 
     for i in range(len(corridor_list) - 1):
+        # For each pair of consecutive corridors,
+        # compute the turn direction tau and build
+        # the corresponding intermediate circle candidates.
         corridor1 = corridor_list[i]
         corridor2 = corridor_list[i + 1]
 
@@ -1403,9 +2242,9 @@ def create_intermediate_circle_choice_sequence(
     )
 
     # figure = plot_corridors(corridor_list, plot_vectors=True)
-    # # plt.show(block = True)
-    # # for i in range(len(corridor_list)-1):
-    # #     plot_corridors([corridor_list[i], corridor_list[i+1]])
+    # plt.show(block = True)
+    # for i in range(len(corridor_list)-1):
+    #     plot_corridors([corridor_list[i], corridor_list[i+1]])
 
     # ax = plt.gca()
 
@@ -1574,12 +2413,43 @@ def assign_preferred_candidates(circle_choices_sequence, start_pose, end_pose):
     return circle_choices_sequence
  
 
-def plot_intermediate_circle_choices(ax, circle_choices_sequence, r = 0):
+def plot_intermediate_circle_choices(
+    ax,
+    circle_choices_sequence,
+    r=0,
+    plot_arcs=False,
+):
     """
     Plot all intermediate circle candidates at their nominal position s=0.
 
     The red segment shows the maximum shift from s=0 to s=s_max.
+    The door associated with each intermediate circle is also plotted when
+    both door endpoints are available.
+
+    Parameters
+    ----------
+    ax : matplotlib axis
+        Axis where the circles are plotted.
+
+    circle_choices_sequence : IntermediateCircleChoicesSequence
+        Sequence of intermediate circle choices.
+
+    r : float, optional
+        Extra radius used to plot the enlarged circle of radius R + r.
+
+    plot_arcs : bool, optional
+        If True, plot the stored arc_coordinates of each IntermediateCircle,
+        when available. Default is False.
     """
+
+    def _point_xy(p):
+        """
+        Return x, y from either a Point object with .x/.y
+        or an indexable point like [x, y].
+        """
+        if hasattr(p, "x") and hasattr(p, "y"):
+            return p.x, p.y
+        return p[0], p[1]
 
     for i, choice in enumerate(circle_choices_sequence):
         for j, circle in enumerate(choice):
@@ -1649,6 +2519,83 @@ def plot_intermediate_circle_choices(ax, circle_choices_sequence, r = 0):
                 fontsize=8,
                 color=color,
             )
+
+            # ------------------------------------------------------------
+            # Plot stored arc coordinates, if requested and available
+            # ------------------------------------------------------------
+            if plot_arcs and getattr(circle, "arc_coordinates", None) is not None:
+                arc_coordinates = circle.arc_coordinates
+
+                if len(arc_coordinates) > 0:
+                    xs = []
+                    ys = []
+
+                    for p in arc_coordinates:
+                        px, py = _point_xy(p)
+                        xs.append(px)
+                        ys.append(py)
+
+                    ax.plot(
+                        xs,
+                        ys,
+                        color="magenta",
+                        linestyle="-",
+                        linewidth=2.0,
+                        alpha=0.95,
+                    )
+
+                    # Optional: plot arc start and end points
+                    ax.plot(
+                        [xs[0], xs[-1]],
+                        [ys[0], ys[-1]],
+                        "o",
+                        color="magenta",
+                        markersize=4,
+                        alpha=0.95,
+                    )
+
+            # ------------------------------------------------------------
+            # Plot door segment, if both door endpoints are available
+            # ------------------------------------------------------------
+            door_left = getattr(circle, "door_point_left", None)
+            door_right = getattr(circle, "door_point_right", None)
+
+            if door_left is not None and door_right is not None:
+                door_left_x, door_left_y = _point_xy(door_left)
+                door_right_x, door_right_y = _point_xy(door_right)
+
+                ax.plot(
+                    [door_left_x, door_right_x],
+                    [door_left_y, door_right_y],
+                    color="red",
+                    linestyle="-",
+                    linewidth=2.0,
+                    alpha=0.9,
+                )
+
+                ax.plot(
+                    [door_left_x, door_right_x],
+                    [door_left_y, door_right_y],
+                    "o",
+                    color="red",
+                    markersize=4,
+                    alpha=0.9,
+                )
+
+                # Optional: label the door type at the midpoint
+                if getattr(circle, "door_type", None) is not None:
+                    mx = 0.5 * (door_left_x + door_right_x)
+                    my = 0.5 * (door_left_y + door_right_y)
+
+                    ax.text(
+                        mx,
+                        my,
+                        str(circle.door_type),
+                        fontsize=7,
+                        color="red",
+                        ha="center",
+                        va="center",
+                    )
 
             if hasattr(circle, "s_max") and hasattr(circle, "bisector_direction"):
                 x_shift_end = xc + circle.s_max * cos(circle.bisector_direction)
@@ -1729,5 +2676,158 @@ def selected_sequence_from_preferences(circle_choices_sequence):
         selected_circles.append(selected_circle)
 
     return IntermediateCirclesSequence(selected_circles)
+
+
+def solve_pair_opposite_turn_cluster(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
+    cluster,
+    debug_plot=False,
+):
+    """
+    Resolve one opposite-turn overlap cluster containing exactly two
+    consecutive selected intermediate circles.
+
+    Strategy:
+    Rebuild both circles using the outward normals of the middle corridor.
+    This separates the opposite-turn pair by moving each circle center to the
+    side associated with its middle-corridor edge.
+    """
+
+    # ------------------------------------------------------------
+    # Basic checks
+    # ------------------------------------------------------------
+    indices = cluster["indices"]
+
+    if len(indices) != 2:
+        raise ValueError(
+            f"Expected a pair cluster, but got indices {indices}."
+        )
+
+    index = indices[0]
+
+    if indices[1] != index + 1:
+        raise ValueError(
+            f"Expected consecutive indices, but got {indices}."
+        )
+
+    choice1 = circle_choices_sequence[index]
+    choice2 = circle_choices_sequence[index + 1]
+
+    circle1 = select_preferred_circle(choice1)
+    circle2 = select_preferred_circle(choice2)
+
+    if circle1.turn_direction == circle2.turn_direction:
+        raise ValueError(
+            "solve_pair_opposite_turn_cluster was called on circles "
+            "with the same turn direction."
+        )
+
+    status = overlap_status_for_intermediate_circles(circle1, circle2)
+
+    if not status["nominal_overlap"]:
+        return circle_choices_sequence
+
+    print(
+        f"Solving opposite-turn pair overlap between circles "
+        f"{index} and {index + 1}"
+    )
+
+    # ------------------------------------------------------------
+    # Retrieve corresponding corridors
+    # ------------------------------------------------------------
+    corridor1_index = choice1.corridor_index_start
+    corridor2_index = choice1.corridor_index_end
+    corridor3_index = choice2.corridor_index_end
+
+    corridor1 = corridor_sequence[corridor1_index]
+    corridor2 = corridor_sequence[corridor2_index]
+    corridor3 = corridor_sequence[corridor3_index]
+
+    # ------------------------------------------------------------
+    # Check that the two circles are connected through opposite
+    # edges of the middle corridor
+    # ------------------------------------------------------------
+    if circle1.edge_pair is None or circle2.edge_pair is None:
+        raise ValueError(
+            "Both circles must have edge_pair defined for opposite-turn repair."
+        )
+
+    edge1 = circle1.edge_pair[1]
+    edge2 = circle2.edge_pair[0]
+
+    allowed_opposite_pairs = {
+        (0, 2),
+        (2, 0),
+        (1, 3),
+        (3, 1),
+    }
+
+    if (edge1, edge2) not in allowed_opposite_pairs:
+        raise ValueError(
+            "Expected the two circles to be connected through opposite "
+            "edges of the middle corridor."
+        )
+
+    # ------------------------------------------------------------
+    # Rebuild both circles
+    # ------------------------------------------------------------
+    new_circle1 = build_circle_overlap_opposite_turn_direction(
+        circle1,
+        corridor2,
+        vehicle,
+    )
+
+    new_circle2 = build_circle_overlap_opposite_turn_direction(
+        circle2,
+        corridor2,
+        vehicle,
+    )
+
+    new_choice1 = IntermediateCircleChoice(
+        candidates=[new_circle1],
+        index=choice1.index,
+        corridor_index_start=choice1.corridor_index_start,
+        corridor_index_end=choice1.corridor_index_end,
+    )
+
+    new_choice2 = IntermediateCircleChoice(
+        candidates=[new_circle2],
+        index=choice2.index,
+        corridor_index_start=choice2.corridor_index_start,
+        corridor_index_end=choice2.corridor_index_end,
+    )
+
+    circle_choices_sequence.choices[index] = new_choice1
+    circle_choices_sequence.choices[index + 1] = new_choice2
+
+    reindex_intermediate_circle_choices_sequence(
+        circle_choices_sequence
+    )
+
+    circle_choices_sequence = assign_preferred_candidates(
+        circle_choices_sequence,
+        start_pose,
+        end_pose,
+    )
+
+    if debug_plot:
+        figure = plot_corridors(corridor_sequence, plot_vectors=True)
+        ax = plt.gca()
+
+        plot_intermediate_circle_choices(
+            ax,
+            circle_choices_sequence,
+            vehicle.width / 2,
+        )
+
+        plt.axis("equal")
+        plt.legend()
+        plt.show(block=True)
+
+    return circle_choices_sequence
 
 

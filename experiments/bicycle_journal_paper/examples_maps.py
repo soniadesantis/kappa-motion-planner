@@ -85,10 +85,10 @@ def example_corridor_sequence(num):
         corridor7 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
         corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
         corridor9 = CorridorWorld(0.5399999879300594, 4.3199999034404755, [4.1999999061226845, 6.689999850466847], 0.0)
-        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9]
+        corridor_list = [corridor1, corridor2, corridor3, corridor6, corridor7, corridor8, corridor9]
         start_pose = [2.61918306350708, 2.154087543487549, -0.12029518960373457]
         end_pose = [4.050821781158447, 6.627957344055176, 0.07130739522438935]
-        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.575, v_max=1.0, v_min=-1.0, delta_max=m.pi/4, delta_min=-0.5)
 
     elif num == 6:
 
@@ -99,12 +99,12 @@ def example_corridor_sequence(num):
         corridor5 = CorridorWorld(0.4299999903887506, 3.5499999206513166, [4.634999896399677, 5.194999883882701], 3.141592653589793)
         corridor6 = CorridorWorld(0.8099999818950893, 2.249999949708581, [3.264999927021563, 5.104999885894358], 1.5707963267948966)
         corridor7 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
-        corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
+        corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2, 7.74499982688576], 1.5707963267948966)
         corridor9 = CorridorWorld(0.5399999879300594, 4.3199999034404755, [4.1999999061226845, 6.689999850466847], 0.0)
         corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9]
         start_pose = [2.5406384468078613, 2.26594877243042, -0.0388158088104548]
         end_pose = [5.087650299072266, 6.557488441467285, 0.15702971301306384]
-        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.15, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
     elif num == 7: # Example 1
         corridor1 = CorridorWorld(1.0999999754130843, 2.699999939650297, [5.839999869465828, 2.509999943897128], 1.5707963267948966)
@@ -121,9 +121,9 @@ def example_corridor_sequence(num):
         corridor12 = CorridorWorld(0.4399999901652338, 2.5299999434500933, [1.5599999651312828, 11.014999753795564], 1.5707963267948966)
         corridor13 = CorridorWorld(0.4299999903887507, 2.699999939650297, [1.5899999644607306, 11.34499974641949], 3.141592653589793)
         corridor14 = CorridorWorld(0.6899999845772983, 2.5299999434500933, [0.584999986924231, 11.014999753795564], 1.5707963267948966)
-        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9, corridor10, corridor11, corridor12, corridor13, corridor14]
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8,corridor9, corridor10, corridor11, corridor12, corridor13, corridor14]
 
-        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.15, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
         start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
         end_pose = compute_end_pose(corridor_list[-1], vehicle, 0)
 
@@ -217,13 +217,23 @@ def example_corridor_sequence(num):
         end_pose = [33.177406311035156, 5.57621955871582, -1.158386219431387]
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
 
+    elif num == 17: # Side-Side narrow corridors
+        corridor1 = CorridorWorld(5, 10, [0, 0], 0)
+        corridor2 = CorridorWorld(0.23, 6, [3, 3], 1.5707963267948966)
+        corridor3 = CorridorWorld(3, 10, [0, 5.5], 3.142592653589793)
+        corridor_list = [corridor1, corridor2, corridor3]
+        vehicle = Bicycle([0, 0, 0], width=0.2, length=0.2, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+
+        start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
+        end_pose = compute_end_pose(corridor_list[-1], vehicle, 0)
+
 
     return corridor_list, start_pose, end_pose, vehicle
 
 
 if __name__ == "__main__":
-    example_num = 16
-
+    example_num =6
+    # Problems 6, 8, 10 (pose outside shrunken), 12 (pose outside shrunken), 14 (pose outside shrunken), 15 (overlap opposite direction), 16 (problem with corridor direction)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 
     figure = plot_corridors(corridor_list, plot_vectors=True)
@@ -244,6 +254,7 @@ if __name__ == "__main__":
         ax,
         circle_choices_sequence,
         vehicle.width/2,
+        plot_arcs = True,
     )
     plt.show(block = True)
 
@@ -270,36 +281,36 @@ if __name__ == "__main__":
     )
 
     ax = plt.gca()
-    # plot_rectangular_footprint(
-    #     analytical_trajectory,
-    #     width=vehicle.width,
-    #     front_overhang=0.2,
-    #     rear_overhang=0.1,
-    #     ax=ax,
-    #     step=5,
-    #     color="k",
-    #     alpha=1,
-    # )
-
-    # plot_turning_front_corner_path(
-    #     analytical_trajectory,
-    #     width=vehicle.width,
-    #     front_overhang=0.2,
-    #     ax=ax,
-    #     color="r",
-    #     linewidth=2,
-    # )
-
-    plot_circular_footprint(
-    analytical_trajectory,
-    vehicle.width/2,
-    ax=ax,
-    step=1,
-    color="k",
-    linewidth=0.5,
-    linestyle="-",
-    alpha=0.2,
+    plot_rectangular_footprint(
+        analytical_trajectory,
+        width=vehicle.width,
+        front_overhang=0.2,
+        rear_overhang=0.1,
+        ax=ax,
+        step=5,
+        color="k",
+        alpha=1,
     )
+
+    plot_turning_front_corner_path(
+        analytical_trajectory,
+        width=vehicle.width,
+        front_overhang=0.2,
+        ax=ax,
+        color="r",
+        linewidth=2,
+    )
+
+    # plot_circular_footprint(
+    # analytical_trajectory,
+    # vehicle.width/2,
+    # ax=ax,
+    # step=1,
+    # color="k",
+    # linewidth=0.5,
+    # linestyle="-",
+    # alpha=0.2,
+    # )
     
     plt.show(block = True)
 
