@@ -324,6 +324,58 @@ class CorridorWorld:
                              tilt=self.tilt + angle,
                              label=self.label,
                              number=self.number)
+    
+
+    def get_edge_segment(self, edge_index):
+        """
+        Return the segment endpoints corresponding to one corridor edge.
+
+        :param edge_index: Edge index.
+        :type edge_index: int
+
+        :return: Edge segment endpoints.
+        :rtype: tuple[Point, Point]
+        """
+        if edge_index == self.FWD:
+            return self.corners[3], self.corners[0]
+
+        if edge_index == self.RGT:
+            return self.corners[0], self.corners[1]
+
+        if edge_index == self.BCK:
+            return self.corners[1], self.corners[2]
+
+        if edge_index == self.LFT:
+            return self.corners[2], self.corners[3]
+
+        raise ValueError(f"Invalid corridor edge index: {edge_index}")
+
+    def invert_dimensions(self, direction=1):
+        """
+        Return a new corridor with width and height swapped.
+
+        The corridor center is preserved, while the tilt is rotated by +/- pi/2.
+
+        This is different from rotate_corridor(...), because rotate_corridor keeps
+        the same width and height.
+
+        :param direction: Rotation direction. Use +1 for +pi/2, -1 for -pi/2.
+        :type direction: int
+
+        :return: New CorridorWorld with inverted dimensions.
+        :rtype: CorridorWorld
+        """
+        if direction not in (-1, 1):
+            raise ValueError("direction must be either +1 or -1")
+
+        return CorridorWorld(
+            width=self.height,
+            height=self.width,
+            center=self.center,
+            tilt=self.tilt + direction * 0.5 * pi,
+            label=self.label,
+            number=self.number,
+        )
 
     def closest_point_on_corridor(self, point):
         """

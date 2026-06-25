@@ -416,13 +416,16 @@ def check_standing_assumptions(planner):
 
 def check_position_out_of_circles_assumption(planner):
     check_passed = True
-    first_circle = select_preferred_circle(
-        planner.intermediate_circles_choice_sequence.first
-    )
+    # first_circle = select_preferred_circle(
+    #     planner.intermediate_circles_choice_sequence.first
+    # )
 
-    last_circle = select_preferred_circle(
-        planner.intermediate_circles_choice_sequence.last
-    )
+    # last_circle = select_preferred_circle(
+    #     planner.intermediate_circles_choice_sequence.last
+    # )
+
+    first_circle = planner.intermediate_circles_sequence.first
+    last_circle = planner.intermediate_circles_sequence.last
 
     messages = []
     inside_first_circle = False

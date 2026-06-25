@@ -527,7 +527,7 @@ def compute_traj_to_circle_bicycle(corridor1, start_pose, bicycle, circ1, tau0 =
 
 def shift_circles_bicycle(
     intermediate_circles,
-    intermediate_circles_choices,
+    # intermediate_circles_choices,
     segments,
     bicycle,
     start_pose,
@@ -700,7 +700,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     start_pose,
     end_pose,
     bicycle,
-    intermediate_circles_choices,
+    intermediate_circles,
 ):
     """
     Compute the sequence of primitives that build the time-optimal trajectory
@@ -725,9 +725,9 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     """
 
     # Extract the sequence of intermediate circles from the choices
-    intermediate_circles = selected_sequence_from_preferences(
-        intermediate_circles_choices
-    )
+    # intermediate_circles = selected_sequence_from_preferences(
+    #     intermediate_circles_choices
+    # )
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # plt.show(block = True)
@@ -792,7 +792,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     end_maneuvers,
     ) = shift_circles_bicycle(
     intermediate_circles,
-    intermediate_circles_choices,
+    # intermediate_circles_choices,
     segments,
     bicycle,
     start_pose,
@@ -856,7 +856,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     return trajectory
 
 
-def compute_trajectory_bicycle_two_corridors_optimal(corridor1, corridor2, start_pose, end_pose, bicycle, intermediate_circles_choices):
+def compute_trajectory_bicycle_two_corridors_optimal(corridor1, corridor2, start_pose, end_pose, bicycle, intermediate_circles):
     '''
     Compute the sequence of primitives that build the time-optimal trajectory for a bicycle vehicle within two corridors.
     Backward maneuver both for collision avoidance and time-optimality.
@@ -878,9 +878,9 @@ def compute_trajectory_bicycle_two_corridors_optimal(corridor1, corridor2, start
     :rtype: Boolean
     '''
     # Extract the sequence of intermediate circles from the choices
-    intermediate_circles = selected_sequence_from_preferences(
-        intermediate_circles_choices
-    )
+    # intermediate_circles = selected_sequence_from_preferences(
+    #     intermediate_circles_choices
+    # )
     # 1 — Compute P^init
     intermediate_circle = intermediate_circles.first
 

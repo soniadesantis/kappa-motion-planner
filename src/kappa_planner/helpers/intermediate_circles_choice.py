@@ -1,7 +1,7 @@
 from ..geometry import Point, Circle, IntermediateCircle, IntermediateCirclesSequence, IntermediateCircleChoice, IntermediateCircleChoicesSequence
 from ..corridor import CorridorWorld
 from ..vehicle import Unicycle, Bicycle
-from .intersections import compute_intersection_two_segments, compute_line_corridor_intersections
+from .intersections import compute_intersection_two_segments, compute_line_corridor_intersections, compute_intersection_points_circle_segment
 from .corridor_geometry import get_corner_point_and_intersecting_edges
 from .intermediate_circles_geometry import compute_center_coordinates_second_circle_according_to_edges, compute_center_coordinates_second_circle_given_two_points, compute_circle_internally_tangent_to_two_circles
 from .intermediate_circle_solve_overlap import (
@@ -14,6 +14,8 @@ from .intermediate_circle_solve_overlap import (
     compute_consecutive_overlap_pairs,
     extract_overlap_clusters,
     classify_overlap_cluster,
+    merged_circle_overlaps_sequence_neighbors,
+    shift_segment_inside_corridor,
 )
 from .corridor_sequence_validity import validate_corridor_sequence
 from .inputs_check import compute_min_width_s_max_corridor_pair
@@ -166,6 +168,7 @@ def solve_circles_overlap(
     implemented_cluster_types = {
         "pair_same_turn",
         "pair_opposite_turn",
+        "multi_mixed_turn",
     }
 
     for iteration in range(max_iterations):
@@ -181,9 +184,9 @@ def solve_circles_overlap(
         print(f"\nIteration {iteration}")
         print("Detected clusters:")
 
-        for cluster in clusters:
-            cluster_type = classify_overlap_cluster(cluster)
-            print(f"  {cluster['indices']} -> {cluster_type}")
+        # for cluster in clusters:
+        #     cluster_type = classify_overlap_cluster(cluster)
+        #     print(f"  {cluster['indices']} -> {cluster_type}")
 
         solvable_cluster = None
         solvable_cluster_type = None
@@ -228,11 +231,664 @@ def solve_circles_overlap(
                 solvable_cluster,
             )
 
+        elif solvable_cluster_type == "multi_mixed_turn":
+            circle_choices_sequence = solve_multi_mixed_turn_cluster(
+                circle_choices_sequence,
+                corridor_sequence,
+                vehicle,
+                start_pose,
+                end_pose,
+                solvable_cluster,
+            )
+
     raise RuntimeError(
         "Overlap solver reached max_iterations. "
         "A solver may not be modifying the sequence."
     )
 
+
+def solve_multi_mixed_turn_cluster(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
+    cluster,
+):
+    """
+    Resolve a multi-circle mixed-turn overlap cluster.
+
+    Strategy:
+    1. Split the mixed cluster into same-turn blocks.
+    2. First solve isolated opposite-turn circles.
+    3. Then solve same-turn pairs.
+    4. Same-turn triplets or longer are detected but not implemented yet.
+    """
+
+    indices = cluster["indices"]
+
+    print(f"Solving multi-mixed-turn cluster: {indices}")
+
+    blocks = split_cluster_into_same_turn_blocks(
+        circle_choices_sequence,
+        cluster,
+    )
+
+    print(f"Same-turn blocks: {blocks}")
+
+    # ------------------------------------------------------------
+    # Step 1: solve isolated opposite-turn circles first
+    # ------------------------------------------------------------
+    isolated_blocks = [
+        block for block in blocks
+        if len(block) == 1
+    ]
+
+    print(f"Isolated opposite-turn blocks: {isolated_blocks}")
+
+    if isolated_blocks:
+        circle_choices_sequence = solve_isolated_opposite_turn_blocks_in_mixed_cluster(
+            circle_choices_sequence=circle_choices_sequence,
+            corridor_sequence=corridor_sequence,
+            vehicle=vehicle,
+            start_pose=start_pose,
+            end_pose=end_pose,
+            cluster=cluster,
+            isolated_blocks=isolated_blocks,
+        )
+
+    # ------------------------------------------------------------
+    # Step 2: solve same-turn pairs
+    # ------------------------------------------------------------
+    pair_blocks = [
+        block for block in blocks
+        if len(block) == 2
+    ]
+
+    print(f"Same-turn pair blocks: {pair_blocks}")
+
+    for block in pair_blocks:
+        pair_cluster = build_pair_cluster_from_same_turn_block(
+            circle_choices_sequence=circle_choices_sequence,
+            block=block,
+        )
+
+        circle_choices_sequence = solve_pair_same_turn_cluster(
+            circle_choices_sequence=circle_choices_sequence,
+            corridor_sequence=corridor_sequence,
+            vehicle=vehicle,
+            start_pose=start_pose,
+            end_pose=end_pose,
+            cluster=pair_cluster,
+        )
+
+    # ------------------------------------------------------------
+    # Step 3: detect same-turn triplets or longer, but do not solve yet
+    # ------------------------------------------------------------
+    longer_same_turn_blocks = [
+        block for block in blocks
+        if len(block) > 2
+    ]
+
+    if longer_same_turn_blocks:
+        print(
+            "Same-turn blocks longer than pairs are not implemented yet: "
+            f"{longer_same_turn_blocks}"
+        )
+
+    return circle_choices_sequence
+
+
+def solve_isolated_opposite_turn_blocks_in_mixed_cluster(
+    circle_choices_sequence,
+    corridor_sequence,
+    vehicle,
+    start_pose,
+    end_pose,
+    cluster,
+    isolated_blocks,
+    debug_plot=True,
+):
+    """
+    Solve isolated circles inside a mixed-turn cluster.
+
+    For each isolated circle:
+    1. Extract the two centerlines associated with its edge_pair.
+    2. Check whether the current circle intersects those centerlines.
+    3. Compute a new center such that the circle is tangent to both centerlines.
+    4. Replace the old circle with the shifted circle.
+    """
+
+    print("Solving isolated opposite-turn blocks inside mixed cluster.")
+
+    R = vehicle.max_radius
+
+    if debug_plot:
+        figure = plot_corridors(corridor_sequence, plot_vectors=True)
+        ax = plt.gca()
+        ax.set_title(
+            f"Isolated opposite-turn repair in mixed cluster {cluster['indices']}"
+        )
+
+    for block in isolated_blocks:
+        circle_index = block[0]
+
+        choice = circle_choices_sequence[circle_index]
+        circle = select_preferred_circle(choice)
+
+        print(f"\n  isolated circle {circle_index}")
+        print(f"    edge_pair = {circle.edge_pair}")
+
+        centerline_a, centerline_b = get_centerlines_for_intermediate_circle(
+            circle_choices_sequence=circle_choices_sequence,
+            corridor_sequence=corridor_sequence,
+            circle_index=circle_index,
+        )
+
+        A_center, B_center = centerline_a
+        C_center, D_center = centerline_b
+
+        # ------------------------------------------------------------
+        # Check current intersections with the two centerlines
+        # ------------------------------------------------------------
+        intersection_a = compute_intersection_points_circle_segment(
+            A_center[0], A_center[1],
+            B_center[0], B_center[1],
+            circle.center.x,
+            circle.center.y,
+            R,
+            tol=1e-5,
+        )
+
+        intersection_b = compute_intersection_points_circle_segment(
+            C_center[0], C_center[1],
+            D_center[0], D_center[1],
+            circle.center.x,
+            circle.center.y,
+            R,
+            tol=1e-5,
+        )
+
+        intersects_a = bool(intersection_a)
+        intersects_b = bool(intersection_b)
+
+        print(f"    intersects centerline A: {intersects_a}")
+        print(f"    intersects centerline B: {intersects_b}")
+
+        # ------------------------------------------------------------
+        # Compute new center tangent to both centerlines
+        # ------------------------------------------------------------
+        new_center = compute_center_tangent_to_two_centerlines_same_side(
+            centerline_a=centerline_a,
+            centerline_b=centerline_b,
+            reference_center=circle.center,
+            radius=R,
+            extension_length=1000.0,
+            tol=1e-9,
+        )
+
+        print(
+            f"    old center = ({circle.center.x:.3f}, {circle.center.y:.3f})"
+        )
+        print(
+            f"    new center = ({new_center.x:.3f}, {new_center.y:.3f})"
+        )
+
+        # ------------------------------------------------------------
+        # Build shifted intermediate circle
+        # ------------------------------------------------------------
+        shifted_circle = IntermediateCircle(
+            center=new_center,
+            radius=circle.radius,
+            corner_point=circle.corner_point,
+            turn_direction=circle.turn_direction,
+            index=circle.index,
+            s_max=circle.s_max,
+            edge_pair=circle.edge_pair,
+            door_point=None,
+            door_type=circle.door_type,
+        )
+
+        # Preserve useful metadata if present
+        shifted_circle.s = getattr(circle, "s", 0.0)
+        shifted_circle.canonical_center = getattr(
+            circle,
+            "canonical_center",
+            circle.center,
+        )
+        shifted_circle.is_merged = getattr(circle, "is_merged", False)
+        shifted_circle.merged_from = getattr(circle, "merged_from", None)
+
+        # ------------------------------------------------------------
+        # Replace choice in the sequence
+        # ------------------------------------------------------------
+        new_choice = IntermediateCircleChoice(
+            candidates=[shifted_circle],
+            index=choice.index,
+            corridor_index_start=choice.corridor_index_start,
+            corridor_index_end=choice.corridor_index_end,
+        )
+
+        circle_choices_sequence.choices[circle_index] = new_choice
+
+        # ------------------------------------------------------------
+        # Optional debug plot
+        # ------------------------------------------------------------
+        if debug_plot:
+            angle_array = np.linspace(0.0, 2.0 * np.pi, 200)
+
+            ax.plot(
+                [A_center[0], B_center[0]],
+                [A_center[1], B_center[1]],
+                "--",
+                linewidth=2.5,
+                label=f"circle {circle_index}: centerline A",
+            )
+
+            ax.plot(
+                [C_center[0], D_center[0]],
+                [C_center[1], D_center[1]],
+                "-.",
+                linewidth=2.5,
+                label=f"circle {circle_index}: centerline B",
+            )
+
+            ax.plot(
+                circle.center.x + R * np.cos(angle_array),
+                circle.center.y + R * np.sin(angle_array),
+                ":",
+                linewidth=1.5,
+                label=f"circle {circle_index}: old circle",
+            )
+
+            ax.plot(
+                new_center.x + R * np.cos(angle_array),
+                new_center.y + R * np.sin(angle_array),
+                "-",
+                linewidth=2.0,
+                label=f"circle {circle_index}: shifted tangent circle",
+            )
+
+            ax.plot(
+                circle.center.x,
+                circle.center.y,
+                "x",
+                markersize=7,
+            )
+
+            ax.plot(
+                new_center.x,
+                new_center.y,
+                "o",
+                markersize=6,
+            )
+
+    reindex_intermediate_circle_choices_sequence(
+        circle_choices_sequence
+    )
+
+    circle_choices_sequence = assign_preferred_candidates(
+        circle_choices_sequence,
+        start_pose,
+        end_pose,
+    )
+
+    if debug_plot:
+        ax.axis("equal")
+        ax.legend()
+        plt.show(block=True)
+
+    return circle_choices_sequence
+
+
+def point_to_array(point):
+    """
+    Convert Point, list, tuple, or np.array to np.array([x, y]).
+    """
+    if hasattr(point, "x") and hasattr(point, "y"):
+        return np.array([point.x, point.y], dtype=float)
+
+    return np.asarray(point, dtype=float)
+
+
+def signed_side_and_normal_of_line(reference_point, A, B, tol=1e-9):
+    """
+    Compute the side of reference_point with respect to the oriented line A-B.
+
+    Returns:
+        sign, normal
+
+    sign = +1 means reference_point lies on the positive normal side.
+    sign = -1 means reference_point lies on the negative normal side.
+    """
+
+    reference_point = point_to_array(reference_point)
+    A = point_to_array(A)
+    B = point_to_array(B)
+
+    direction = B - A
+    norm = np.linalg.norm(direction)
+
+    if norm < tol:
+        raise ValueError("Cannot compute normal of degenerate line segment.")
+
+    direction = direction / norm
+
+    normal = np.array([
+        -direction[1],
+        direction[0],
+    ])
+
+    signed_value = np.dot(reference_point - A, normal)
+
+    if signed_value >= 0:
+        sign = 1.0
+    else:
+        sign = -1.0
+
+    return sign, normal
+
+
+def offset_segment_toward_point(A, B, reference_point, distance, tol=1e-9):
+    """
+    Shift segment A-B by distance toward the side containing reference_point.
+    """
+
+    A = point_to_array(A)
+    B = point_to_array(B)
+
+    sign, normal = signed_side_and_normal_of_line(
+        reference_point=reference_point,
+        A=A,
+        B=B,
+        tol=tol,
+    )
+
+    shift = sign * distance * normal
+
+    return A + shift, B + shift
+
+
+def extend_segment(P, Q, extension_length=1000.0, tol=1e-9):
+    """
+    Extend a segment in both directions.
+
+    This is useful because the shifted finite centerline segments may not
+    intersect even if their supporting lines do.
+    """
+
+    P = point_to_array(P)
+    Q = point_to_array(Q)
+
+    direction = Q - P
+    norm = np.linalg.norm(direction)
+
+    if norm < tol:
+        raise ValueError("Cannot extend degenerate segment.")
+
+    direction = direction / norm
+
+    P_ext = P - extension_length * direction
+    Q_ext = Q + extension_length * direction
+
+    return P_ext, Q_ext
+
+
+def compute_center_tangent_to_two_centerlines_same_side(
+    centerline_a,
+    centerline_b,
+    reference_center,
+    radius,
+    extension_length=1000.0,
+    tol=1e-9,
+):
+    """
+    Compute a new circle center such that the circle is tangent to both
+    centerlines.
+
+    The offset side is chosen using the current/reference circle center.
+    """
+
+    A, B = centerline_a
+    C, D = centerline_b
+
+    reference_point = point_to_array(reference_center)
+
+    A_shift, B_shift = offset_segment_toward_point(
+        A=A,
+        B=B,
+        reference_point=reference_point,
+        distance=radius,
+        tol=tol,
+    )
+
+    C_shift, D_shift = offset_segment_toward_point(
+        A=C,
+        B=D,
+        reference_point=reference_point,
+        distance=radius,
+        tol=tol,
+    )
+
+    # First try using the shifted finite segments.
+    new_center, intersects = compute_intersection_two_segments(
+        A_shift,
+        B_shift,
+        C_shift,
+        D_shift,
+        tol=tol,
+    )
+
+    if intersects:
+        return Point(new_center[0], new_center[1])
+
+    # If finite shifted segments do not intersect, use extended segments.
+    A_ext, B_ext = extend_segment(
+        A_shift,
+        B_shift,
+        extension_length=extension_length,
+        tol=tol,
+    )
+
+    C_ext, D_ext = extend_segment(
+        C_shift,
+        D_shift,
+        extension_length=extension_length,
+        tol=tol,
+    )
+
+    new_center, intersects = compute_intersection_two_segments(
+        A_ext,
+        B_ext,
+        C_ext,
+        D_ext,
+        tol=tol,
+    )
+
+    if not intersects:
+        raise ValueError(
+            "Could not compute a center tangent to both centerlines."
+        )
+
+    return Point(new_center[0], new_center[1])
+
+
+def get_corridor_edge_segment(corridor, edge_index):
+    """
+    Return the segment endpoints of a corridor edge.
+
+    Edge convention:
+        0 = front
+        1 = right
+        2 = back
+        3 = left
+
+    Returns
+    -------
+    P, Q : array-like
+        Endpoints of the selected edge.
+    """
+
+    corners = corridor.get_corners()
+
+    if edge_index == 0:
+        P = corners[3]
+        Q = corners[0]
+    elif edge_index == 1:
+        P = corners[0]
+        Q = corners[1]
+    elif edge_index == 2:
+        P = corners[1]
+        Q = corners[2]
+    elif edge_index == 3:
+        P = corners[2]
+        Q = corners[3]
+    else:
+        raise ValueError(f"Invalid edge index: {edge_index}")
+
+    return P, Q
+
+
+def shift_segment_to_corridor_centerline(corridor, P, Q, tol=1e-9):
+    """
+    Shift an edge segment inward until its midpoint lies on the corridor centerline.
+
+    This is safer than relying on edge_index and manually choosing the shift
+    direction/amount.
+    """
+
+    P = np.asarray(P, dtype=float)
+    Q = np.asarray(Q, dtype=float)
+
+    segment_midpoint = 0.5 * (P + Q)
+    corridor_center = np.asarray(corridor.center[:2], dtype=float)
+
+    shift_vector = corridor_center - segment_midpoint
+    shift_norm = np.linalg.norm(shift_vector)
+
+    if shift_norm < tol:
+        return P, Q
+
+    P_center = P + shift_vector
+    Q_center = Q + shift_vector
+
+    return P_center, Q_center
+
+
+def get_centerline_from_corridor_edge(corridor, edge_index):
+    """
+    Build the centerline associated with a corridor edge.
+
+    The selected edge is shifted so that its midpoint lies on the corridor
+    centerline.
+    """
+
+    P, Q = get_corridor_edge_segment(
+        corridor,
+        edge_index,
+    )
+
+    P_center, Q_center = shift_segment_to_corridor_centerline(
+        corridor=corridor,
+        P=P,
+        Q=Q,
+    )
+
+    return P_center, Q_center
+
+
+def get_centerlines_for_intermediate_circle(
+    circle_choices_sequence,
+    corridor_sequence,
+    circle_index,
+):
+    """
+    For an intermediate circle, extract the two centerlines associated
+    with its edge_pair.
+
+    Returns
+    -------
+    centerline_a, centerline_b : tuple
+        Each centerline is represented as (P_center, Q_center).
+    """
+
+    choice = circle_choices_sequence[circle_index]
+    circle = select_preferred_circle(choice)
+
+    if circle.edge_pair is None:
+        raise ValueError(
+            f"Circle {circle_index} has no edge_pair. "
+            "Cannot extract construction centerlines."
+        )
+
+    edge_a = circle.edge_pair[0]
+    edge_b = circle.edge_pair[1]
+
+    corridor_a = corridor_sequence[choice.corridor_index_start]
+    corridor_b = corridor_sequence[choice.corridor_index_end]
+
+    centerline_a = get_centerline_from_corridor_edge(
+        corridor=corridor_a,
+        edge_index=edge_a,
+    )
+
+    centerline_b = get_centerline_from_corridor_edge(
+        corridor=corridor_b,
+        edge_index=edge_b,
+    )
+
+    return centerline_a, centerline_b
+
+
+
+def split_cluster_into_same_turn_blocks(
+    circle_choices_sequence,
+    cluster,
+):
+    """
+    Split a mixed-turn cluster into consecutive same-turn blocks.
+
+    Example:
+        turns = [1, 1, 1, -1, 1, -1, 1, 1]
+
+    gives:
+        [(0, 1, 2), (3,), (4,), (5,), (6, 7)]
+
+    The returned indices are global indices in circle_choices_sequence,
+    not local positions inside the cluster.
+    """
+
+    indices = cluster["indices"]
+
+    if not indices:
+        return []
+
+    blocks = []
+
+    current_block = [indices[0]]
+
+    previous_circle = select_preferred_circle(
+        circle_choices_sequence[indices[0]]
+    )
+    previous_turn = previous_circle.turn_direction
+
+    for idx in indices[1:]:
+        current_circle = select_preferred_circle(
+            circle_choices_sequence[idx]
+        )
+        current_turn = current_circle.turn_direction
+
+        if current_turn == previous_turn:
+            current_block.append(idx)
+        else:
+            blocks.append(tuple(current_block))
+            current_block = [idx]
+
+        previous_turn = current_turn
+
+    blocks.append(tuple(current_block))
+
+    return blocks
 
 
 def solve_same_turn_overlaps(
@@ -524,21 +1180,21 @@ def solve_pair_same_turn_cluster(
     R = vehicle.max_radius
     r = vehicle.width / 2
 
+    # Extract two small circles
     small_circle1 = Circle(
         circle1.corner_point,
         r,
     )
-
     small_circle2 = Circle(
         circle2.corner_point,
         r,
     )
 
+    # Compute distance between two small circles and check if merge is possible
     distance_small_centers = compute_distance_two_points(
         small_circle1.center,
         small_circle2.center,
     )
-
     can_merge = distance_small_centers < 2 * (R - r)
 
     if not can_merge:
@@ -548,6 +1204,8 @@ def solve_pair_same_turn_cluster(
         )
         return circle_choices_sequence
 
+    # Compute the merged circle considering only the two small circle
+    # This circle is tangent to both the small circles
     merged_circle = compute_circle_internally_tangent_to_two_circles(
         small_circle1,
         small_circle2,
@@ -567,6 +1225,37 @@ def solve_pair_same_turn_cluster(
         s_max=0.0,
     )
 
+    overlaps_previous, overlaps_next, previous_circle, next_circle = (
+        merged_circle_overlaps_sequence_neighbors(
+            circle_choices_sequence,
+            merged_intermediate_circle,
+            index,
+        )
+    )
+
+    if overlaps_previous or overlaps_next:
+        dist = compute_distance_two_points(
+            merged_intermediate_circle.center,
+            merged_intermediate_circle.corner_point,
+        )
+
+        s_required = dist + corridor2.width / 2.0 - R
+
+        if s_required < 0:
+            raise ValueError(
+                "Merged circle overlaps a neighbor, but the computed shift "
+                "toward the middle-corridor centerline is negative."
+            )
+
+        if s_required > merged_intermediate_circle.s_max:
+            raise ValueError(
+                "Merged circle overlaps a neighbor, but the required shift "
+                f"s = {s_required:.3f} exceeds s_max = "
+                f"{merged_intermediate_circle.s_max:.3f}."
+            )
+
+        merged_intermediate_circle.update_s(s_required)
+
     # Optional but useful for debugging
     merged_intermediate_circle.is_merged = True
     merged_intermediate_circle.merged_from = (
@@ -576,6 +1265,7 @@ def solve_pair_same_turn_cluster(
         choice2.corridor_index_end,
     )
 
+    # Build the new Circle choice
     replacement_choice = IntermediateCircleChoice(
         candidates=[merged_intermediate_circle],
         index=index,
@@ -583,15 +1273,14 @@ def solve_pair_same_turn_cluster(
         corridor_index_end=choice2.corridor_index_end,
     )
 
+    # Sobstitute the two original choices with the new merged choice
     circle_choices_sequence.replace_two_with_one(
         index,
         replacement_choice,
     )
-
     reindex_intermediate_circle_choices_sequence(
         circle_choices_sequence
     )
-
     circle_choices_sequence = assign_preferred_candidates(
         circle_choices_sequence,
         start_pose,
@@ -643,6 +1332,57 @@ def solve_pair_same_turn_cluster(
         plt.show(block=True)
 
     return circle_choices_sequence
+
+
+def build_pair_cluster_from_same_turn_block(
+    circle_choices_sequence,
+    block,
+):
+    """
+    Convert a same-turn block of length 2 into the cluster format expected by
+    solve_pair_same_turn_cluster.
+    """
+
+    if len(block) != 2:
+        raise ValueError(
+            f"Expected a same-turn pair block of length 2, got {block}."
+        )
+
+    i, j = block
+
+    if j != i + 1:
+        raise ValueError(
+            f"Expected consecutive indices for same-turn pair, got {block}."
+        )
+
+    circle1 = select_preferred_circle(circle_choices_sequence[i])
+    circle2 = select_preferred_circle(circle_choices_sequence[j])
+
+    if circle1.turn_direction != circle2.turn_direction:
+        raise ValueError(
+            f"Block {block} is not a same-turn pair."
+        )
+
+    status = overlap_status_for_intermediate_circles(
+        circle1,
+        circle2,
+    )
+
+    return {
+        "start": i,
+        "end": j,
+        "indices": [i, j],
+        "pairs": [
+            {
+                "pair": (i, j),
+                "status": status,
+                "turns": (
+                    circle1.turn_direction,
+                    circle2.turn_direction,
+                ),
+            }
+        ],
+    }
 
 
 def solve_opposite_turn_overlaps(

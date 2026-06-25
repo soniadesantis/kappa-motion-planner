@@ -84,7 +84,7 @@ def compute_traj_to_circle_unicycle(corridor1, corridor2, start_pose, unicycle, 
 
 def shift_circles_unicycle(
     intermediate_circles,
-    intermediate_circles_choices,
+    # intermediate_circles_choices,
     segments,
     unicycle,
     start_pose,
@@ -268,7 +268,7 @@ def compute_trajectory_unicycle_multiple_corridors_core(
     start_pose,
     end_pose,
     unicycle,
-    intermediate_circles_choices,
+    intermediate_circles,
     inside_first_circle = False,
     inside_last_circle = False
 ):
@@ -297,7 +297,7 @@ def compute_trajectory_unicycle_multiple_corridors_core(
             corridor_list,
             unicycle,
             start_pose,
-            intermediate_circles_choices,
+            intermediate_circles,
         )
 
     if inside_last_circle:
@@ -305,13 +305,13 @@ def compute_trajectory_unicycle_multiple_corridors_core(
             corridor_list,
             unicycle,
             end_pose,
-            intermediate_circles_choices,
+            intermediate_circles,
         )
 
     # Extract the sequence of intermediate circles from the choices
-    intermediate_circles = selected_sequence_from_preferences(
-        intermediate_circles_choices
-)
+#     intermediate_circles = selected_sequence_from_preferences(
+#         intermediate_circles_choices
+# )
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # plt.show(block = True)
@@ -391,7 +391,7 @@ def compute_trajectory_unicycle_multiple_corridors_core(
         end_maneuvers,
         ) = shift_circles_unicycle(
         intermediate_circles,
-        intermediate_circles_choices,
+        # intermediate_circles_choices,
         segments,
         unicycle,
         start_pose,
@@ -564,14 +564,14 @@ def compute_trajectory_unicycle_two_corridors_core(
     start_pose,
     end_pose,
     unicycle,
-    intermediate_circles_choices,
+    intermediate_circles,
     exit_trajectory_start = [],
     exit_trajectory_end = []
 ):
     # Extract the sequence of intermediate circles from the choices
-    intermediate_circles = selected_sequence_from_preferences(
-        intermediate_circles_choices
-    )
+    # intermediate_circles = selected_sequence_from_preferences(
+    #     intermediate_circles_choices
+    # )
     intermediate_circle = intermediate_circles.first
     
 

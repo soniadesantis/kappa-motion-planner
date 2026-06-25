@@ -7,7 +7,7 @@ from .helpers.helper_functions import Timer
 from .helpers.plot_helpers import plot_planner_inputs
 from .helpers.corridor_geometry import shrink_corridor_list
 from .helpers.trajectory_unicycle import compute_trajectory_unicycle_two_corridors, compute_trajectory_unicycle_multiple_corridors_optimal
-
+from .helpers.axis_aligned_int_circle_sequence import build_intermediate_circles_sequence
 
 from .helpers.trajectory_bicycle import compute_trajectory_bicycle_multiple_corridors_optimal, compute_trajectory_bicycle_two_corridors_optimal
 from .helpers.trajectory_unicycle_core import compute_trajectory_unicycle_multiple_corridors_core, compute_trajectory_unicycle_two_corridors_core
@@ -372,12 +372,19 @@ class MotionPlanner:
 
         # Extension version
         elif self.assumptions == "core":
-            self.intermediate_circles_choice_sequence = create_intermediate_circle_choice_sequence(
-            self.corridor_list,
-            self.vehicle,
-            self.start_pose,
-            self.end_pose,
-                )
+            # self.intermediate_circles_choice_sequence = create_intermediate_circle_choice_sequence(
+            # self.corridor_list,
+            # self.vehicle,
+            # self.start_pose,
+            # self.end_pose,
+            #     )
+            
+            self.intermediate_circles_sequence =build_intermediate_circles_sequence(
+                self.corridor_list,
+                self.vehicle,
+                self.start_pose,
+                self.end_pose,
+            )
             
         (
             self.position_out_of_circles_assumption_check,
@@ -488,7 +495,7 @@ class MotionPlanner:
                         start_pose,
                         end_pose,
                         vehicle,
-                        self.intermediate_circles_choice_sequence,
+                        self.intermediate_circles_sequence,
                         self.exit_trajectory_start,
                         self.exit_trajectory_end
                     )
@@ -499,7 +506,7 @@ class MotionPlanner:
                     start_pose,
                     end_pose,
                     vehicle,
-                    self.intermediate_circles_choice_sequence,
+                    self.intermediate_circles_sequence,
                     self.inside_first_circle,
                     self.inside_last_circle,
                 )
@@ -539,7 +546,7 @@ class MotionPlanner:
                     start_pose,
                     end_pose,
                     vehicle,
-                    self.intermediate_circles_choice_sequence,
+                    self.intermediate_circles_sequence,
                 )
         elif len(corridors) > 2:
             with Timer() as timer:
@@ -548,7 +555,7 @@ class MotionPlanner:
                     start_pose,
                     end_pose,
                     vehicle,
-                    self.intermediate_circles_choice_sequence,
+                    self.intermediate_circles_sequence,
                 )
         elif len(corridors) == 1:
             raise NotImplementedError(

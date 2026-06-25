@@ -449,7 +449,7 @@ def build_merged_intermediate_circle(
     else:
         raise ValueError(f"Invalid edge index: {edge_corridor1}")
     
-    C, D = shift_segment_inside_corridor(
+    C_center, D_center = shift_segment_inside_corridor(
         corridor=corridor1,
         edge_index=edge_corridor1,
         P=C,
@@ -476,7 +476,7 @@ def build_merged_intermediate_circle(
         raise ValueError(f"Invalid edge index: {edge_corridor3}")
 
 
-    E, F = shift_segment_inside_corridor(
+    E_center, F_center = shift_segment_inside_corridor(
         corridor=corridor3,
         edge_index=edge_corridor3,
         P=E,
@@ -489,27 +489,27 @@ def build_merged_intermediate_circle(
     # figure = plot_corridors(
     #     [corridor1, corridor2, corridor3],
     # )
-    # plt.plot([C[0], D[0]], [C[1], D[1]], "r-")
-    # plt.plot([E[0], F[0]], [E[1], F[1]], "b-")
+    # plt.plot([C_center.x, D_center.x], [C_center.y, D_center.y], "r-")
+    # plt.plot([E_center.x, F_center.x], [E_center.y, F_center.y], "b-")
     # plt.gca().add_patch(plt.Circle((center.x, center.y), R_check, color='green', fill=False, linestyle='--'))
     # plt.show(block=True)
 
 
     int_point_corridor1 = compute_intersection_points_circle_segment(
-        C[0], C[1],
-        D[0], D[1],
+        C_center[0], C_center[1],
+        D_center[0], D_center[1],
         center.x,
         center.y,
-        R_check,
+        R,
         tol=1e-5,
     )
 
     int_point_corridor3 = compute_intersection_points_circle_segment(
-        E[0], E[1],
-        F[0], F[1],
+        E_center[0], E_center[1],
+        F_center[0], F_center[1],
         center.x,
         center.y,
-        R_check,
+        R,
         tol=1e-5,
     )
 
@@ -528,8 +528,8 @@ def build_merged_intermediate_circle(
         repaired_circle = compute_big_circle_tangent_to_small_circle_and_edge(
             active_small_circle=small_circle1,
             other_small_circle=small_circle2,
-            violated_edge_start=C,
-            violated_edge_end=D,
+            violated_edge_start=C_center,
+            violated_edge_end=D_center,
             radius=R,
             vehicle=vehicle,
             reference_center=merged_circle.center,
@@ -541,15 +541,15 @@ def build_merged_intermediate_circle(
             )
 
         # Recheck against the other outer edge
-        other_edges = [(E, F)]
+        other_edges = [(E_center, F_center)]
 
     elif int_point_corridor3:
         # corridor3 is problematic, so use small_circle2 as the active constraint
         repaired_circle = compute_big_circle_tangent_to_small_circle_and_edge(
             active_small_circle=small_circle2,
             other_small_circle=small_circle1,
-            violated_edge_start=E,
-            violated_edge_end=F,
+            violated_edge_start=E_center,
+            violated_edge_end=F_center,
             radius=R,
             vehicle=vehicle,
             reference_center=merged_circle.center,
@@ -561,7 +561,7 @@ def build_merged_intermediate_circle(
             )
 
         # Recheck against the other outer edge
-        other_edges = [(C, D)]
+        other_edges = [(C_center, D_center)]
 
     # If repair was performed, validate and update merged_circle
     if repaired_circle is not None:
@@ -581,16 +581,16 @@ def build_merged_intermediate_circle(
 
     corner_point_merged = project_point_onto_segment(
         point=center_merged_circle,
-        segment_start=corner_point1,
-        segment_end=corner_point2,
+        segment_start=Point(A[0], A[1]),
+        segment_end=Point(B[0], B[1]),
     )
 
     # ------------------------------------------------------------
     # Recompute s_max after possible repair
     # ------------------------------------------------------------
     is_corner_point_inside = check_point_inside_segment(
-        A,
-        B,
+        Point(A[0], A[1]),
+        Point(B[0], B[1]),
         corner_point_merged,
     )
 
@@ -619,6 +619,44 @@ def build_merged_intermediate_circle(
         door_type="merged",
     )
   
+
+def merged_circle_overlaps_sequence_neighbors(
+    circle_choices_sequence,
+    merged_circle,
+    index,
+):
+    overlaps_previous = False
+    overlaps_next = False
+
+    previous_circle = None
+    next_circle = None
+
+    if index - 1 >= 0:
+        previous_circle = select_preferred_circle(
+            circle_choices_sequence[index - 1]
+        )
+
+        status_prev = overlap_status_for_intermediate_circles(
+            previous_circle,
+            merged_circle,
+        )
+
+        overlaps_previous = status_prev["nominal_overlap"]
+
+    if index + 2 < len(circle_choices_sequence):
+        next_circle = select_preferred_circle(
+            circle_choices_sequence[index + 2]
+        )
+
+        status_next = overlap_status_for_intermediate_circles(
+            merged_circle,
+            next_circle,
+        )
+
+        overlaps_next = status_next["nominal_overlap"]
+
+    return overlaps_previous, overlaps_next, previous_circle, next_circle
+
 
 def choose_shift_direction_away_from_edge(
     center,

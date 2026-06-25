@@ -373,3 +373,14 @@ def remove_zeros_from_turn_direction_vector(corridor_list, final_pose, turn_dire
     return turn_direction_vector
 
 
+def point_matches_any_corner(point, corners, tol=1e-9):
+    for corner in corners:
+        dx = point[0] - corner[0]
+        dy = point[1] - corner[1]
+
+        if dx * dx + dy * dy <= tol * tol:
+            return True
+
+    return False
+
+

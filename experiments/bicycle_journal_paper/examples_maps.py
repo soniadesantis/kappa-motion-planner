@@ -85,7 +85,7 @@ def example_corridor_sequence(num):
         corridor7 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
         corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
         corridor9 = CorridorWorld(0.5399999879300594, 4.3199999034404755, [4.1999999061226845, 6.689999850466847], 0.0)
-        corridor_list = [corridor1, corridor2, corridor3, corridor6, corridor7, corridor8, corridor9]
+        corridor_list = [corridor1, corridor2, corridor3, corridor6,  corridor8, corridor9]
         start_pose = [2.61918306350708, 2.154087543487549, -0.12029518960373457]
         end_pose = [4.050821781158447, 6.627957344055176, 0.07130739522438935]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.575, v_max=1.0, v_min=-1.0, delta_max=m.pi/4, delta_min=-0.5)
@@ -232,7 +232,8 @@ def example_corridor_sequence(num):
 
 
 if __name__ == "__main__":
-    example_num =6
+    example_num =15
+
     # Problems 6, 8, 10 (pose outside shrunken), 12 (pose outside shrunken), 14 (pose outside shrunken), 15 (overlap opposite direction), 16 (problem with corridor direction)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 
