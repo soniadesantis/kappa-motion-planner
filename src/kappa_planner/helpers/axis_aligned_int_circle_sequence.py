@@ -58,59 +58,6 @@ def compute_merged_circle_corner_point(
         middle_edge_from_circle1
     )
 
-    # ------------------------------------------------------------
-    # Debug plot
-    # ------------------------------------------------------------
-    fig, ax = plt.subplots()
-
-    # Plot all corridors normally.
-    figure = plot_corridors(corridor_list, plot_vectors=False)
-    # Get the axis from the returned figure.
-    # Highlight the middle corridor in red.
-    plot_corridors([middle_corridor], figure = figure, plot_vectors=False, color="red")
-
-    # Convert edge segment endpoints to Point if needed.
-    segment_start_point = Point(segment_start[0], segment_start[1])
-    segment_end_point = Point(segment_end[0], segment_end[1])
-
-    # Plot active middle-corridor edge.
-    plt.plot(
-        [segment_start_point.x, segment_end_point.x],
-        [segment_start_point.y, segment_end_point.y],
-        color="red",
-        linewidth=3.0,
-        label="middle active edge",
-    )
-
-    # Plot original corner points.
-    plt.plot(
-        circle1.corner_point.x,
-        circle1.corner_point.y,
-        "go",
-        markersize=8,
-        label="circle1 corner",
-    )
-    plt.plot(
-        circle2.corner_point.x,
-        circle2.corner_point.y,
-        "bo",
-        markersize=8,
-        label="circle2 corner",
-    )
-
-    # Plot merged center.
-    plt.plot(
-        merged_center.x,
-        merged_center.y,
-        "kx",
-        markersize=8,
-        label="merged center",
-    )
-
-    # ax.set_aspect("equal", adjustable="box")
-    # ax.legend()
-    plt.show(block=True)
-
     return project_point_onto_segment(
         point=merged_center,
         segment_start=Point(segment_start[0], segment_start[1]),
