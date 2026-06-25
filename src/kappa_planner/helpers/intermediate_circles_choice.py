@@ -3216,6 +3216,7 @@ def plot_intermediate_circle_choices(
                     linestyle = "-"
                     linewidth = 2.5
                     alpha = 1.0
+                    print(f"Turn direction {circle.turn_direction} is preferred for choice {i}:{j}")
                 else:
                     color = "orange"
                     linestyle = "--"
@@ -3226,6 +3227,7 @@ def plot_intermediate_circle_choices(
                 linestyle = "-"
                 linewidth = 1.5
                 alpha = 0.8
+                print(f"Choice {i}:{j} is unambiguous with turn direction {circle.turn_direction}")
 
             circ = plt.Circle(
                 (xc, yc),

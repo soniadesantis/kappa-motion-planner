@@ -1345,6 +1345,16 @@ def build_intermediate_circles_sequence(
             tau,
         )
 
+        print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
+        print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges}")
+
+        # figure = plot_corridors(corridor_list, plot_vectors=True)
+
+        # plot_corridors([corridor1, corridor2], plot_vectors=False, figure=figure, color = "red")
+        # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
+        # plt.legend()
+        # plt.show(block = True)
+
         # --------------------------------------------------------
         # Optional additional intersection point
         # --------------------------------------------------------
@@ -1427,13 +1437,23 @@ def build_intermediate_circles_sequence(
         corridor1 = corridor_list[i]
         corridor2 = corridor_list[i + 1]
 
-        _, intersecting_edges_nominal = get_corner_point_and_intersecting_edges(
+        corner_point, intersecting_edges_nominal = get_corner_point_and_intersecting_edges(
             corridor1,
             corridor2,
             tau,
         )
 
         edge1, edge2 = intersecting_edges_nominal
+
+        print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
+        print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges_nominal}")
+        
+        # figure = plot_corridors(corridor_list, plot_vectors=True)
+
+        # plot_corridors([corridor1, corridor2], plot_vectors=False, figure=figure, color = "red")
+        # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
+        # plt.legend()
+        # plt.show(block = True)
 
         if edge1 == 0: 
             corridor2_rotated = corridor2 
@@ -1450,25 +1470,26 @@ def build_intermediate_circles_sequence(
         elif edge2 == 2: 
             corridor1_rotated = corridor1
             if edge1 == 1: 
-                corridor2_rotated = corridor2.invert_dimensions(1)
-            elif edge1 == 3: 
                 corridor2_rotated = corridor2.invert_dimensions(-1)
+            elif edge1 == 3: 
+                corridor2_rotated = corridor2.invert_dimensions(1)
             else:
                 raise ValueError(
                     f"Unexpected intersecting edges for corridors {i}, {i+1}: "
                     f"{intersecting_edges_nominal}"
                 )
-            
-        # plot_corridors([corridor1, corridor2], plot_vectors=True)
-        # plot_corridors([corridor1_rotated, corridor2_rotated], plot_vectors=True)
-        # plt.show(block = True)
-
 
         corner_point, intersecting_edges = get_corner_point_and_intersecting_edges(
             corridor1_rotated,
             corridor2_rotated,
             tau,
         )
+
+        # plot_corridors(corridor_list, plot_vectors=True)
+        # plot_corridors([corridor1_rotated, corridor2_rotated], color = "red", plot_vectors=True)
+        # plt.plot(corner_point_rotated[0], corner_point_rotated[1], "ko", label="corner point")
+        # plt.legend()
+        # plt.show(block = True)
 
         # --------------------------------------------------------
         # Additional intersection point
