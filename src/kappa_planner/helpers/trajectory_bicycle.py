@@ -25,8 +25,14 @@ from .primitives import (
     compute_segment_between_two_circles_objects,
     compute_arc_from_two_tangents_objects,
 )
+from .axis_aligned_int_circle_sequence import (
+    detect_tangent_intersections_blocks,
+    update_intermediate_circle_centers_from_extended_sequence,
+    solve_tangent_intersections_blocks_centers,
+)
 
-from ..geometry import Point, Pose, Circle
+
+from ..geometry import IntermediateCircle, Point, Pose, Circle
 from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle
 import matplotlib.pyplot as plt
 import numpy as np
@@ -46,7 +52,10 @@ def compute_P_mid(intermediate_circles, bicycle):
                 intermediate_circles[index + 1],
                 bicycle,
         )
-
+        # angle_array = np.linspace(0, 2*pi, 100)
+        # plt.plot([segments[index].x0, segments[index].xf], [segments[index].y0, segments[index].yf], 'r-')
+        # plt.plot(intermediate_circles[index].xc + intermediate_circles[index].radius * np.cos(angle_array), intermediate_circles[index].yc + intermediate_circles[index].radius * np.sin(angle_array), 'b--')
+        # plt.show(block = True)
     return segments
 
 
@@ -694,6 +703,28 @@ def shift_circles_bicycle(
     return intermediate_circles, segments, start_maneuvers, end_maneuvers
 
 
+def extract_intermediate_circle_from_maneuver_list(maneuver_list):
+    """
+    Extract the intermediate circle from a list of maneuvers.
+
+    :param maneuver_list: list of maneuvers
+    :type maneuver_list: list of primitives
+
+    :return: intermediate circle
+    :rtype: IntermediateCircle object
+    """
+    for maneuver in maneuver_list:
+        if isinstance(maneuver, CurvilinearArcUnicycle):
+            intermediate_circle = IntermediateCircle(
+                center=Point(x=maneuver.xc, y=maneuver.yc),
+                radius=maneuver.radius,
+                corner_point=Point(x=maneuver.xc, y=maneuver.yc),
+                turn_direction=maneuver.turn_direction,
+                index=None,
+            )
+            return intermediate_circle
+    return None
+
 
 def compute_trajectory_bicycle_multiple_corridors_optimal(
     corridor_list,
@@ -756,17 +787,98 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
 
     end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0 = 0)
 
+    # Update Intermediate Circles depending on intersections
+    intermediate_circle0 = extract_intermediate_circle_from_maneuver_list(start_maneuvers)
+    intermediate_circleN = extract_intermediate_circle_from_maneuver_list(end_maneuvers)
+
+    extended_circle_sequence = [intermediate_circle0] + list(intermediate_circles) + [intermediate_circleN]
+
+    flags, blocks = detect_tangent_intersections_blocks(
+        circle_sequence=extended_circle_sequence,
+    )
+
+    max_iterations = 10
+    iteration = 0
+
+    while any(flags) and iteration < max_iterations:
+        iteration += 1
+
+        new_extended_centers, corrected_centers = solve_tangent_intersections_blocks_centers(
+            blocks,
+            extended_circle_sequence,
+            tol=1e-9,
+        )
+
+        if not corrected_centers:
+            print("Tangent intersections remain, but no centers were corrected.")
+            break
+
+        update_intermediate_circle_centers_from_extended_sequence(
+            intermediate_circles,
+            new_extended_centers,
+        )
+
+        if 1 in corrected_centers:
+            first_int_circ = intermediate_circles.first
+            corridor1 = corridor_list[0]
+
+            start_maneuvers = compute_traj_to_circle_bicycle(
+                corridor1,
+                start_pose,
+                bicycle,
+                first_int_circ,
+            )
+            intermediate_circle0 = extract_intermediate_circle_from_maneuver_list(
+                start_maneuvers
+            )
+
+        if len(intermediate_circles) in corrected_centers:
+            last_int_circ = intermediate_circles.last
+            last_corridor = corridor_list[-1]
+
+            inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(
+                last_corridor,
+                last_int_circ,
+                end_pose,
+            )
+
+            inv_end_maneuvers = compute_traj_to_circle_bicycle(
+                inv_last_corridor,
+                inv_end_pose,
+                bicycle,
+                inv_last_int_circ,
+            )
+
+            end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0=0)
+            intermediate_circleN = extract_intermediate_circle_from_maneuver_list(
+                end_maneuvers
+            )
+
+        extended_circle_sequence = (
+            [intermediate_circle0]
+            + list(intermediate_circles)
+            + [intermediate_circleN]
+        )
+
+        flags, blocks = detect_tangent_intersections_blocks(
+            circle_sequence=extended_circle_sequence,
+        )
+
+    if any(flags):
+        print("Warning: tangent intersections remain after correction loop.")
+
+
     # Compute the segments and prune the intermediate circles if necessary
     segments = compute_P_mid(intermediate_circles, bicycle)
     segments.insert(0,start_maneuvers[-1])
     segments.append(end_maneuvers[0])
 
-    angle_array = np.linspace(0, 2*pi, 100)
+    # angle_array = np.linspace(0, 2*pi, 100)
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments + start_maneuvers + end_maneuvers, figure)
     # # plt.plot(intermediate_circles[i].xc + intermediate_circles[i].radius * np.cos(angle_array), intermediate_circles[i].yc + intermediate_circles[i].radius * np.sin(angle_array), 'r--')
     # plt.show(block = True)
-    ok = 1
+    # ok = 1
 
     ## Switch circles in case needed
     # (
@@ -785,22 +897,22 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     # end_maneuvers,
     # )
 
-    (
-    intermediate_circles,
-    segments,
-    start_maneuvers,
-    end_maneuvers,
-    ) = shift_circles_bicycle(
-    intermediate_circles,
-    # intermediate_circles_choices,
-    segments,
-    bicycle,
-    start_pose,
-    corridor_list,
-    end_pose,
-    start_maneuvers,
-    end_maneuvers,
-    )
+    # (
+    # intermediate_circles,
+    # segments,
+    # start_maneuvers,
+    # end_maneuvers,
+    # ) = shift_circles_bicycle(
+    # intermediate_circles,
+    # # intermediate_circles_choices,
+    # segments,
+    # bicycle,
+    # start_pose,
+    # corridor_list,
+    # end_pose,
+    # start_maneuvers,
+    # end_maneuvers,
+    # )
 
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory([segments[0], segments[2]], figure)
@@ -811,7 +923,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     # plt.show(block = True)
     # Compute the arcs
     arcs = []
-    angle_array = np.linspace(0, 2*pi, 100)
+    # angle_array = np.linspace(0, 2*pi, 100)
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # # plt.plot(circle.xc, circle.yc, 'ro')

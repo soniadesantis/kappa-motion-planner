@@ -5,8 +5,10 @@ This module contains functions to construct basic motion primitives
 corridor-based motion planning.
 """
 from math import asin, atan2, cos, pi, sin, sqrt
+from turtle import distance
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from kappa_planner.trajectory import (
     BackwardArc,
@@ -62,25 +64,41 @@ def compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, R, overlap 
             x1, y1, _, _ = circle_intersection(xc1, yc1, R, xc2, yc2, R)
             theta1 = wrapPositiveAngle(atan2(yc2 - yc1, xc2 - xc1) + turn1 * 0.5 * pi)
             x2, y2 = x1, y1
+            return x1, y1, theta1, x2, y2, theta1
+        
         # If the distance between the two circles is > 2R or turn1 = turn2
-        else:
-            zeta = - (turn1 + turn2) * pi * 0.25
-            eta = (turn1 - turn2) * pi * 0.25
-            a1 = sqrt((yc1 - yc2)**2 + (xc1 - xc2)**2)
-            c1 = sqrt((a1)**2 - (R - turn1 * turn2 * R)**2)
-            alfa1 = wrapPositiveAngle(atan2((yc2 - yc1), (xc2 - xc1)))
-            if (c1/a1) > 1:
-                stop = 1
-            gamma1 = asin((R - R)/a1) if turn1 * turn2 > 0 else asin(c1/a1)
-            beta1 = alfa1 - turn1 * gamma1
-            x1 = xc1 + R * cos(beta1 + zeta)
-            y1 = yc1 + R * sin(beta1 + zeta)
-            x2 = x1 + c1 * cos(beta1 + eta)
-            y2 = y1 + c1 * sin(beta1 + eta)
-            theta1 = wrapPositiveAngle(atan2((y2 - y1),(x2 - x1)))
+        distance = np.hypot(xc2 - xc1, yc2 - yc1)
+        if abs(distance - 2.0 * R) <= 1e-9:
+            x1 = 0.5 * (xc1 + xc2)
+            y1 = 0.5 * (yc1 + yc2)
+
+            theta1 = wrapPositiveAngle(
+                atan2(yc2 - yc1, xc2 - xc1) + turn1 * 0.5 * pi
+            )
+            return x1, y1, theta1, x1, y1, theta1
+        
+        zeta = - (turn1 + turn2) * pi * 0.25
+        eta = (turn1 - turn2) * pi * 0.25
+        a1 = sqrt((yc1 - yc2)**2 + (xc1 - xc2)**2)
+        c1 = sqrt((a1)**2 - (R - turn1 * turn2 * R)**2)
+        alfa1 = wrapPositiveAngle(atan2((yc2 - yc1), (xc2 - xc1)))
+        if (c1/a1) > 1:
+            stop = 1
+        gamma1 = asin((R - R)/a1) if turn1 * turn2 > 0 else asin(c1/a1)
+        beta1 = alfa1 - turn1 * gamma1
+        x1 = xc1 + R * cos(beta1 + zeta)
+        y1 = yc1 + R * sin(beta1 + zeta)
+        x2 = x1 + c1 * cos(beta1 + eta)
+        y2 = y1 + c1 * sin(beta1 + eta)
+        theta1 = wrapPositiveAngle(atan2((y2 - y1),(x2 - x1)))
         return x1, y1, theta1, x2, y2, theta1
     except ValueError:
         print("Overlapping circles ERROR")
+        angle_array = np.linspace(0, 2*pi, 100)
+        plt.plot(xc1 + R * np.cos(angle_array), yc1 + R * np.sin(angle_array), 'b--')
+        plt.plot(xc2 + R * np.cos(angle_array), yc2 + R * np.sin(angle_array), 'b--')
+        plt.plot([xc1, xc2], [yc1, yc2], 'ro')
+        plt.show(block = True)
         return None, None, None, None, None, None
 
 

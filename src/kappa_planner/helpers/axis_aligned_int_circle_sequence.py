@@ -2,9 +2,10 @@ from ..geometry import IntermediateCirclesSequence, Point, IntermediateCircle, C
 from .corridor_sequence_validity import validate_corridor_sequence
 from .corridor_geometry import get_corner_point, get_corner_point_and_intersecting_edges, point_matches_any_corner
 from .intersections import compute_intersection_two_segments
-from .arc_feasibility import compute_nominal_same_turn_merged_center, compute_intermediate_circle_geometry, build_intermediate_circle_from_geometry_result
-from .geometry_operations import project_point_onto_segment, compute_distance_two_points, compute_turn_direction_from_three_points, select_tangency_point_from_point_circle
+from .arc_feasibility import world_to_circle_local, compute_nominal_same_turn_merged_center, compute_intermediate_circle_geometry, build_intermediate_circle_from_geometry_result
+from .geometry_operations import check_point_inside_segment, project_point_onto_segment, compute_distance_two_points, compute_turn_direction_from_three_points, select_tangency_point_from_point_circle
 from .plot_helpers import plot_corridors
+from .primitives import compute_extreme_poses_arc_line
 
 import matplotlib.pyplot as plt
 
@@ -14,6 +15,475 @@ import numpy as np
 
 from math import sqrt
 import numpy as np
+
+
+def update_intermediate_circle_centers_from_extended_sequence(
+    intermediate_circles,
+    new_extended_centers,
+):
+    """
+    Update only the real intermediate circles.
+
+    :param intermediate_circles: IntermediateCirclesSequence or list of IntermediateCircle.
+    :param new_extended_centers: centers computed on
+        [initial_circle] + intermediate_circles + [final_circle].
+    """
+    if len(new_extended_centers) != len(intermediate_circles) + 2:
+        raise ValueError(
+            "new_extended_centers must have length len(intermediate_circles) + 2"
+        )
+
+    for i, circle in enumerate(intermediate_circles):
+        new_center = new_extended_centers[i + 1]
+
+        circle.center = Point(new_center.x, new_center.y)
+
+        if hasattr(circle, "xc"):
+            circle.xc = new_center.x
+        if hasattr(circle, "yc"):
+            circle.yc = new_center.y
+            
+
+def update_circle_sequence_centers(circle_sequence, new_centers):
+    """
+    Update the centers of the circles in a sequence.
+
+    :param circle_sequence: Sequence of IntermediateCircle objects.
+    :param new_centers: List of Point objects, one for each circle.
+    :return: None.
+    """
+    if len(circle_sequence) != len(new_centers):
+        raise ValueError("circle_sequence and new_centers must have the same length")
+
+    for circle, new_center in zip(circle_sequence, new_centers):
+        circle.center = Point(new_center.x, new_center.y)
+
+        # Keep these only if your Circle class uses them.
+        if hasattr(circle, "xc"):
+            circle.xc = new_center.x
+        if hasattr(circle, "yc"):
+            circle.yc = new_center.y
+
+
+def shifted_center_is_admissible(circle, shifted_center, tol=1e-9):
+    if getattr(circle, "is_merged", False) or getattr(circle, "merged", False):
+        merged_from = getattr(circle, "merged_from", None)
+
+        if merged_from is None:
+            return False, "merged_circle_missing_merged_from", None
+
+        for source_index, source_circle in enumerate(merged_from):
+            ok, reason, center_local = shifted_center_is_admissible_for_single_circle(
+                source_circle,
+                shifted_center,
+                tol=tol,
+            )
+
+            if not ok:
+                return (
+                    False,
+                    f"merged_source_{source_index}_{reason}",
+                    center_local,
+                )
+
+        return True, "ok", None
+
+    return shifted_center_is_admissible_for_single_circle(
+        circle,
+        shifted_center,
+        tol=tol,
+    )
+
+
+def shifted_center_is_admissible_for_single_circle(circle, shifted_center, tol=1e-9):
+    center_local = world_to_circle_local(circle, shifted_center)
+    x, y = center_local
+
+    if x < circle.lower_bound_x_unclamped - tol:
+        return False, "x_below_lower_bound", center_local
+
+    if y < circle.lower_bound_y_unclamped - tol:
+        return False, "y_below_lower_bound", center_local
+
+    # if circle.admissible_radius is not None:
+    #     if x * x + y * y > circle.admissible_radius**2 + tol:
+    #         return False, "outside_admissible_disk", center_local
+
+    if circle.swept_radius is not None:
+        for forbidden_point in circle.forbidden_points:
+            distance = compute_distance_two_points(shifted_center, forbidden_point)
+
+            if distance < circle.swept_radius - tol:
+                return False, "too_close_to_forbidden_point", center_local
+
+    return True, "ok", center_local
+
+
+def circle_halfplane_clearance(circle, x1, y1, x2, y2, tol=1e-9):
+    signed_distance, n_right = signed_distance_to_directed_line(
+        circle.center,
+        x1,
+        y1,
+        x2,
+        y2,
+        tol=tol,
+    )
+
+    # Keep this convention consistent with the one that works in your plots.
+    side_clearance = signed_distance + circle.turn_direction * circle.radius
+    is_bad = circle.turn_direction * side_clearance < -tol
+
+    return is_bad, signed_distance, n_right, side_clearance
+
+
+# def shifted_center_to_reference_tangent(circle, x1, y1, x2, y2, tol=1e-9):
+#     signed_distance, n_right = signed_distance_to_directed_line(
+#         circle.center,
+#         x1,
+#         y1,
+#         x2,
+#         y2,
+#         tol=tol,
+#     )
+
+#     target_distance = -circle.turn_direction * circle.radius
+#     delta = target_distance - signed_distance
+
+#     center_np = np.array([circle.center.x, circle.center.y], dtype=float)
+#     new_center_np = center_np + delta * n_right
+#     new_center = Point(new_center_np[0], new_center_np[1])
+
+#     is_admissible, reason, center_local = shifted_center_is_admissible(
+#         circle,
+#         new_center,
+#         tol=tol,
+#     )
+
+#     return {
+#         "feasible": is_admissible,
+#         "reason": reason,
+#         "center": new_center,
+#         "center_local": center_local,
+#         "signed_distance": signed_distance,
+#         "target_distance": target_distance,
+#         "delta": delta,
+#     }
+
+
+def shifted_center_to_reference_tangent(circle, x1, y1, x2, y2, tol=1e-9):
+    signed_distance, n_right = signed_distance_to_directed_line(
+        circle.center,
+        x1,
+        y1,
+        x2,
+        y2,
+        tol=tol,
+    )
+
+    target_distance = -circle.turn_direction * circle.radius
+    delta = target_distance - signed_distance
+
+    center_np = np.array([circle.center.x, circle.center.y], dtype=float)
+
+    # First candidate: tangent to the infinite reference line.
+    new_center_np = center_np + delta * n_right
+
+    # Tangency point on the infinite line.
+    tangent_point_np = new_center_np - target_distance * n_right
+    tangent_point = Point(tangent_point_np[0], tangent_point_np[1])
+
+    segment_start = Point(x1, y1)
+    segment_end = Point(x2, y2)
+
+    tangent_point_on_segment = check_point_inside_segment(
+        A=(x1, y1),
+        B=(x2, y2),
+        P=(tangent_point.x, tangent_point.y),
+        tol=tol,
+    )
+
+    used_projected_tangent_point = False
+
+    if not tangent_point_on_segment:
+        # Clamp/project the tangency point to the finite segment.
+        tangent_point = project_point_onto_segment(
+            point=tangent_point,
+            segment_start=segment_start,
+            segment_end=segment_end,
+        )
+
+        tangent_point_np = np.array(
+            [tangent_point.x, tangent_point.y],
+            dtype=float,
+        )
+
+        # Rebuild center from the projected tangent point.
+        new_center_np = tangent_point_np + target_distance * n_right
+        used_projected_tangent_point = True
+
+    new_center = Point(new_center_np[0], new_center_np[1])
+
+    is_admissible, reason, center_local = shifted_center_is_admissible(
+        circle,
+        new_center,
+        tol=tol,
+    )
+
+    print(
+        f"Circle {circle.index} shifted to tangent: {new_center.x}, {new_center.y}"
+    )
+
+    return {
+        "feasible": is_admissible,
+        "reason": reason,
+        "center": new_center,
+        "center_local": center_local,
+        "signed_distance": signed_distance,
+        "target_distance": target_distance,
+        "delta": delta,
+        "tangent_point": tangent_point,
+        "tangent_point_on_segment": tangent_point_on_segment,
+        "used_projected_tangent_point": used_projected_tangent_point,
+    }
+
+
+def solve_tangent_block_centers(
+    first_index,
+    last_index,
+    circle_sequence,
+    corrected_centers,
+    tol=1e-9,
+):
+    if last_index - first_index <= 1:
+        return
+
+    first_circle = circle_sequence[first_index]
+    last_circle = circle_sequence[last_index]
+
+    x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line(
+        first_circle.center.x,
+        first_circle.center.y,
+        last_circle.center.x,
+        last_circle.center.y,
+        first_circle.turn_direction,
+        last_circle.turn_direction,
+        first_circle.radius,
+    )
+
+    good_indices = []
+
+    for circle_index in range(first_index + 1, last_index):
+        circle = circle_sequence[circle_index]
+
+        is_bad, signed_distance, n_right, side_clearance = circle_halfplane_clearance(
+            circle,
+            x1,
+            y1,
+            x2,
+            y2,
+            tol=tol,
+        )
+
+        if not is_bad:
+            good_indices.append(circle_index)
+
+    if good_indices:
+        split_index = good_indices[0]
+
+        solve_tangent_block_centers(
+            first_index,
+            split_index,
+            circle_sequence,
+            corrected_centers,
+            tol=tol,
+        )
+
+        solve_tangent_block_centers(
+            split_index,
+            last_index,
+            circle_sequence,
+            corrected_centers,
+            tol=tol,
+        )
+
+        return
+
+    for circle_index in range(first_index + 1, last_index):
+        circle = circle_sequence[circle_index]
+
+        shift_result = shifted_center_to_reference_tangent(
+            circle,
+            x1,
+            y1,
+            x2,
+            y2,
+            tol=tol,
+        )
+
+        if shift_result["feasible"]:
+            corrected_centers[circle_index] = shift_result["center"]
+            print(
+                f"Circle {circle_index} shifted successfully."
+            )
+        else:
+            print(
+                f"Circle {circle_index} cannot be shifted: "
+                f"{shift_result['reason']}"
+            )
+
+def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9):
+    corrected_centers = {}
+
+    for first_index, last_index in blocks:
+        solve_tangent_block_centers(
+            first_index,
+            last_index,
+            circle_sequence,
+            corrected_centers,
+            tol=tol,
+        )
+
+    new_centers = []
+
+    for index, circle in enumerate(circle_sequence):
+        if index in corrected_centers:
+            new_centers.append(corrected_centers[index])
+        else:
+            new_centers.append(circle.center)
+
+    return new_centers, corrected_centers
+     
+
+def signed_distance_to_directed_line(point, x1, y1, x2, y2, tol=1e-9):
+    vx = x2 - x1
+    vy = y2 - y1
+
+    wx = point.x - x1
+    wy = point.y - y1
+
+    line_length = np.hypot(vx, vy)
+    if line_length <= tol:
+        raise ValueError("Degenerate reference tangent line.")
+    
+    # Unit normal pointing to the right of the directed line.
+    n_right = np.array([vy, -vx], dtype=float) / line_length
+
+    # Positive means point is to the right of the directed line.
+    return -(vx * wy - vy * wx) / line_length, n_right
+
+
+# def solve_tangent_intersections_blocks(blocks, circle_sequence, corridor_list, tol=1e-9):
+#     for first_index, last_index in blocks:
+#         first_circle = circle_sequence[first_index]
+#         last_circle = circle_sequence[last_index]
+
+#         x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line(
+#             first_circle.center.x,
+#             first_circle.center.y,
+#             last_circle.center.x,
+#             last_circle.center.y,
+#             first_circle.turn_direction,
+#             last_circle.turn_direction,
+#             first_circle.radius,
+#         )
+
+#         plot_corridors(corridor_list)
+#         plt.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5)
+#         plt.plot(x1, y1, 'go', markersize=5, label=f'start tangent')
+#         plt.plot(x2, y2, 'yo', markersize=5, label=f'end tangent')
+#         plt.plot(first_circle.center.x, first_circle.center.y, 'ro', markersize=5, label=f'first circle')
+#         plt.plot(last_circle.center.x, last_circle.center.y, 'bo', markersize=5, label=f'last circle')
+#         angle_array = np.linspace(0, 2*np.pi, 100)
+#         plt.plot(first_circle.center.x + first_circle.radius * np.cos(angle_array),
+#                 first_circle.center.y + first_circle.radius * np.sin(angle_array), 'r--', linewidth=1.5, label=f'first circle')
+#         plt.plot(last_circle.center.x + last_circle.radius * np.cos(angle_array),
+#                 last_circle.center.y + last_circle.radius * np.sin(angle_array), 'b--', linewidth=1.5, label=f'last circle')
+
+#         for circle_index in range(first_index + 1, last_index):
+#             circle = circle_sequence[circle_index]
+
+#             signed_distance, n_right= signed_distance_to_directed_line(
+#                 circle.center,
+#                 x1,
+#                 y1,
+#                 x2,
+#                 y2,
+#                 tol=tol,
+#             )
+
+#             side_clearance =  signed_distance + circle.turn_direction * circle.radius
+
+#             is_bad = circle.turn_direction * side_clearance < -tol
+
+#             if is_bad:
+#                 print(
+#                     f"Circle {circle_index} violates block tangent: "
+#                     f"signed_distance={signed_distance:.4f}, "
+#                     f"side_clearance={side_clearance:.4f}"
+#                 )
+#                 target_distance = circle.turn_direction * circle.radius
+#                 delta = target_distance - signed_distance
+
+#                 new_center_np = np.array([circle.center.x, circle.center.y]) + delta * n_right
+
+#                 plt.plot(new_center_np[0], new_center_np[1], 'mo', markersize=5, label=f'corrected circle {circle_index}')
+#                 plt.plot(new_center_np[0] + circle.radius * np.cos(angle_array),
+#                         new_center_np[1] + circle.radius * np.sin(angle_array), 'm--', linewidth=1.5, label=f'corrected circle {circle_index}')
+                
+#             plt.plot(circle.center.x, circle.center.y, 'ro', markersize=5)
+#             plt.plot(circle.center.x + circle.radius * np.cos(angle_array),
+#                     circle.center.y + circle.radius * np.sin(angle_array), 'r--', linewidth=1.5)
+#     plt.legend()
+#     plt.show(block=True)
+
+            
+def detect_tangent_intersections_blocks(circle_sequence, tol=1e-9):
+    flags = []
+
+    for index in range(len(circle_sequence) - 2):
+        circle1 = circle_sequence[index]
+        circle2 = circle_sequence[index + 1]
+        circle3 = circle_sequence[index + 2]
+
+        x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line(
+            circle1.center.x,
+            circle1.center.y,
+            circle3.center.x,
+            circle3.center.y,
+            circle1.turn_direction,
+            circle3.turn_direction,
+            circle1.radius,
+        )
+
+        try:
+            is_bad, signed_distance, n_right, side_clearance = circle_halfplane_clearance(
+                circle2,
+                x1,
+                y1,
+                x2,
+                y2,
+                tol=tol,
+            )
+        except ValueError:
+            is_bad = True
+
+        flags.append(1 if is_bad else 0)
+
+    blocks = []
+    start = None
+
+    for i, flag in enumerate(flags):
+        if flag and start is None:
+            start = i
+        elif not flag and start is not None:
+            blocks.append((start, i + 1))
+            start = None
+
+    if start is not None:
+        blocks.append((start, len(flags) + 1))
+
+    return flags, blocks
+
 
 def compute_merged_circle_corner_point(
     merged_center,
@@ -1179,6 +1649,10 @@ def assign_preferred_turn_directions_to_ambiguous_turns(
                 p_curr,
                 p_next,
             )
+
+            # plot_corridors(corridor_list)
+            # plt.plot([p_prev.x, p_curr.x, p_next.x], [p_prev.y, p_curr.y, p_next.y], 'ro-')
+            # plt.show(block=True)
 
             # ----------------------------------------------------
             # Step 4.

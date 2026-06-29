@@ -3,6 +3,8 @@ from math import cos, sin, pi
 
 from ..geometry import Point, IntermediateCircle
 
+from .geometry_operations import compute_distance_two_points
+
 
 
 
@@ -143,6 +145,17 @@ def local_to_world_point(corner_point, ex, ey, center_local):
         corner_point.x + x * ex[0] + y * ey[0],
         corner_point.y + x * ex[1] + y * ey[1],
     )
+
+
+def world_to_circle_local(circle, point):
+    A = np.column_stack((circle.ex, circle.ey))
+
+    v = np.array([
+        point.x - circle.corner_point.x,
+        point.y - circle.corner_point.y,
+    ], dtype=float)
+
+    return np.linalg.solve(A, v)
 
 
 def compute_transition_frame(corridor1, corridor2, turn_direction):
@@ -560,6 +573,10 @@ def build_intermediate_circle_from_geometry_result(
         [] if forbidden_point is None else [forbidden_point]
     )
 
+    w1 = geometry_result.get("w1", None)
+    w2 = geometry_result.get("w2", None)
+    S = geometry_result.get("S", None)
+
     circle = IntermediateCircle(
         center=center,
         radius=radius,
@@ -572,19 +589,27 @@ def build_intermediate_circle_from_geometry_result(
         door_type=door_type,
         start_angle_arc=start_angle_arc,
         rho=rho,
+        swept_radius=S,
+        admissible_radius=geometry_result.get("D", None),
+        lower_bound_x=geometry_result.get("a", None),
+        lower_bound_y=geometry_result.get("b", None),
+        lower_bound_x_unclamped=S-w1,
+        lower_bound_y_unclamped=S-w2,
+        ex=geometry_result.get("ex", None),
+        ey=geometry_result.get("ey", None),
+        forbidden_points=forbidden_points,
         merged=merged,
-        forbidden_points=forbidden_points
     )
 
     # Optional: attach debug/construction metadata.
     # This is useful while testing, but can be removed later if you want
     # IntermediateCircle objects to stay minimal.
-    circle.construction_rule = geometry_result.get("rule", None)
-    circle.center_local = geometry_result.get("center_local", None)
-    circle.shift_direction_local = geometry_result.get("shift_direction_local", None)
-    circle.shift_direction_world = geometry_result.get("shift_direction_world", None)
-    circle.s_max_reason = geometry_result.get("s_max_reason", None)
-    circle.geometry_result = geometry_result
+    # circle.construction_rule = geometry_result.get("rule", None)
+    # circle.center_local = geometry_result.get("center_local", None)
+    # circle.shift_direction_local = geometry_result.get("shift_direction_local", None)
+    # circle.shift_direction_world = geometry_result.get("shift_direction_world", None)
+    # circle.s_max_reason = geometry_result.get("s_max_reason", None)
+    # circle.geometry_result = geometry_result
 
     return circle
 
@@ -638,6 +663,7 @@ def compute_intermediate_circle_geometry(
     # ------------------------------------------------------------
     r = vehicle.width / 2.0
     R = vehicle.max_radius
+    other_intersection_point_before_check = other_intersection_point
 
     if R <= r:
         raise ValueError(
@@ -646,6 +672,41 @@ def compute_intermediate_circle_geometry(
 
     S = R + r
     D = R - r
+
+    if other_intersection_point is not None:
+        distance_corner_forbidden = compute_distance_two_points(
+            corner_point,
+            other_intersection_point,
+        )
+
+        if distance_corner_forbidden < 2.0 * r - tol:
+            return {
+                "feasible": False,
+                "reason": "Forbidden point too close to corner point. No arc maneuver can safely fit.",
+                "center": None,
+                "center_local": None,
+                "rule": "infeasible",
+                "R": R,
+                "r": r,
+                "S": S,
+                "D": D,
+                "turn_direction": turn_direction,
+                "corner_point": corner_point,
+                "other_intersection_point": other_intersection_point_before_check,
+
+                # No shift data exists because no valid center was selected.
+                "shift_direction_local": None,
+                "shift_direction_world": None,
+                "s_max": None,
+                "s_max_reason": None,
+                "s_max_widths": None,
+                "s_max_widths_reason": None,
+                "s_max_other_intersection": None,
+                "s_max_other_intersection_reason": None,
+            }
+        
+        elif distance_corner_forbidden >= 2.0 * R - tol:
+            other_intersection_point = None
 
     w1 = corridor1.width
     w2 = corridor2.width
@@ -756,7 +817,7 @@ def compute_intermediate_circle_geometry(
                 "corner_point": corner_point,
                 "ex": ex,
                 "ey": ey,
-                "other_intersection_point": other_intersection_point,
+                "other_intersection_point": other_intersection_point_before_check,
 
                 # Shift information
                 **shift_data,
@@ -808,7 +869,7 @@ def compute_intermediate_circle_geometry(
         "corner_point": corner_point,
         "ex": ex,
         "ey": ey,
-        "other_intersection_point": other_intersection_point,
+        "other_intersection_point": other_intersection_point_before_check,
         "candidate_rules": [rule for rule, _ in candidates],
         "blocked_candidates": blocked_candidates,
 

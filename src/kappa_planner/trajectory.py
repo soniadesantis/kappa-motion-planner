@@ -287,6 +287,8 @@ class CurvilinearArcUnicycle(Trajectory):
                                                   self.end_position)
         if abs(self.delta_angle) < 1e-6:
             self.iota = 0
+            self.heading_displacement = 0.0
+            self.thetaf = self.theta0
 
         else:
             asin_arg = (self.chord * 0.5) / self.radius
@@ -296,6 +298,9 @@ class CurvilinearArcUnicycle(Trajectory):
                 self.iota = 2 * asin(asin_arg)
             else:
                 self.iota = 2 * pi - 2 * asin(asin_arg)
+
+        self.heading_displacement = self.turn_direction * self.iota
+        self.thetaf = self.theta0 + self.heading_displacement
 
         self.epsilon    = wrapPositiveAngle(atan2((self.y0 - self.yc),
                                                   (self.x0 - self.xc)))
@@ -360,16 +365,17 @@ class CurvilinearArcUnicycle(Trajectory):
         :type new_theta0: float
         """
         self.theta0 = new_theta0
+        # self.thetaf = self.theta0 + self.heading_displacement
 
-        # Compute new final heading while preserving the internal angle
-        if efficient_sign(self.delta_angle) == self.turn_direction:
-            self.thetaf = self.theta0 + self.delta_angle
-        else:
-            self.thetaf = (
-                self.theta0
-                + self.turn_direction * abs(2 * pi - abs(self.delta_angle))
-            )
-
+        # # Compute new final heading while preserving the internal angle
+        # if efficient_sign(self.delta_angle) == self.turn_direction:
+        #     self.thetaf = self.theta0 + self.delta_angle
+        # else:
+        #     self.thetaf = (
+        #         self.theta0
+        #         + self.turn_direction * abs(2 * pi - abs(self.delta_angle))
+        #     )
+        self.thetaf = self.theta0 + self.turn_direction * self.iota
         # Update start/end poses
         self.start_pose = [self.x0, self.y0, self.theta0]
         self.end_pose = [self.xf, self.yf, self.thetaf]

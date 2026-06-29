@@ -12,9 +12,13 @@ from kappa_planner.helpers.arc_feasibility import (
 from kappa_planner.helpers.plot_helpers import plot_corridors
 from kappa_planner.helpers.corridor_geometry import get_corner_point
 from kappa_planner.helpers.axis_aligned_int_circle_sequence import (
-    build_intermediate_circles_sequence
+    build_intermediate_circles_sequence,
+    detect_tangent_intersections_blocks,
+    solve_tangent_intersections_blocks_centers,
+    update_circle_sequence_centers,
 )
 from kappa_planner.helpers.poses import compute_end_pose, compute_start_pose
+from kappa_planner.helpers.primitives import compute_extreme_poses_arc_line
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
@@ -547,7 +551,7 @@ def main1():
     )
 
 def main2():
-    case_id = 5
+    case_id = 7
 
     if case_id == 1: 
         corridor1 = CorridorWorld(2.47999994456768, 5.129999885335565, [9.199999794363976, 10.404999767430127], -1.5707963267948966)
@@ -613,6 +617,27 @@ def main2():
         end_pose = [5.497298240661621, 22.849388122558594, 0.0]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
+    elif case_id == 6:
+        corridor1 = CorridorWorld(6.989999843761325, 4.899999890476465, [30.694999313913286, 11.069999752566218], -1.5707963267948966)
+        corridor2 = CorridorWorld(1.0299999769777053, 10.02999977581203, [32.60499927122146, 8.504999809898436], -1.5707963267948966)
+        corridor3 = CorridorWorld(4.979999888688326, 2.969999933615327, [32.67499926965684, 5.979999866336584], 0.0)
+        corridor_list = [corridor1, corridor2, corridor3]
+        start_pose = [30.759105682373047, 12.061663627624512, 3.141592653589793]
+        end_pose = [33.177406311035156, 5.57621955871582, -1.158386219431387]
+        vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
+
+    elif case_id == 7:
+        corridor1 = CorridorWorld(4.969999888911843, 2.959999933838844, [8.644999806769192, 1.7399999611079693], 1.5707963267948966)
+        corridor2 = CorridorWorld(1.7199999615550046, 8.069999819621444, [8.719999805092812, 4.294999903999269], 1.5707963267948966)
+        corridor3 = CorridorWorld(1.0199999772012247, 23.449999475851655, [8.469999810680747, 11.984999732114375], 1.5707963267948966)
+        corridor4 = CorridorWorld(2.1199999526143083, 15.239999659359455, [8.499999810010195, 16.089999640360475], 1.5707963267948966)
+        corridor5 = CorridorWorld(1.029999976977705, 7.269999837502837, [11.044999753125012, 21.004999530501664], 3.141592653589793)
+        corridor6 = CorridorWorld(1.0199999772012225, 7.27999983727932, [5.929999867454171, 21.319999523460865], 3.141592653589793)
+        corridor7 = CorridorWorld(4.999999888241291, 4.979999888688326, [4.789999892935157, 21.199999526143074], 1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor6, corridor7]
+        start_pose = [10.956110000610352, 1.4690418243408203, 2.699218939309123]
+        end_pose = [5.497298240661621, 22.849388122558594, 0.0]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
     circle_sequence = build_intermediate_circles_sequence(
         corridor_list=corridor_list,
@@ -629,12 +654,136 @@ def main2():
         ax=ax,
         intermediate_circles_sequence=circle_sequence,
         footprint_radius=vehicle.width / 2.0,
-        plot_swept_circle=True,
-        plot_shifted_circle=True,
+        plot_swept_circle=False,
+        plot_shifted_circle=False,
         plot_corner_small_circles=True,
     )
+    plt.show(block=True)
+
+    # plot_corridors(corridor_list)
+    # intersections = []
+    # for index in range(len(circle_sequence) - 2):
+    #     circle1 = circle_sequence[index]
+    #     circle3 = circle_sequence[index + 2]
+    #     x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line(
+    #         circle1.center.x,
+    #         circle1.center.y,
+    #         circle3.center.x,
+    #         circle3.center.y,
+    #         circle1.turn_direction,
+    #         circle3.turn_direction,
+    #         circle1.radius)
+        
+    #     circle2 = circle_sequence[index + 1]
+
+    #     vx = x2 - x1
+    #     vy = y2 - y1
+
+    #     wx = circle2.center.x - x1
+    #     wy = circle2.center.y - y1
+
+    #     line_length = np.hypot(vx, vy)
+
+    #     signed_distance = -(vx * wy - vy * wx) / line_length - circle2.radius
+
+    #     if circle2.turn_direction * signed_distance < 0:
+    #         intersections.append(1)
+    #     else:
+    #         intersections.append(0)
+
+    #     plt.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5, label=f'extreme poses {index} to {index+2}')
+    #     plt.plot(circle1.center.x, circle1.center.y, 'ro', markersize=5)
+    #     plt.plot(circle3.center.x, circle3.center.y, 'ro', markersize=5)
+    #     angle_array = np.linspace(0, 2*np.pi, 100)
+    #     plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array),
+    #              circle1.center.y + circle1.radius * np.sin(angle_array), 'r--', linewidth=1.5)
+    #     plt.plot(circle3.center.x + circle3.radius * np.cos(angle_array),
+    #              circle3.center.y + circle3.radius * np.sin(angle_array), 'r--', linewidth=1.5)
+    #     plt.text(circle1.center.x, circle1.center.y, f'C{index}', fontsize=9, color='red')
+    #     plt.text(circle3.center.x, circle3.center.y, f'C{index+2}', fontsize=9, color='red')
+
+    # # print("Intersections:", intersections)
+
+
+    # solve_tangent_intersections_blocks(
+    #     blocks,
+    #     circle_sequence,
+    #     corridor_list,
+    # )
+
+    flags, blocks = detect_tangent_intersections_blocks(
+        circle_sequence=circle_sequence,
+    )
+    print("Flags:", flags)
+    print("Blocks:", blocks)
+    new_centers, corrected_centers = solve_tangent_intersections_blocks_centers(
+        blocks,
+        circle_sequence,
+        tol=1e-9,
+    )
+
+    update_circle_sequence_centers(circle_sequence, new_centers)
+
+    plot_corridors(corridor_list)
+    ax = plt.gca()
+    plot_intermediate_circles_sequence_debug(
+        ax=ax,
+        intermediate_circles_sequence=circle_sequence,
+        footprint_radius=vehicle.width / 2.0,
+        plot_swept_circle=False,
+        plot_shifted_circle=False,
+        plot_corner_small_circles=True,
+    )
+    plt.show(block=True)
+
+    
+    plot_corridors(corridor_list)
+    angle_array = np.linspace(0, 2 * np.pi, 100)
+
+    for index, center in enumerate(new_centers):
+        circle = circle_sequence[index]
+        plt.text(
+        center.x,
+        center.y,
+        f"C{index}, tau={circle.turn_direction}",
+        fontsize=9,
+        color="purple",
+    )
+
+        plt.plot(center.x, center.y, "mo", markersize=5)
+        plt.plot(
+            center.x + circle.radius * np.cos(angle_array),
+            center.y + circle.radius * np.sin(angle_array),
+            "m--",
+            linewidth=1.5,
+        )
+
+    for index in range(len(circle_sequence) - 1):
+        circle1 = circle_sequence[index]
+        circle2 = circle_sequence[index + 1]
+
+        center1 = new_centers[index]
+        center2 = new_centers[index + 1]
+
+        x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line(
+            center1.x,
+            center1.y,
+            center2.x,
+            center2.y,
+            circle1.turn_direction,
+            circle2.turn_direction,
+            circle1.radius,
+        )
+        if x1 is not None:
+            plt.plot([x1, x2], [y1, y2], "k-", linewidth=1.5)
+            plt.plot(x1, y1, "go", markersize=4)
+            plt.plot(x2, y2, "yo", markersize=4)
+
+    plt.axis("equal")
 
     plt.show(block=True)
+
+    
 
 
 if __name__ == "__main__":

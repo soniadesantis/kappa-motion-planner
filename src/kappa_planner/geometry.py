@@ -132,8 +132,16 @@ class IntermediateCircle(Circle):
         door_type=None,
         start_angle_arc=None,
         rho=None,
-        merged = False,
+        swept_radius=None,        # R + r
+        admissible_radius=None,   # R - r
+        lower_bound_x=None,       # a
+        lower_bound_y=None,       # b
+        lower_bound_x_unclamped=None,  # a'
+        lower_bound_y_unclamped=None,  # b'
+        ex=None,
+        ey=None,
         forbidden_points=None,
+        merged = False,
     ):
         super().__init__(center=center, radius=radius)
 
@@ -158,6 +166,14 @@ class IntermediateCircle(Circle):
 
         self.start_angle_arc = start_angle_arc
         self.rho = rho
+        self.swept_radius = swept_radius
+        self.admissible_radius = admissible_radius
+        self.lower_bound_x = lower_bound_x
+        self.lower_bound_y = lower_bound_y
+        self.lower_bound_x_unclamped = lower_bound_x_unclamped
+        self.lower_bound_y_unclamped = lower_bound_y_unclamped
+        self.ex = ex
+        self.ey = ey
         self.forbidden_points = forbidden_points if forbidden_points is not None else []
 
         if self.start_angle_arc is not None and rho is not None:

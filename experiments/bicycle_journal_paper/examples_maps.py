@@ -10,6 +10,7 @@ import matplotlib.pylab as plt
 from kappa_planner.corridor import CorridorWorld
 from kappa_planner.vehicle import Bicycle, Unicycle
 from kappa_planner.motion_planner import MotionPlanner
+from kappa_planner.trajectory import CurvilinearArcUnicycle
 from kappa_planner.helpers.poses import compute_end_pose, compute_start_pose
 from kappa_planner.helpers.corridor_geometry import get_corridor_from_vector
 from kappa_planner.helpers.plot_helpers import (
@@ -49,7 +50,7 @@ def example_corridor_sequence(num):
         corridor5 = CorridorWorld(1.029999976977705, 7.269999837502837, [11.044999753125012, 21.004999530501664], 3.141592653589793)
         corridor6 = CorridorWorld(1.0199999772012225, 7.27999983727932, [5.929999867454171, 21.319999523460865], 3.141592653589793)
         corridor7 = CorridorWorld(4.999999888241291, 4.979999888688326, [4.789999892935157, 21.199999526143074], 1.5707963267948966)
-        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7]
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor6, corridor7]
         start_pose = [10.956110000610352, 1.4690418243408203, 2.699218939309123]
         end_pose = [5.497298240661621, 22.849388122558594, 0.0]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
@@ -85,10 +86,10 @@ def example_corridor_sequence(num):
         corridor7 = CorridorWorld(0.38999999128282026, 3.4299999233335257, [1.9549999563023448, 6.034999865107238], 3.141592653589793)
         corridor8 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
         corridor9 = CorridorWorld(0.5399999879300594, 4.3199999034404755, [4.1999999061226845, 6.689999850466847], 0.0)
-        corridor_list = [corridor1, corridor2, corridor3, corridor6,  corridor8, corridor9]
+        corridor_list = [corridor1, corridor2, corridor3, corridor6, corridor7, corridor8, corridor9]
         start_pose = [2.61918306350708, 2.154087543487549, -0.12029518960373457]
         end_pose = [4.050821781158447, 6.627957344055176, 0.07130739522438935]
-        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.575, v_max=1.0, v_min=-1.0, delta_max=m.pi/4, delta_min=-0.5)
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.32, v_max=1.0, v_min=-1.0, delta_max=m.pi/4, delta_min=-0.5)
 
     elif num == 6:
 
@@ -216,6 +217,7 @@ def example_corridor_sequence(num):
         start_pose = [30.759105682373047, 12.061663627624512, 3.141592653589793]
         end_pose = [33.177406311035156, 5.57621955871582, -1.158386219431387]
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
+        vehicle = Bicycle([0, 0, 0], width=0.2, length=0.2, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
     elif num == 17: # Side-Side narrow corridors
         corridor1 = CorridorWorld(5, 10, [0, 0], 0)
@@ -232,32 +234,32 @@ def example_corridor_sequence(num):
 
 
 if __name__ == "__main__":
-    example_num =15
+    example_num = 16
 
-    # Problems 6, 8, 10 (pose outside shrunken), 12 (pose outside shrunken), 14 (pose outside shrunken), 15 (overlap opposite direction), 16 (problem with corridor direction)
+    # Problems 8 (3 overlapping), 10 (pose outside shrunken), 12 (pose outside shrunken), 14 (pose outside shrunken), 15 (overlap opposite direction), 16 (problem with corridor direction)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 
-    figure = plot_corridors(corridor_list, plot_vectors=True)
-    # plt.show(block = True)
-    # for i in range(len(corridor_list)-1):
-    #     plot_corridors([corridor_list[i], corridor_list[i+1]])
+    # figure = plot_corridors(corridor_list, plot_vectors=True)
+    # # plt.show(block = True)
+    # # for i in range(len(corridor_list)-1):
+    # #     plot_corridors([corridor_list[i], corridor_list[i+1]])
 
-    ax = plt.gca()
-    # plt.show(block = True)
-    circle_choices_sequence = create_intermediate_circle_choice_sequence(
-        corridor_list,
-        vehicle,
-        start_pose,
-        end_pose,
-    )
+    # ax = plt.gca()
+    # # plt.show(block = True)
+    # circle_choices_sequence = create_intermediate_circle_choice_sequence(
+    #     corridor_list,
+    #     vehicle,
+    #     start_pose,
+    #     end_pose,
+    # )
 
-    plot_intermediate_circle_choices(
-        ax,
-        circle_choices_sequence,
-        vehicle.width/2,
-        plot_arcs = True,
-    )
-    plt.show(block = True)
+    # plot_intermediate_circle_choices(
+    #     ax,
+    #     circle_choices_sequence,
+    #     vehicle.width/2,
+    #     plot_arcs = True,
+    # )
+    # plt.show(block = True)
 
 
     ### Define Motion Planner ###
@@ -312,6 +314,13 @@ if __name__ == "__main__":
     # linestyle="-",
     # alpha=0.2,
     # )
-    
+
+    # for maneuver in analytical_trajectory:
+    #     if isinstance(maneuver, CurvilinearArcUnicycle):
+    #         print(maneuver)
+    #         print(f"Angular displacement: {maneuver.delta_angle} rad and motion time: {maneuver.maneuver_time} s")
+    #         print(f"Start pose: {maneuver.theta0} and end pose: {maneuver.thetaf}")
+    #         print(f"Theta trajectory: {maneuver.theta_trajectory}\n")
+        
     plt.show(block = True)
 
