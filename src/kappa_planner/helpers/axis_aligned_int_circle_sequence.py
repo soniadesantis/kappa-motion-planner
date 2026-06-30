@@ -17,6 +17,186 @@ from math import sqrt
 import numpy as np
 
 
+def update_turn_direction_circles(
+    failed_shifts,
+    intermediate_circles,
+    corridor_list,
+    vehicle,
+    tol=1e-9,
+):
+    """
+    Structurally repair failed tangent shifts by rebuilding the failed circles
+    with the opposite turn direction.
+
+    The indices in failed_shifts are extended-sequence indices:
+        0 -> virtual initial circle
+        1 -> intermediate_circles[0]
+        ...
+        len(intermediate_circles) -> intermediate_circles[-1]
+        len(intermediate_circles) + 1 -> virtual final circle
+
+    :param failed_shifts: Dictionary of failed shifts.
+    :param intermediate_circles: IntermediateCirclesSequence to modify.
+    :param corridor_list: List of corridors.
+    :param vehicle: Vehicle object.
+    :param tol: Numerical tolerance.
+    :return: True if at least one circle was structurally updated.
+    :rtype: bool
+    """
+
+    updated_any = False
+
+    # Work from right to left, so replacing one circle by two circles
+    # does not invalidate the remaining indices.
+    for extended_index in sorted(failed_shifts.keys(), reverse=True):
+
+        # Skip virtual initial circle.
+        if extended_index == 0:
+            continue
+
+        # Skip virtual final circle.
+        if extended_index == len(intermediate_circles) + 1:
+            continue
+
+        intermediate_index = extended_index - 1
+        circle = intermediate_circles[intermediate_index]
+
+        is_merged = (
+            getattr(circle, "merged", False)
+            or getattr(circle, "is_merged", False)
+        )
+
+        # ============================================================
+        # Case 1: failed circle is merged
+        # ============================================================
+        if is_merged:
+            print(f"Updating failed merged circle at extended index {extended_index}.")
+
+            merged_from = getattr(circle, "merged_from", None)
+
+            if merged_from is None:
+                print("Cannot update merged circle: missing merged_from.")
+                continue
+
+            shift_result = failed_shifts[extended_index]["shift_result"]
+            attempted_center = shift_result.get("center", None)
+
+            if attempted_center is None:
+                print("Cannot update merged circle: missing attempted shifted center.")
+                continue
+
+            new_source_circles = []
+
+            for source_index, source_circle in enumerate(merged_from):
+                ok, reason, center_local = shifted_center_is_admissible_for_single_circle(
+                    source_circle,
+                    attempted_center,
+                    tol=tol,
+                )
+
+                if ok:
+                    print(
+                        f"  merged source {source_index} was admissible; "
+                        "keeping original source circle."
+                    )
+                    new_source_circles.append(source_circle)
+                    continue
+
+                print(
+                    f"  merged source {source_index} failed with reason "
+                    f"{reason}; rebuilding with opposite turn."
+                )
+
+                corridor_index = source_circle.corridor_index_start
+                opposite_turn = -source_circle.turn_direction
+
+                rebuilt_circle = build_circle_from_two_corridors(
+                    corridor1=corridor_list[corridor_index],
+                    corridor2=corridor_list[corridor_index + 1],
+                    tau=opposite_turn,
+                    vehicle=vehicle,
+                    i=corridor_index,
+                )
+
+                new_source_circles.append(rebuilt_circle)
+
+            # Try to merge the two repaired/source circles if possible.
+            replacement_circles = new_source_circles
+
+            if len(new_source_circles) == 2:
+                circle1 = new_source_circles[0]
+                circle2 = new_source_circles[1]
+
+                same_turn = circle1.turn_direction == circle2.turn_direction
+                center_distance = compute_distance_two_points(
+                    circle1.center,
+                    circle2.center,
+                )
+
+                nominal_overlap = center_distance < (
+                    circle1.radius + circle2.radius - tol
+                )
+
+                if same_turn and nominal_overlap:
+                    try:
+                        merged_circle = build_merged_circle_for_same_turn_pair(
+                            circle1=circle1,
+                            circle2=circle2,
+                            corridor_list=corridor_list,
+                            vehicle=vehicle,
+                        )
+
+                        replacement_circles = [merged_circle]
+
+                        print(
+                            "  rebuilt source circles were merged again "
+                            "after opposite-turn update."
+                        )
+
+                    except Exception as error:
+                        print(
+                            "  merge attempt failed; keeping the two "
+                            f"separate source circles. Reason: {error}"
+                        )
+
+            # Replace the merged circle by either:
+            #   - one merged circle, if merge succeeded
+            #   - two separate source circles otherwise
+            intermediate_circles.remove_at(intermediate_index)
+
+            for replacement_circle in reversed(replacement_circles):
+                intermediate_circles.insert(
+                    intermediate_index,
+                    replacement_circle,
+                )
+
+            updated_any = True
+            continue
+
+        # ============================================================
+        # Case 2: failed circle is not merged
+        # ============================================================
+        print(f"Updating failed circle at extended index {extended_index}.")
+
+        corridor_index = circle.corridor_index_start
+        opposite_turn = -circle.turn_direction
+
+        rebuilt_circle = build_circle_from_two_corridors(
+            corridor1=corridor_list[corridor_index],
+            corridor2=corridor_list[corridor_index + 1],
+            tau=opposite_turn,
+            vehicle=vehicle,
+            i=corridor_index,
+        )
+
+        intermediate_circles.remove_at(intermediate_index)
+        intermediate_circles.insert(intermediate_index, rebuilt_circle)
+
+        updated_any = True
+
+    return updated_any
+
+
 def update_intermediate_circle_centers_from_extended_sequence(
     intermediate_circles,
     new_extended_centers,
@@ -71,6 +251,8 @@ def shifted_center_is_admissible(circle, shifted_center, tol=1e-9):
 
         if merged_from is None:
             return False, "merged_circle_missing_merged_from", None
+        
+        failed_sources = []
 
         for source_index, source_circle in enumerate(merged_from):
             ok, reason, center_local = shifted_center_is_admissible_for_single_circle(
@@ -80,12 +262,19 @@ def shifted_center_is_admissible(circle, shifted_center, tol=1e-9):
             )
 
             if not ok:
-                return (
-                    False,
-                    f"merged_source_{source_index}_{reason}",
-                    center_local,
-                )
+                failed_sources.append({
+                    "source_index": source_index,
+                    "reason": reason,
+                    "center_local": center_local,
+                    "source_circle": source_circle,
+                })
 
+        if failed_sources:
+            return (
+                False,
+                "merged_circle_source_constraint_failed",
+                failed_sources,
+            )
         return True, "ok", None
 
     return shifted_center_is_admissible_for_single_circle(
@@ -94,6 +283,55 @@ def shifted_center_is_admissible(circle, shifted_center, tol=1e-9):
         tol=tol,
     )
 
+def print_failed_tangent_shift_summary(failed_shifts, tol=1e-9):
+    """
+    Print a compact summary of failed tangent shifts.
+
+    :param failed_shifts: Dictionary returned by solve_tangent_intersections_blocks_centers.
+    :param tol: Numerical tolerance.
+    :return: None.
+    """
+    for failed_index, failure in failed_shifts.items():
+        circle = failure["circle"]
+        shift_result = failure["shift_result"]
+        attempted_center = shift_result.get("center", None)
+
+        is_merged = (
+            getattr(circle, "merged", False)
+            or getattr(circle, "is_merged", False)
+        )
+
+        print("\nFAILED TANGENT SHIFT")
+        print("extended index:", failed_index)
+        print("block:", failure.get("block", None))
+        print("reason:", failure.get("reason", None))
+        print("is merged:", is_merged)
+
+        if not is_merged:
+            continue
+
+        merged_from = getattr(circle, "merged_from", None)
+
+        if merged_from is None:
+            print("merged_from: missing")
+            continue
+
+        if attempted_center is None:
+            print("attempted shifted center: missing")
+            continue
+
+        for source_index, source_circle in enumerate(merged_from):
+            ok, reason, center_local = shifted_center_is_admissible_for_single_circle(
+                source_circle,
+                attempted_center,
+                tol=tol,
+            )
+
+            print(
+                f"merged source {source_index}: "
+                f"ok={ok}, reason={reason}, center_local={center_local}"
+            )
+            
 
 def shifted_center_is_admissible_for_single_circle(circle, shifted_center, tol=1e-9):
     center_local = world_to_circle_local(circle, shifted_center)
@@ -252,11 +490,17 @@ def solve_tangent_block_centers(
     last_index,
     circle_sequence,
     corrected_centers,
+    failed_shifts,
     tol=1e-9,
 ):
+    
+    # The block is circle_sequence[first_index : last_index + 1] 
+    # If the block has only two circles, there are no interior circles to check
     if last_index - first_index <= 1:
         return
 
+    # If the block has more than two circles, build the tangent between
+    # the first and last circles, and check the intermediate circles.
     first_circle = circle_sequence[first_index]
     last_circle = circle_sequence[last_index]
 
@@ -275,6 +519,7 @@ def solve_tangent_block_centers(
     for circle_index in range(first_index + 1, last_index):
         circle = circle_sequence[circle_index]
 
+        # A circle is good if it actively pushes the tangent along the correct direction
         is_bad, signed_distance, n_right, side_clearance = circle_halfplane_clearance(
             circle,
             x1,
@@ -287,6 +532,7 @@ def solve_tangent_block_centers(
         if not is_bad:
             good_indices.append(circle_index)
 
+    # Split the block in case one circle that actively pushes the tangent is found
     if good_indices:
         split_index = good_indices[0]
 
@@ -295,6 +541,7 @@ def solve_tangent_block_centers(
             split_index,
             circle_sequence,
             corrected_centers,
+            failed_shifts,
             tol=tol,
         )
 
@@ -303,14 +550,24 @@ def solve_tangent_block_centers(
             last_index,
             circle_sequence,
             corrected_centers,
+            failed_shifts,
             tol=tol,
         )
 
         return
 
+    # If no good circles are found, it is time to resolve the intersection by shiftin
+    # If no good circles are found, try to resolve the intersection by shifting.
+    # The block correction is accepted only if all required shifts are feasible.
+    block_corrected_centers = {} # tentative successful shifts for this block
+    # temporary because the block is accepted only if all required shifts are feasible.
+    block_failed_shifts = {} # failed shifts for this block
+
     for circle_index in range(first_index + 1, last_index):
         circle = circle_sequence[circle_index]
 
+        # Shift the circle until it is tangent to the reference line
+        # and check if the shifted center is admissible.
         shift_result = shifted_center_to_reference_tangent(
             circle,
             x1,
@@ -321,25 +578,57 @@ def solve_tangent_block_centers(
         )
 
         if shift_result["feasible"]:
-            corrected_centers[circle_index] = shift_result["center"]
-            print(
-                f"Circle {circle_index} shifted successfully."
-            )
+            block_corrected_centers[circle_index] = shift_result["center"]
         else:
+            block_failed_shifts[circle_index] = {
+                "reason": shift_result["reason"],
+                "shift_result": shift_result,
+                "block": (first_index, last_index),
+                "circle": circle,
+            }
+
+    # If at least one circle failed, reject all shifts in this block.
+    # The failed circles will be structurally repaired later, and the whole
+    # tangent-intersection check will be run again.
+    if block_failed_shifts:
+        # save the failure information from local to global failed_shifts
+        for circle_index, failure in block_failed_shifts.items():
+            failed_shifts[circle_index] = failure
+
             print(
                 f"Circle {circle_index} cannot be shifted: "
-                f"{shift_result['reason']}"
+                f"{failure['reason']}"
             )
+
+        print(
+            f"Block ({first_index}, {last_index}) rejected. "
+            "All tentative shifts in this block are discarded."
+        )
+
+        return
+
+    # If no failures occurred, accept all shifts in this block.
+    for circle_index, new_center in block_corrected_centers.items():
+        # save the successful shift information from local to global corrected_centers
+        corrected_centers[circle_index] = new_center
+        print(f"Circle {circle_index} shifted successfully.")
+
 
 def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9):
     corrected_centers = {}
+    failed_shifts = {}
 
+    # For each block, solve the intersection for each circle by
+    # 1- Shifting
+    # 2- Not updating anything 
+    # 3- Reporting failure
     for first_index, last_index in blocks:
         solve_tangent_block_centers(
             first_index,
             last_index,
             circle_sequence,
             corrected_centers,
+            failed_shifts,
             tol=tol,
         )
 
@@ -351,7 +640,7 @@ def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9
         else:
             new_centers.append(circle.center)
 
-    return new_centers, corrected_centers
+    return new_centers, corrected_centers, failed_shifts
      
 
 def signed_distance_to_directed_line(point, x1, y1, x2, y2, tol=1e-9):
@@ -2046,3 +2335,127 @@ def build_intermediate_circles_sequence(
     )
 
     return intermediate_circles_sequence
+
+
+
+
+def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
+
+    tau_from_corridors = corridor1.compute_relative_turn_direction(corridor2)
+    if tau in (1,-1) and tau_from_corridors in (1,-1) and tau != tau_from_corridors:
+        corridor2 = corridor2.rotate_corridor(angle=np.pi)
+
+    corner_point, intersecting_edges_nominal = get_corner_point_and_intersecting_edges(
+            corridor1,
+            corridor2,
+            tau,
+        )
+
+    edge1, edge2 = intersecting_edges_nominal
+
+    print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
+    print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges_nominal}")
+    
+    # figure = plot_corridors(corridor_list, plot_vectors=True)
+
+    # plot_corridors([corridor1, corridor2], plot_vectors=False, figure=figure, color = "red")
+    # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
+    # plt.legend()
+    # plt.show(block = True)
+
+    if tau == 1 and edge1 == 1 and edge2 == 1: 
+        corridor1_rotated = corridor1
+        corridor2_rotated = corridor2
+    elif tau == -1 and edge1 == 1 and edge2 == 1:
+        corridor1_rotated = corridor1
+        corridor2_rotated = corridor2
+    else:
+
+        if edge1 == 0: 
+            corridor2_rotated = corridor2 
+            if edge2 == 1: 
+                corridor1_rotated = corridor1.invert_dimensions(1)
+            elif edge2 == 3: 
+                corridor1_rotated = corridor1.invert_dimensions(-1)
+            else:
+                raise ValueError(
+                    f"Unexpected intersecting edges for corridors {i}, {i+1}: "
+                    f"{intersecting_edges_nominal}"
+                )
+            
+        elif edge2 == 2: 
+            corridor1_rotated = corridor1
+            if edge1 == 1: 
+                corridor2_rotated = corridor2.invert_dimensions(-1)
+            elif edge1 == 3: 
+                corridor2_rotated = corridor2.invert_dimensions(1)
+            else:
+                raise ValueError(
+                    f"Unexpected intersecting edges for corridors {i}, {i+1}: "
+                    f"{intersecting_edges_nominal}"
+                )
+
+    corner_point, intersecting_edges = get_corner_point_and_intersecting_edges(
+        corridor1_rotated,
+        corridor2_rotated,
+        tau,
+    )
+
+    # plot_corridors([corridor1_rotated, corridor2_rotated], plot_vectors=True)
+    # # plot_corridors([corridor1_rotated, corridor2_rotated], color = "red", plot_vectors=True)
+    # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
+    # plt.legend()
+    # plt.show(block = True)
+
+    # --------------------------------------------------------
+    # Additional intersection point
+    # --------------------------------------------------------
+    other_intersection_point = None
+
+    if (
+        (intersecting_edges[0] == 1 and intersecting_edges[1] == 1)
+        or
+        (intersecting_edges[0] == 3 and intersecting_edges[1] == 3)
+    ):
+        candidate_point, intersection_exists = (
+            get_other_intersection_point_if_present(corridor1_rotated, corridor2_rotated)
+        )
+
+        if intersection_exists:
+            # Make sure we pass a Point object to compute_intermediate_circle_geometry.
+            if isinstance(candidate_point, Point):
+                other_intersection_point = candidate_point
+            else:
+                other_intersection_point = Point(*candidate_point)
+
+    else:
+        raise ValueError(
+            f"Unexpected intersecting edges for corridors {i}, {i+1}: "
+            f"{intersecting_edges}"
+        )
+
+    geometry_result = compute_intermediate_circle_geometry(
+        corridor1=corridor1_rotated,
+        corridor2=corridor2_rotated,
+        corner_point=Point(*corner_point),
+        turn_direction=tau,
+        vehicle=vehicle,
+        other_intersection_point=other_intersection_point,
+    )
+
+    if not geometry_result["feasible"]:
+        raise ValueError(
+            f"Unfeasible intermediate circle geometry for corridors "
+            f"{i} and {i+1}: {geometry_result}"
+        )
+
+    circle = build_intermediate_circle_from_geometry_result(
+        geometry_result=geometry_result,
+        index=i,
+        edge_pair=intersecting_edges_nominal,
+    )
+    circle.corridor_index_start = i
+    circle.corridor_index_end = i + 1
+
+    return circle
+    

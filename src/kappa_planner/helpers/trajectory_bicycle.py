@@ -29,6 +29,8 @@ from .axis_aligned_int_circle_sequence import (
     detect_tangent_intersections_blocks,
     update_intermediate_circle_centers_from_extended_sequence,
     solve_tangent_intersections_blocks_centers,
+    print_failed_tangent_shift_summary,
+    update_turn_direction_circles,
 )
 
 
@@ -803,21 +805,112 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     while any(flags) and iteration < max_iterations:
         iteration += 1
 
-        new_extended_centers, corrected_centers = solve_tangent_intersections_blocks_centers(
+        (
+            new_extended_centers,
+            corrected_centers,
+            failed_shifts,
+        ) = solve_tangent_intersections_blocks_centers(
             blocks,
             extended_circle_sequence,
             tol=1e-9,
         )
 
+        # ------------------------------------------------------------
+        # 1. Apply all successful center shifts, even if some other
+        #    circles failed in other blocks.
+        # ------------------------------------------------------------
+        if corrected_centers:
+            update_intermediate_circle_centers_from_extended_sequence(
+                intermediate_circles,
+                new_extended_centers,
+            )
+
+        # ------------------------------------------------------------
+        # 2. If there are failed shifts, structurally repair them.
+        #    Important: this happens AFTER applying successful shifts.
+        # ------------------------------------------------------------
+        if failed_shifts:
+            print("Some tangent shifts failed.")
+
+            print_failed_tangent_shift_summary(
+                failed_shifts,
+                tol=1e-9,
+            )
+
+            updated_any = update_turn_direction_circles(
+                failed_shifts=failed_shifts,
+                intermediate_circles=intermediate_circles,
+                corridor_list=corridor_list,
+                vehicle=bicycle,
+                tol=1e-9,
+            )
+
+            if not updated_any:
+                print("No failed circle could be updated.")
+                break
+
+            # The sequence may have structurally changed, so recompute
+            # start/end maneuvers and rerun tangent detection.
+            first_int_circ = intermediate_circles.first
+            corridor1 = corridor_list[0]
+
+            start_maneuvers = compute_traj_to_circle_bicycle(
+                corridor1,
+                start_pose,
+                bicycle,
+                first_int_circ,
+            )
+
+            intermediate_circle0 = extract_intermediate_circle_from_maneuver_list(
+                start_maneuvers
+            )
+
+            last_int_circ = intermediate_circles.last
+            last_corridor = corridor_list[-1]
+
+            inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(
+                last_corridor,
+                last_int_circ,
+                end_pose,
+            )
+
+            inv_end_maneuvers = compute_traj_to_circle_bicycle(
+                inv_last_corridor,
+                inv_end_pose,
+                bicycle,
+                inv_last_int_circ,
+            )
+
+            end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0=0)
+
+            intermediate_circleN = extract_intermediate_circle_from_maneuver_list(
+                end_maneuvers
+            )
+
+            extended_circle_sequence = (
+                [intermediate_circle0]
+                + list(intermediate_circles)
+                + [intermediate_circleN]
+            )
+
+            flags, blocks = detect_tangent_intersections_blocks(
+                circle_sequence=extended_circle_sequence,
+            )
+
+            continue
+
+        # ------------------------------------------------------------
+        # 3. If there are no failed shifts but also no successful shifts,
+        #    then the solver did not make progress.
+        # ------------------------------------------------------------
         if not corrected_centers:
             print("Tangent intersections remain, but no centers were corrected.")
             break
 
-        update_intermediate_circle_centers_from_extended_sequence(
-            intermediate_circles,
-            new_extended_centers,
-        )
-
+        # ------------------------------------------------------------
+        # 4. If successful shifts touched the first or last actual
+        #    intermediate circle, recompute boundary maneuvers.
+        # ------------------------------------------------------------
         if 1 in corrected_centers:
             first_int_circ = intermediate_circles.first
             corridor1 = corridor_list[0]
@@ -828,6 +921,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
                 bicycle,
                 first_int_circ,
             )
+
             intermediate_circle0 = extract_intermediate_circle_from_maneuver_list(
                 start_maneuvers
             )
@@ -850,6 +944,7 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
             )
 
             end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0=0)
+
             intermediate_circleN = extract_intermediate_circle_from_maneuver_list(
                 end_maneuvers
             )
@@ -966,6 +1061,8 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     correct_angles(trajectory)
     
     return trajectory
+
+
 
 
 def compute_trajectory_bicycle_two_corridors_optimal(corridor1, corridor2, start_pose, end_pose, bicycle, intermediate_circles):

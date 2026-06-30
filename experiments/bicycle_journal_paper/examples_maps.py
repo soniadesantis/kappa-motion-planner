@@ -25,6 +25,10 @@ from kappa_planner.helpers.intermediate_circles_choice import (
     plot_intermediate_circle_choices,
 )
 
+from kappa_planner.helpers.axis_aligned_int_circle_sequence import (
+    build_circle_from_two_corridors
+)
+
 
 def example_corridor_sequence(num):
 
@@ -54,6 +58,7 @@ def example_corridor_sequence(num):
         start_pose = [10.956110000610352, 1.4690418243408203, 2.699218939309123]
         end_pose = [5.497298240661621, 22.849388122558594, 0.0]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
+        # vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
 
     elif num == 3: # Rule on merging two overlapping circles with same turn direction
         corridor1 = CorridorWorld(5, 10, [0, 0], 0)
@@ -151,17 +156,7 @@ def example_corridor_sequence(num):
         vehicle.update(v_max = 0.5)
         vehicle.update(omega_max = 1)
 
-    elif num == 10: # Example 4 To Be Solved
-        corridor1 = CorridorWorld(1.459999967366457, 2.9999999329447746, [0.9399999633431435, -0.31000001989305015], 0.0)
-        corridor2 = CorridorWorld(0.9999999776482585, 5.999999865889549, [1.9399999409914017, 1.959999929368496], 1.5707963267948966)
-        corridor3 = CorridorWorld(0.49999998882412877, 2.849999936297536, [1.0149999616667629, 2.6099999148398636], 3.141592653589793)
-        corridor_list = [corridor1, corridor2, corridor3]
-        start_pose = [0.1301027536392212, -0.45102250576019287, 0.05963050567379781]
-        start_pose = [1.399, 0.268, 0.05963050567379781]
-        end_pose = [0.45969676971435547, 2.532668352127075, 2.9889436231146522]
-        vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
-
-    elif num == 11: 
+    elif num == 10: # Example 4 To Be Solved 
         corridor1 = CorridorWorld(1.459999967366457, 2.9999999329447746, [0.9399999633431435, -0.31000001989305015], 0.0)
         corridor2 = CorridorWorld(0.9999999776482585, 5.999999865889549, [1.9399999409914017, 1.959999929368496], 1.5707963267948966)
         corridor3 = CorridorWorld(0.5099999886006114, 2.849999936297536, [1.0149999616667629, 1.1249999480322004], 3.141592653589793)
@@ -175,29 +170,11 @@ def example_corridor_sequence(num):
         corridor2 = CorridorWorld(0.9999999776482585, 5.999999865889549, [1.9399999409914017, 1.959999929368496], 1.5707963267948966)
         corridor3 = CorridorWorld(0.5099999886006114, 2.849999936297536, [1.0149999616667629, 1.1249999480322004], 3.141592653589793)
         corridor_list = [corridor1, corridor2, corridor3]
-        start_pose = [-0.17406433820724487, 0.22661757469177246, -1.239699812246792]
-        end_pose = [1.1206774711608887, 0.885758638381958, -2.598403358706264]
-        vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
-
-    elif num == 13:
-        corridor1 = CorridorWorld(1.459999967366457, 2.9999999329447746, [0.9399999633431435, -0.31000001989305015], 0.0)
-        corridor2 = CorridorWorld(0.9999999776482585, 5.999999865889549, [1.9399999409914017, 1.959999929368496], 1.5707963267948966)
-        corridor3 = CorridorWorld(0.5099999886006114, 2.849999936297536, [1.0149999616667629, 1.1249999480322004], 3.141592653589793)
-        corridor_list = [corridor1, corridor2, corridor3]
         start_pose = [-0.15052366256713867, -0.08725953102111816, -0.04626290891359498]
         end_pose = [0.7440255880355835, 1.1368603706359863, -3.1246445435086296]
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
 
     elif num == 14:
-        corridor1 = CorridorWorld(1.459999967366457, 2.9999999329447746, [0.9399999633431435, -0.31000001989305015], 0.0)
-        corridor2 = CorridorWorld(0.9999999776482585, 5.999999865889549, [1.9399999409914017, 1.959999929368496], 1.5707963267948966)
-        corridor3 = CorridorWorld(0.49999998882412877, 2.849999936297536, [1.0149999616667629, 2.6099999148398636], 3.141592653589793)
-        corridor_list = [corridor1, corridor2, corridor3]
-        start_pose = [0.022108793258666992, -0.09510636329650879, -0.03224664555597171]
-        end_pose = [0.761948823928833, 2.6914305686950684, 2.771099374037871]
-        vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
-
-    elif num == 15: # Case with overlapping circles opposite taus
         corridor1 = CorridorWorld(2.47999994456768, 5.129999885335565, [9.199999794363976, 10.404999767430127], -1.5707963267948966)
         corridor2 = CorridorWorld(0.37, 7.58999983035028, [9.134999795816839, 9.869999779388309], 3.141592653589793)
         corridor3 = CorridorWorld(2.47999994456768, 7.639999829232693, [6.599999852478504, 9.149999795481563], -1.5707963267948966)
@@ -209,7 +186,7 @@ def example_corridor_sequence(num):
         end_pose = [11.442094802856445, 7.074225902557373, -0.612152762864258]
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
 
-    elif num == 16:
+    elif num == 15:
         corridor1 = CorridorWorld(6.989999843761325, 4.899999890476465, [30.694999313913286, 11.069999752566218], -1.5707963267948966)
         corridor2 = CorridorWorld(1.0299999769777053, 10.02999977581203, [32.60499927122146, 8.504999809898436], -1.5707963267948966)
         corridor3 = CorridorWorld(4.979999888688326, 2.969999933615327, [32.67499926965684, 5.979999866336584], 0.0)
@@ -219,7 +196,7 @@ def example_corridor_sequence(num):
         vehicle = Unicycle(width=0.34, length=0.237, v_max=0.5, v_min=0, omega_max=2.0, omega_min=-2.0)
         vehicle = Bicycle([0, 0, 0], width=0.2, length=0.2, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
-    elif num == 17: # Side-Side narrow corridors
+    elif num == 16: # Side-Side narrow corridors
         corridor1 = CorridorWorld(5, 10, [0, 0], 0)
         corridor2 = CorridorWorld(0.23, 6, [3, 3], 1.5707963267948966)
         corridor3 = CorridorWorld(3, 10, [0, 5.5], 3.142592653589793)
@@ -234,9 +211,9 @@ def example_corridor_sequence(num):
 
 
 if __name__ == "__main__":
-    example_num = 16
+    example_num = 14
 
-    # Problems 8 (3 overlapping), 10 (pose outside shrunken), 12 (pose outside shrunken), 14 (pose outside shrunken), 15 (overlap opposite direction), 16 (problem with corridor direction)
+    # Problems 8 (3 overlapping), 15 (problem with corridor direction)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
 
     # figure = plot_corridors(corridor_list, plot_vectors=True)
@@ -303,6 +280,8 @@ if __name__ == "__main__":
         color="r",
         linewidth=2,
     )
+
+
 
     # plot_circular_footprint(
     # analytical_trajectory,
