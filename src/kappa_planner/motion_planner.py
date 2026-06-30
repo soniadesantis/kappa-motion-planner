@@ -84,7 +84,7 @@ class MotionPlanner:
         """
         valid_updates = {}
         changed = set()
-
+        print("MEGA PROVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
         # Collect valid attribute updates, but do not apply them yet
         for key, value in kwargs.items():
             if hasattr(self, key):
