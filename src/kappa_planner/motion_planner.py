@@ -178,6 +178,8 @@ class MotionPlanner:
         ):
             self._resolve_start_and_end_poses()
 
+        self.print_planner_inputs()
+
         # Refresh analytical planner state when relevant inputs changed
         if (
             vehicle_changed
@@ -189,8 +191,6 @@ class MotionPlanner:
             or waypoints_changed
         ):
             self._refresh_analytical_planner_state()
-
-        self.print_planner_inputs()
 
     def plot_planner_inputs(
         self,
