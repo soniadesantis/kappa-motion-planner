@@ -206,12 +206,20 @@ def example_corridor_sequence(num):
         start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
         end_pose = compute_end_pose(corridor_list[-1], vehicle, 0)
 
+    elif num == 17: 
+        corridor1 = CorridorWorld(4.999999888241291, 4.969999888911843, [12.929999710991979, 12.93499971088022], 1.5707963267948966)
+        corridor2 = CorridorWorld(1.219999972730875, 10.099999774247408, [15.479999653995037, 12.929999710991979], 0.0)
+        corridor3 = CorridorWorld(4.9899998884648085, 4.9899998884648085, [18.034999596886337, 12.924999711103737], -1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3]
+        start_pose = [12.246244430541992, 11.566368103027344, 0.3523088936461556]
+        end_pose = [17.64398765563965, 11.351319313049316, -0.2875754182155752]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
 
     return corridor_list, start_pose, end_pose, vehicle
 
 
 if __name__ == "__main__":
-    example_num = 14
+    example_num = 17
 
     # Problems 8 (3 overlapping), 15 (problem with corridor direction)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)

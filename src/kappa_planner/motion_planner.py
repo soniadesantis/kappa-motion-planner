@@ -190,6 +190,8 @@ class MotionPlanner:
         ):
             self._refresh_analytical_planner_state()
 
+        self.print_planner_inputs()
+
     def plot_planner_inputs(
         self,
         figure=None,
