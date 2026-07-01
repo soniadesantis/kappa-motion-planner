@@ -4,11 +4,11 @@ from .corridor_geometry import get_corner_point, get_corner_point_and_intersecti
 from .intersections import compute_intersection_two_segments
 from .arc_feasibility import world_to_circle_local, compute_nominal_same_turn_merged_center, compute_intermediate_circle_geometry, build_intermediate_circle_from_geometry_result
 from .geometry_operations import check_point_inside_segment, project_point_onto_segment, compute_distance_two_points, compute_turn_direction_from_three_points, select_tangency_point_from_point_circle
-from .plot_helpers import plot_corridors
+from .plot_helpers import plot_corridors, plot_intermediate_circles_sequence_debug
 from .primitives import compute_extreme_poses_arc_line
 
 import matplotlib.pyplot as plt
-
+import warnings 
 from math import pi
 import numpy as np
 
@@ -808,9 +808,10 @@ def compute_merged_circle_corner_point(
     middle_edge_from_circle2 = circle2.edge_pair[0]
 
     if middle_edge_from_circle1 != middle_edge_from_circle2:
-        raise ValueError(
+        warnings.warn(
             "Cannot compute merged circle corner point: "
-            "the two circles do not use the same middle-corridor edge."
+            "the two circles do not use the same middle-corridor edge.",
+            RuntimeWarning
         )
 
     segment_start, segment_end = middle_corridor.get_edge_segment(
@@ -1591,7 +1592,7 @@ def merged_candidate_centerline_intersection_status(
     }
 
 
-def nominal_overlap_status_for_intermediate_circles(circle1, circle2, tol=1e-9):
+def nominal_overlap_status_for_intermediate_circles(circle1, circle2, vehicle, tol=1e-9):
     """
     Check whether two IntermediateCircles overlap in their nominal
     configuration.
@@ -1615,11 +1616,20 @@ def nominal_overlap_status_for_intermediate_circles(circle1, circle2, tol=1e-9):
 
     nominal_overlap = distance < required_distance - tol
 
+    r = vehicle.width / 2.0
+
+    can_be_merged = (
+        compute_distance_two_points(circle1.corner_point, circle2.center) + r <= circle2.radius + tol
+        or
+        compute_distance_two_points(circle2.corner_point, circle1.center) + r <= circle1.radius + tol
+    )
+
     return {
         "nominal_overlap": nominal_overlap,
         "distance": distance,
         "required_distance": required_distance,
         "overlap_amount": required_distance - distance,
+        "can_be_merged": can_be_merged,
     }
 
 
@@ -1651,6 +1661,7 @@ def detect_same_turn_nominal_overlap_pairs(
         status = nominal_overlap_status_for_intermediate_circles(
             circle1,
             circle2,
+            vehicle,
             tol=tol,
         )
 
@@ -1672,6 +1683,7 @@ def detect_same_turn_nominal_overlap_pairs(
 
 def detect_same_turn_nominal_overlap_blocks(
     intermediate_circles_sequence,
+    vehicle,
     max_block_size=3,
     tol=1e-9,
 ):
@@ -1715,10 +1727,11 @@ def detect_same_turn_nominal_overlap_blocks(
         status = nominal_overlap_status_for_intermediate_circles(
             circle1,
             circle2,
+            vehicle,
             tol=tol,
         )
 
-        overlaps = status["nominal_overlap"]
+        overlaps = status["can_be_merged"]
 
         if same_turn and overlaps:
             if len(current_block) == 0:
@@ -2316,11 +2329,28 @@ def build_intermediate_circles_sequence(
 
         intermediate_circles_sequence.append(circle)
 
+    #-------------------------------------------------------------
+    # Plot for debugging
+    #-------------------------------------------------------------
+    figure = plot_corridors(corridor_list, plot_vectors=True)
+    ax = plt.gca()
+    plot_intermediate_circles_sequence_debug(
+        ax=ax,
+        intermediate_circles_sequence=intermediate_circles_sequence,
+        footprint_radius=vehicle.width / 2.0,
+        plot_swept_circle=False,
+        plot_shifted_circle=False,
+        plot_corner_small_circles=True,
+    )
+    plt.show(block=True)
+    # plt.show(block=True)
+
     # ------------------------------------------------------------
     # 6. Merge or shift overlapping circles
     # ------------------------------------------------------------
     overlap_blocks = detect_same_turn_nominal_overlap_blocks(
         intermediate_circles_sequence,
+        vehicle,
         max_block_size=3,
     )
 
@@ -2458,4 +2488,7 @@ def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
     circle.corridor_index_end = i + 1
 
     return circle
+
+
+
     

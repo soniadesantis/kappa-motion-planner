@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Wedge
 from ..vehicle import Unicycle, Bicycle
 
+from matplotlib.patches import Circle
+
 
 def plot_corridors(corridor_list,
                    figure = None,
@@ -716,6 +718,224 @@ def plot_turning_front_corner_path(
     ax.set_aspect("equal", adjustable="box")
 
     return ax
+
+
+def plot_intermediate_circles_sequence_debug(
+    ax,
+    intermediate_circles_sequence,
+    footprint_radius,
+    plot_swept_circle=True,
+    plot_shifted_circle=True,
+    plot_corner_small_circles=True,
+    legend_outside=True,
+    plot_forbidden_points=True,
+):
+    """
+    Plot nominal, swept, shifted, and corner-footprint circles from an
+    IntermediateCirclesSequence.
+
+    This function does not require circle.geometry_result.
+
+    :param ax: Matplotlib axis.
+    :param intermediate_circles_sequence: Sequence of IntermediateCircle objects.
+    :param footprint_radius: Robot footprint radius, usually vehicle.width / 2.
+    :param plot_swept_circle: Whether to plot swept circles of radius R + r.
+    :param plot_shifted_circle: Whether to plot shifted circles at s_max.
+    :param plot_corner_small_circles: Whether to plot footprint circles at corner points.
+    :param legend_outside: Whether to place legend outside the axis.
+    """
+
+    for i, circle in enumerate(intermediate_circles_sequence):
+
+        center = circle.center
+        R = circle.radius
+        r = footprint_radius
+        S = R + r
+
+        is_merged = getattr(circle, "is_merged", False) or getattr(circle, "merged", False)
+
+        rule = getattr(circle, "construction_rule", None)
+
+        if is_merged:
+            label_suffix = f"{i}: merged"
+        elif rule is not None:
+            label_suffix = f"{i}: {rule}"
+        else:
+            label_suffix = f"{i}"
+
+        # --------------------------------------------------------
+        # Nominal Intermediate Circle
+        # --------------------------------------------------------
+        ax.add_patch(
+            Circle(
+                (center.x, center.y),
+                R,
+                fill=False,
+                linewidth=2.0,
+                label=f"circle {label_suffix}",
+            )
+        )
+
+        ax.plot(center.x, center.y, "o", markersize=5)
+        ax.text(center.x, center.y, f"  C{i}", fontsize=9)
+
+        # --------------------------------------------------------
+        # Nominal swept circle
+        # --------------------------------------------------------
+        if plot_swept_circle:
+            ax.add_patch(
+                Circle(
+                    (center.x, center.y),
+                    S,
+                    fill=False,
+                    linestyle="--",
+                    linewidth=1.2,
+                    label=f"swept {i}",
+                )
+            )
+
+        # --------------------------------------------------------
+        # Small footprint circles centered at corner points
+        # --------------------------------------------------------
+        if plot_corner_small_circles:
+            corner_points = []
+
+            if hasattr(circle, "merged_corner_points"):
+                corner_points = list(circle.merged_corner_points)
+            elif hasattr(circle, "corner_point"):
+                corner_points = [circle.corner_point]
+
+            for k, corner_point in enumerate(corner_points):
+                if corner_point is None:
+                    continue
+
+                ax.add_patch(
+                    Circle(
+                        (corner_point.x, corner_point.y),
+                        r,
+                        fill=False,
+                        edgecolor="green",
+                        linestyle="-.",
+                        linewidth=1.5,
+                        label=f"corner small circle {i}.{k}",
+                    )
+                )
+
+                ax.plot(
+                    corner_point.x,
+                    corner_point.y,
+                    "gx",
+                    markersize=6,
+                )
+
+                ax.text(
+                    corner_point.x,
+                    corner_point.y,
+                    f"  P{i}.{k}",
+                    fontsize=8,
+                    color="green",
+                )
+
+        # --------------------------------------------------------
+        # Forbidden points
+        # --------------------------------------------------------
+        if plot_forbidden_points:
+            forbidden_points = getattr(circle, "forbidden_points", [])
+
+            for k, forbidden_point in enumerate(forbidden_points):
+                if forbidden_point is None:
+                    continue
+
+                ax.plot(
+                    forbidden_point.x,
+                    forbidden_point.y,
+                    marker="x",
+                    color="purple",
+                    markersize=8,
+                    markeredgewidth=2.0,
+                    linestyle="None",
+                    label=f"forbidden point {i}.{k}",
+                )
+
+                ax.text(
+                    forbidden_point.x,
+                    forbidden_point.y,
+                    f"  F{i}.{k}",
+                    fontsize=8,
+                    color="purple",
+                )
+
+        # --------------------------------------------------------
+        # Shifted circle at s_max
+        # --------------------------------------------------------
+        if plot_shifted_circle:
+            s_max = getattr(circle, "s_max", None)
+            d_world = getattr(circle, "shift_direction_world", None)
+            s_max_reason = getattr(circle, "s_max_reason", "")
+
+            if (
+                s_max is not None
+                and d_world is not None
+                and np.isfinite(s_max)
+                and s_max > 0.0
+            ):
+                shifted_x = center.x + s_max * d_world[0]
+                shifted_y = center.y + s_max * d_world[1]
+
+                ax.plot(
+                    [center.x, shifted_x],
+                    [center.y, shifted_y],
+                    color="red",
+                    linestyle=":",
+                    linewidth=1.5,
+                )
+
+                ax.add_patch(
+                    Circle(
+                        (shifted_x, shifted_y),
+                        R,
+                        fill=False,
+                        edgecolor="red",
+                        linewidth=2.0,
+                        label=f"shifted circle {i}",
+                    )
+                )
+
+                if plot_swept_circle:
+                    ax.add_patch(
+                        Circle(
+                            (shifted_x, shifted_y),
+                            S,
+                            fill=False,
+                            edgecolor="red",
+                            linestyle="--",
+                            linewidth=1.2,
+                            label=f"shifted swept {i}",
+                        )
+                    )
+
+                ax.plot(shifted_x, shifted_y, "ro", markersize=5)
+
+                ax.text(
+                    shifted_x,
+                    shifted_y,
+                    f"  C{i} shifted\n  {s_max_reason}",
+                    fontsize=8,
+                    color="red",
+                )
+
+    ax.set_aspect("equal", adjustable="box")
+
+    if legend_outside:
+        ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            borderaxespad=0.0,
+        )
+        ax.figure.subplots_adjust(right=0.75)
+    else:
+        ax.legend()
+
     #### TO-DO
     # def plot_forward_velocity(self, figure = None, color = 'k', linestyle = 'solid', label = 'Forward_velocity', step=False, legend=True):
     #     import matplotlib.pyplot as plt
