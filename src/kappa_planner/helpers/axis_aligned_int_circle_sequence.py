@@ -1863,6 +1863,9 @@ def assign_preferred_turn_directions_to_ambiguous_turns(
                 1,
             )
 
+            if door_right is None or door_left is None:
+                plot_corridors([corridor_list[transition_index], corridor_list[transition_index + 1]])
+                plt.show(block=True)
             door_right = Point(*door_right)
             door_left = Point(*door_left)
 

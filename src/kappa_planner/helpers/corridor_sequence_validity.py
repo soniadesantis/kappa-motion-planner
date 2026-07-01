@@ -282,7 +282,7 @@ def validate_corridor_sequence(
         # Rotate corridor1 by pi/2, then compare with corridor3.
         # ------------------------------------------------------------
         elif case_id in {"HHV", "VVH"}:
-            rotated_corridor1 = corridor1.rotate_corridor(pi / 2)
+            rotated_corridor1 = corridor1.invert_dimensions()
 
             centerline_distance = compute_distance_between_parallel_centerlines(
                 rotated_corridor1,
@@ -333,7 +333,7 @@ def validate_corridor_sequence(
         # Rotate corridor3 by pi/2, then compare with corridor1.
         # ------------------------------------------------------------
         elif case_id in {"HVV", "VHH"}:
-            rotated_corridor3 = corridor3.rotate_corridor(pi / 2)
+            rotated_corridor3 = corridor3.invert_dimensions()
 
             centerline_distance = compute_distance_between_parallel_centerlines(
                 corridor1,
@@ -391,8 +391,8 @@ def validate_corridor_sequence(
                 tol=tol,
             )
 
-            rotated_corridor1 = corridor1.rotate_corridor(pi / 2)
-            rotated_corridor3 = corridor3.rotate_corridor(pi / 2)
+            rotated_corridor1 = corridor1.invert_dimensions()
+            rotated_corridor3 = corridor3.invert_dimensions()
 
             rotated_centerline_distance = compute_distance_between_parallel_centerlines(
                 rotated_corridor1,

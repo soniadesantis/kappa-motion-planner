@@ -10,72 +10,114 @@ from matplotlib.patches import Circle
 
 
 def plot_corridors(corridor_list,
-                   figure = None,
-                   plot_vectors = False,
-                   linestyle = '--',
-                   color = 'k',
-                   linewidth = 1.5,
-                   label = None, 
-                   colormap = False):
-    '''This function will plot any corridors provided as arguments'''
+                   figure=None,
+                   plot_vectors=False,
+                   plot_corridor_index=False,
+                   linestyle='--',
+                   color='k',
+                   linewidth=1.5,
+                   label=None,
+                   colormap=False):
+    """This function will plot any corridors provided as arguments."""
     import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+    import numpy as np
+    from math import cos, sin
 
     if figure is None:
         figure = plt.figure()
         ax = figure.add_subplot(111)
     else:
-        # ax = plt.gca()
         ax = figure.axes[0]
 
-    # Color of the rectangles is fixed
+    # Colors of the rectangles are fixed
     if colormap == False:
-        ind = 0
-        for corridor in corridor_list:
-            corners = corridor.corners
-            corners = np.vstack([corners, corners[0]])
+        for i, corridor in enumerate(corridor_list):
+            corners = np.vstack([corridor.corners, corridor.corners[0]])
 
-            if ind == 0:
-                ax.plot([corner[0] for corner in corners], 
-                [corner[1] for corner in corners],
-                color = color, linewidth= linewidth, linestyle = linestyle, label = label)
-                # ax.legend()
-            else:
-                ax.plot([corner[0] for corner in corners], 
-                [corner[1] for corner in corners],
-                color = color, linewidth= linewidth, linestyle = linestyle)
-            ind +=1
+            ax.plot(
+                corners[:, 0],
+                corners[:, 1],
+                color=color,
+                linewidth=linewidth,
+                linestyle=linestyle,
+                label=label if i == 0 else None
+            )
+
+            if plot_corridor_index:
+                ax.text(
+                    corridor.center[0],
+                    corridor.center[1],
+                    str(i + 1),
+                    ha='center',
+                    va='center',
+                    fontsize=10,
+                    fontweight='bold',
+                    color='black',
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=0.7)
+                )
 
             if plot_vectors:
-                ax.quiver(corridor.center[0], corridor.center[1], cos(corridor.tilt), sin(corridor.tilt), color='k', pivot='middle', angles='xy', scale_units='xy', scale=1/corridor.height) 
-            
-        # Colors of the rectangles have a gradient from yellow to purple
-    else: 
-        # Define a colormap from yellow to purple
-        cmap = mcolors.LinearSegmentedColormap.from_list("yellow_purple", ["yellow", "purple"])
-        # Normalize indices so they map to [0, 1]
-        norm = mcolors.Normalize(vmin=0, vmax=len(corridor_list)-1)
-        # Generate colors for each rectangle
+                ax.quiver(
+                    corridor.center[0],
+                    corridor.center[1],
+                    cos(corridor.tilt),
+                    sin(corridor.tilt),
+                    color='k',
+                    pivot='middle',
+                    angles='xy',
+                    scale_units='xy',
+                    scale=1/corridor.height
+                )
+
+    # Colors of the rectangles have a gradient from yellow to purple
+    else:
+        cmap = mcolors.LinearSegmentedColormap.from_list(
+            "yellow_purple",
+            ["yellow", "purple"]
+        )
+
+        norm = mcolors.Normalize(vmin=0, vmax=len(corridor_list) - 1)
         colors = [cmap(norm(i)) for i in range(len(corridor_list))]
 
-        ind = 0
         for i, corridor in enumerate(corridor_list):
-            corners = corridor.corners
-            corners.append(corners[0])
+            corners = np.vstack([corridor.corners, corridor.corners[0]])
 
-            if ind == 0:
-                ax.plot([corner[0] for corner in corners], 
-                [corner[1] for corner in corners],
-                color = colors[i], linewidth= linewidth, linestyle = linestyle, label = label)
-                # ax.legend()
-            else:
-                ax.plot([corner[0] for corner in corners], 
-                [corner[1] for corner in corners],
-                color = colors[i], linewidth= linewidth, linestyle = linestyle)
-            ind +=1
+            ax.plot(
+                corners[:, 0],
+                corners[:, 1],
+                color=colors[i],
+                linewidth=linewidth,
+                linestyle=linestyle,
+                label=label if i == 0 else None
+            )
+
+            if plot_corridor_index:
+                ax.text(
+                    corridor.center[0],
+                    corridor.center[1],
+                    str(i + 1),
+                    ha='center',
+                    va='center',
+                    fontsize=10,
+                    fontweight='bold',
+                    color='black',
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=0.7)
+                )
 
             if plot_vectors:
-                ax.quiver(corridor.center[0], corridor.center[1], cos(corridor.tilt), sin(corridor.tilt), color='k', pivot='middle', angles='xy', scale_units='xy', scale=1/corridor.height) 
-            
+                ax.quiver(
+                    corridor.center[0],
+                    corridor.center[1],
+                    cos(corridor.tilt),
+                    sin(corridor.tilt),
+                    color='k',
+                    pivot='middle',
+                    angles='xy',
+                    scale_units='xy',
+                    scale=1/corridor.height
+                )
+
     ax.set_aspect('equal')
     return figure
 
