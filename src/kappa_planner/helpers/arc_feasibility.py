@@ -40,14 +40,14 @@ def compute_nominal_same_turn_merged_center(
     if distance <= tol:
         raise ValueError("Cannot merge circles with coincident corner points")
 
-    if distance > 2.0 * D + tol:
-        return {
-            "feasible": False,
-            "reason": "corner_points_too_far_for_single_merged_circle",
-            "center": None,
-            "D": D,
-            "distance": distance,
-        }
+    # if distance > 2.0 * D + tol:
+    #     return {
+    #         "feasible": False,
+    #         "reason": "corner_points_too_far_for_single_merged_circle",
+    #         "center": None,
+    #         "D": D,
+    #         "distance": distance,
+    #     }
 
     e_long = delta / distance
 
@@ -503,9 +503,6 @@ def build_intermediate_circle_from_geometry_result(
     index=None,
     edge_pair=None,
     door_point=None,
-    door_type=None,
-    start_angle_arc=None,
-    rho=None,
     merged=False,
 ):
     """
@@ -573,8 +570,6 @@ def build_intermediate_circle_from_geometry_result(
         [] if forbidden_point is None else [forbidden_point]
     )
 
-    w1 = geometry_result.get("w1", None)
-    w2 = geometry_result.get("w2", None)
     S = geometry_result.get("S", None)
 
     circle = IntermediateCircle(
@@ -583,18 +578,14 @@ def build_intermediate_circle_from_geometry_result(
         corner_point=corner_point,
         turn_direction=turn_direction,
         index=index,
-        s_max=geometry_result.get("s_max", None),
         edge_pair=edge_pair,
         door_point=door_point,
-        door_type=door_type,
-        start_angle_arc=start_angle_arc,
-        rho=rho,
         swept_radius=S,
         admissible_radius=geometry_result.get("D", None),
         lower_bound_x=geometry_result.get("a", None),
         lower_bound_y=geometry_result.get("b", None),
-        lower_bound_x_unclamped=S-w1,
-        lower_bound_y_unclamped=S-w2,
+        lower_bound_x_unclamped=geometry_result.get("lower_bound_x_unclamped", None),
+        lower_bound_y_unclamped=geometry_result.get("lower_bound_y_unclamped", None),
         ex=geometry_result.get("ex", None),
         ey=geometry_result.get("ey", None),
         forbidden_points=forbidden_points,
@@ -624,27 +615,32 @@ def compute_intermediate_circle_geometry(
     tol=1e-9,
 ):
     """
-    Compute the local and world placement of an Intermediate Circle
-    between two perpendicular consecutive corridors.
+    Compute the local and world placement of an intermediate circle
+    between two consecutive corridors.
 
-    Inputs
-    ------
-    corridor1, corridor2:
-        Consecutive CorridorWorld objects.
+    :param corridor1: First corridor of the transition.
+    :type corridor1: CorridorWorld
 
-    corner_point:
-        Point used as the origin of the local transition frame.
+    :param corridor2: Second corridor of the transition.
+    :type corridor2: CorridorWorld
 
-    turn_direction:
-        +1 for left turn, -1 for right turn.
+    :param corner_point: Corner point used as the origin of the local transition frame.
+    :type corner_point: Point
 
-    vehicle:
-        Vehicle object. The footprint radius is vehicle.width / 2 and
-        the maneuver radius is vehicle.max_radius.
+    :param turn_direction: Turn direction of the transition. Use +1 for left turn and -1 for right turn.
+    :type turn_direction: int
 
-    other_intersection_point:
-        Optional Point. If provided, the swept circle of radius S=R+r
-        must not contain this point.
+    :param vehicle: Vehicle object. The footprint radius is vehicle.width / 2 and the maneuver radius is vehicle.max_radius.
+    :type vehicle: Vehicle
+
+    :param other_intersection_point: Optional additional intersection point that the swept circle of radius S = R + r must avoid.
+    :type other_intersection_point: Point or None
+
+    :param tol: Numerical tolerance.
+    :type tol: float
+
+    :return: Dictionary containing feasibility status, selected center, local-frame quantities, bounds, radii, and diagnostic information.
+    :rtype: dict
 
     Convention
     ----------
@@ -663,6 +659,9 @@ def compute_intermediate_circle_geometry(
     # ------------------------------------------------------------
     r = vehicle.width / 2.0
     R = vehicle.max_radius
+    S = R + r
+    D = R - r
+
     other_intersection_point_before_check = other_intersection_point
 
     if R <= r:
@@ -670,9 +669,9 @@ def compute_intermediate_circle_geometry(
             "Turn radius R must be strictly greater than footprint radius r"
         )
 
-    S = R + r
-    D = R - r
-
+    # ------------------------------------------------------------
+    # Forbidden-point preprocessing
+    # ------------------------------------------------------------
     if other_intersection_point is not None:
         distance_corner_forbidden = compute_distance_two_points(
             corner_point,
@@ -693,19 +692,11 @@ def compute_intermediate_circle_geometry(
                 "turn_direction": turn_direction,
                 "corner_point": corner_point,
                 "other_intersection_point": other_intersection_point_before_check,
-
-                # No shift data exists because no valid center was selected.
-                "shift_direction_local": None,
-                "shift_direction_world": None,
-                "s_max": None,
-                "s_max_reason": None,
-                "s_max_widths": None,
-                "s_max_widths_reason": None,
-                "s_max_other_intersection": None,
-                "s_max_other_intersection_reason": None,
             }
-        
-        elif distance_corner_forbidden >= 2.0 * R - tol:
+
+        # If the forbidden point is at distance at least D + S = 2R
+        # from the corner, it cannot affect any admissible center.
+        if distance_corner_forbidden >= 2.0 * R - tol:
             other_intersection_point = None
 
     w1 = corridor1.width
@@ -714,17 +705,17 @@ def compute_intermediate_circle_geometry(
     # ------------------------------------------------------------
     # Bounds in the local transition frame
     # ------------------------------------------------------------
-    # Basic wall-clearance bounds use the swept radius S = R + r.
-    #
-    # a = max(0, S - w1)
-    # b = max(0, S - w2)
+    # Clamped bounds used to build nominal candidates.
     a, b = compute_basic_bounds(w1, w2, S)
 
-    # Safe-half preference bounds use the actual Intermediate Circle radius R.
-    #
-    # h1 = max(0, R - 0.5 * w1)
-    # h2 = max(0, R - 0.5 * w2)
+    # Unclamped bounds used later by shifted-center admissibility checks.
+    lower_bound_x_unclamped = S - w1
+    lower_bound_y_unclamped = S - w2
+
+    # Safe-half preference bounds use the actual intermediate circle radius R.
     h1, h2 = compute_safe_half_bounds(w1, w2, R)
+
+    q = D / np.sqrt(2.0)
 
     # ------------------------------------------------------------
     # Local-to-world transition frame
@@ -751,8 +742,6 @@ def compute_intermediate_circle_geometry(
         tol=tol,
     )
 
-    q = D / np.sqrt(2.0)
-
     # ------------------------------------------------------------
     # Try candidates in priority order.
     #
@@ -770,66 +759,49 @@ def compute_intermediate_circle_geometry(
             center_local=center_local,
         )
 
-        avoids_other_intersection = point_avoids_other_intersection(
-            center_world=center_world,
-            other_intersection_point=other_intersection_point,
-            S=S,
-            tol=tol,
-        )
-
-        if avoids_other_intersection:
-            # ----------------------------------------------------
-            # Compute shift direction and maximum allowed shift.
-            #
-            # Validity for shifting is based on the swept circle
-            # of radius S = R + r.
-            # ----------------------------------------------------
-            shift_data = compute_shift_data(
-                center_local=center_local,
+        if other_intersection_point is not None:
+            avoids_other_intersection = point_avoids_other_intersection(
                 center_world=center_world,
-                ex=ex,
-                ey=ey,
-                w1=w1,
-                w2=w2,
-                S=S,
                 other_intersection_point=other_intersection_point,
+                S=S,
                 tol=tol,
             )
 
-            return {
-                "feasible": True,
-                "reason": "ok",
-                "center": center_world,
-                "center_local": center_local,
-                "rule": rule,
-                "R": R,
-                "r": r,
-                "S": S,
-                "D": D,
-                "q": q,
-                "a": a,
-                "b": b,
-                "h1": h1,
-                "h2": h2,
-                "w1": w1,
-                "w2": w2,
-                "turn_direction": turn_direction,
-                "corner_point": corner_point,
-                "ex": ex,
-                "ey": ey,
-                "other_intersection_point": other_intersection_point_before_check,
+            if not avoids_other_intersection:
+                blocked_candidates.append(
+                    {
+                        "rule": rule,
+                        "center_local": center_local,
+                        "center": center_world,
+                    }
+                )
+                continue
 
-                # Shift information
-                **shift_data,
-            }
-
-        blocked_candidates.append(
-            {
-                "rule": rule,
-                "center_local": center_local,
-                "center": center_world,
-            }
-        )
+        return {
+            "feasible": True,
+            "reason": "ok",
+            "center": center_world,
+            "center_local": center_local,
+            "rule": rule,
+            "R": R,
+            "r": r,
+            "S": S,
+            "D": D,
+            "q": q,
+            "a": a,
+            "b": b,
+            "lower_bound_x_unclamped": lower_bound_x_unclamped,
+            "lower_bound_y_unclamped": lower_bound_y_unclamped,
+            "h1": h1,
+            "h2": h2,
+            "w1": w1,
+            "w2": w2,
+            "turn_direction": turn_direction,
+            "corner_point": corner_point,
+            "ex": ex,
+            "ey": ey,
+            "other_intersection_point": other_intersection_point_before_check,
+        }
 
     # ------------------------------------------------------------
     # If no candidate was generated, the width pair itself is infeasible.
@@ -861,6 +833,8 @@ def compute_intermediate_circle_geometry(
         "q": q,
         "a": a,
         "b": b,
+        "lower_bound_x_unclamped": lower_bound_x_unclamped,
+        "lower_bound_y_unclamped": lower_bound_y_unclamped,
         "h1": h1,
         "h2": h2,
         "w1": w1,
@@ -872,16 +846,6 @@ def compute_intermediate_circle_geometry(
         "other_intersection_point": other_intersection_point_before_check,
         "candidate_rules": [rule for rule, _ in candidates],
         "blocked_candidates": blocked_candidates,
-
-        # No shift data exists because no valid center was selected.
-        "shift_direction_local": None,
-        "shift_direction_world": None,
-        "s_max": None,
-        "s_max_reason": None,
-        "s_max_widths": None,
-        "s_max_widths_reason": None,
-        "s_max_other_intersection": None,
-        "s_max_other_intersection_reason": None,
     }
 
 

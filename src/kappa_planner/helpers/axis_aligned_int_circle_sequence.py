@@ -17,6 +17,24 @@ from math import sqrt
 import numpy as np
 
 
+def build_intermediate_circles_sequence_from_list(circle_list):
+    """
+    Build an IntermediateCirclesSequence from a Python list.
+
+    :param circle_list: List of IntermediateCircle objects.
+    :type circle_list: list[IntermediateCircle]
+
+    :return: IntermediateCirclesSequence containing the given circles.
+    :rtype: IntermediateCirclesSequence
+    """
+    sequence = IntermediateCirclesSequence()
+
+    for circle in circle_list:
+        sequence.append(circle)
+
+    return sequence
+
+
 def update_turn_direction_circles(
     failed_shifts,
     intermediate_circles,
@@ -43,10 +61,9 @@ def update_turn_direction_circles(
     :return: True if at least one circle was structurally updated.
     :rtype: bool
     """
-
     updated_any = False
 
-    # Work from right to left, so replacing one circle by two circles
+    # Work from right to left, so replacing one circle by multiple circles
     # does not invalidate the remaining indices.
     for extended_index in sorted(failed_shifts.keys(), reverse=True):
 
@@ -70,7 +87,6 @@ def update_turn_direction_circles(
         # Case 1: failed circle is merged
         # ============================================================
         if is_merged:
-            print(f"Updating failed merged circle at extended index {extended_index}.")
 
             merged_from = getattr(circle, "merged_from", None)
 
@@ -87,6 +103,10 @@ def update_turn_direction_circles(
 
             new_source_circles = []
 
+            # --------------------------------------------------------
+            # Rebuild only the source circles that failed the attempted
+            # shifted-center admissibility check.
+            # --------------------------------------------------------
             for source_index, source_circle in enumerate(merged_from):
                 ok, reason, center_local = shifted_center_is_admissible_for_single_circle(
                     source_circle,
@@ -95,17 +115,8 @@ def update_turn_direction_circles(
                 )
 
                 if ok:
-                    print(
-                        f"  merged source {source_index} was admissible; "
-                        "keeping original source circle."
-                    )
                     new_source_circles.append(source_circle)
                     continue
-
-                print(
-                    f"  merged source {source_index} failed with reason "
-                    f"{reason}; rebuilding with opposite turn."
-                )
 
                 corridor_index = source_circle.corridor_index_start
                 opposite_turn = -source_circle.turn_direction
@@ -120,48 +131,43 @@ def update_turn_direction_circles(
 
                 new_source_circles.append(rebuilt_circle)
 
-            # Try to merge the two repaired/source circles if possible.
-            replacement_circles = new_source_circles
+            # --------------------------------------------------------
+            # Re-resolve possible pair/triplet merges among the repaired
+            # source circles.
+            #
+            # This handles both:
+            #   - merged_from with 2 source circles
+            #   - merged_from with 3 source circles
+            # --------------------------------------------------------
+            replacement_sequence = build_intermediate_circles_sequence_from_list(
+                new_source_circles
+            )
 
-            if len(new_source_circles) == 2:
-                circle1 = new_source_circles[0]
-                circle2 = new_source_circles[1]
+            overlap_blocks = detect_same_turn_nominal_overlap_blocks(
+                intermediate_circles_sequence=replacement_sequence,
+                vehicle=vehicle,
+                max_block_size=3,
+                tol=tol,
+            )
 
-                same_turn = circle1.turn_direction == circle2.turn_direction
-                center_distance = compute_distance_two_points(
-                    circle1.center,
-                    circle2.center,
+            if overlap_blocks:
+                replacement_sequence = resolve_same_turn_nominal_overlap_blocks(
+                    intermediate_circles_sequence=replacement_sequence,
+                    corridor_list=corridor_list,
+                    vehicle=vehicle,
+                    overlap_blocks=overlap_blocks,
+                    tol=tol,
                 )
 
-                nominal_overlap = center_distance < (
-                    circle1.radius + circle2.radius - tol
-                )
+            replacement_circles = list(replacement_sequence)
 
-                if same_turn and nominal_overlap:
-                    try:
-                        merged_circle = build_merged_circle_for_same_turn_pair(
-                            circle1=circle1,
-                            circle2=circle2,
-                            corridor_list=corridor_list,
-                            vehicle=vehicle,
-                        )
-
-                        replacement_circles = [merged_circle]
-
-                        print(
-                            "  rebuilt source circles were merged again "
-                            "after opposite-turn update."
-                        )
-
-                    except Exception as error:
-                        print(
-                            "  merge attempt failed; keeping the two "
-                            f"separate source circles. Reason: {error}"
-                        )
-
-            # Replace the merged circle by either:
-            #   - one merged circle, if merge succeeded
-            #   - two separate source circles otherwise
+            # --------------------------------------------------------
+            # Replace the failed merged circle by either:
+            #   - one re-merged circle;
+            #   - two circles;
+            #   - three circles;
+            # depending on what the local resolver produced.
+            # --------------------------------------------------------
             intermediate_circles.remove_at(intermediate_index)
 
             for replacement_circle in reversed(replacement_circles):
@@ -176,8 +182,6 @@ def update_turn_direction_circles(
         # ============================================================
         # Case 2: failed circle is not merged
         # ============================================================
-        print(f"Updating failed circle at extended index {extended_index}.")
-
         corridor_index = circle.corridor_index_start
         opposite_turn = -circle.turn_direction
 
@@ -467,9 +471,9 @@ def shifted_center_to_reference_tangent(circle, x1, y1, x2, y2, tol=1e-9):
         tol=tol,
     )
 
-    print(
-        f"Circle {circle.index} shifted to tangent: {new_center.x}, {new_center.y}"
-    )
+    # print(
+    #     f"Circle {circle.index} shifted to tangent: {new_center.x}, {new_center.y}"
+    # )
 
     return {
         "feasible": is_admissible,
@@ -595,15 +599,15 @@ def solve_tangent_block_centers(
         for circle_index, failure in block_failed_shifts.items():
             failed_shifts[circle_index] = failure
 
-            print(
-                f"Circle {circle_index} cannot be shifted: "
-                f"{failure['reason']}"
-            )
+            # print(
+            #     f"Circle {circle_index} cannot be shifted: "
+            #     f"{failure['reason']}"
+            # )
 
-        print(
-            f"Block ({first_index}, {last_index}) rejected. "
-            "All tentative shifts in this block are discarded."
-        )
+        # print(
+        #     f"Block ({first_index}, {last_index}) rejected. "
+        #     "All tentative shifts in this block are discarded."
+        # )
 
         return
 
@@ -611,7 +615,7 @@ def solve_tangent_block_centers(
     for circle_index, new_center in block_corrected_centers.items():
         # save the successful shift information from local to global corrected_centers
         corrected_centers[circle_index] = new_center
-        print(f"Circle {circle_index} shifted successfully.")
+        # print(f"Circle {circle_index} shifted successfully.")
 
 
 def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9):
@@ -1027,13 +1031,15 @@ def resolve_same_turn_nominal_overlap_blocks(
     corridor_list,
     vehicle,
     overlap_blocks,
+    tol=1e-9,
 ):
     """
     Resolve same-turn nominal overlap blocks.
 
     For now:
         - blocks of length 2 are solved by trying to build one merged circle;
-        - blocks of length 3 are detected but skipped.
+        - blocks of length 3 are solved by either building one merged circle or by merging the closest pair;
+        - blocks of length > 3 are not supported.
 
     :param intermediate_circles_sequence: Current sequence of IntermediateCircle objects.
     :type intermediate_circles_sequence: IntermediateCirclesSequence
@@ -1056,11 +1062,49 @@ def resolve_same_turn_nominal_overlap_blocks(
     for block in reversed(overlap_blocks):
 
         if len(block) == 3:
-            print(
-                f"Skipping same-turn overlap triplet {block}. "
-                "Triplet merge is not implemented yet."
+            index1, index2, index3 = block
+
+            circle1 = intermediate_circles_sequence[index1]
+            circle2 = intermediate_circles_sequence[index2]
+            circle3 = intermediate_circles_sequence[index3]
+
+            outer_status = nominal_overlap_status_for_intermediate_circles(
+                circle1,
+                circle3,
+                vehicle,
             )
-            continue
+
+            if outer_status["can_be_merged"]:
+                merged_circle = build_merged_circle_for_same_turn_triplet(
+                    circle1=circle1,
+                    circle2=circle2,
+                    circle3=circle3,
+                    corridor_list=corridor_list,
+                    vehicle=vehicle,
+                )
+
+                if merged_circle is not None:
+                    replace_three_circles_with_one(
+                        intermediate_circles_sequence=intermediate_circles_sequence,
+                        index=index1,
+                        merged_circle=merged_circle,
+                    )
+                    continue
+
+            distance12 = compute_distance_two_points(
+                circle1.corner_point,
+                circle2.corner_point,
+            )
+
+            distance23 = compute_distance_two_points(
+                circle2.corner_point,
+                circle3.corner_point,
+            )
+
+            if distance12 <= distance23 + tol:
+                block = [index1, index2]
+            else:
+                block = [index2, index3]
 
         if len(block) != 2:
             print(f"Skipping unsupported overlap block {block}.")
@@ -1071,12 +1115,6 @@ def resolve_same_turn_nominal_overlap_blocks(
         circle1 = intermediate_circles_sequence[index1]
         circle2 = intermediate_circles_sequence[index2]
 
-        if circle1.turn_direction != circle2.turn_direction:
-            print(
-                f"Skipping block {block}: circles do not have the same turn direction."
-            )
-            continue
-
         merged_circle = build_merged_circle_for_same_turn_pair(
             circle1=circle1,
             circle2=circle2,
@@ -1085,10 +1123,8 @@ def resolve_same_turn_nominal_overlap_blocks(
         )
 
         if merged_circle is None:
-            print(f"Could not merge same-turn overlap pair {block}.")
+            # print(f"Could not merge same-turn overlap pair {block}.")
             continue
-
-        print(f"Merged same-turn overlap pair {block}.")
 
         replace_two_circles_with_one(
             intermediate_circles_sequence=intermediate_circles_sequence,
@@ -1099,6 +1135,230 @@ def resolve_same_turn_nominal_overlap_blocks(
     reindex_intermediate_circles_sequence(intermediate_circles_sequence)
 
     return intermediate_circles_sequence
+
+def build_merged_circle_for_same_turn_triplet(
+    circle1,
+    circle2,
+    circle3,
+    corridor_list,
+    vehicle,
+    tol=1e-9,
+):
+    """
+    Try to merge three same-turn overlapping IntermediateCircles into one.
+
+    Current version:
+        - builds the nominal merged candidate;
+        - checks whether it intersects the first/third corridor centerlines;
+        - accepts only if the nominal candidate is valid.
+
+    Later:
+        - if the nominal candidate crosses one or both centerlines,
+          try to shift it or make it tangent to the crossed centerline(s).
+    """
+    if not (
+        circle1.turn_direction == circle2.turn_direction
+        and circle2.turn_direction == circle3.turn_direction
+    ):
+        return None
+
+    R = vehicle.max_radius
+    r = vehicle.width / 2.0
+
+    candidate = compute_minimal_triplet_merged_center(
+        corner_point1=circle1.corner_point,
+        corner_point2=circle2.corner_point,
+        corner_point3=circle3.corner_point,
+        R=R,
+        r=r,
+        tol=tol,
+    )
+
+    if not candidate["feasible"]:
+        return None
+
+    center = candidate["center"]
+
+    first_line, fourth_line = get_outer_centerlines_for_three_circle_merge(
+        circle1=circle1,
+        circle3=circle3,
+        corridor_list=corridor_list,
+    )
+
+    centerline_status = merged_candidate_centerline_intersection_status(
+        center=center,
+        radius=vehicle.max_radius + vehicle.width / 2.0,
+        first_line=first_line,
+        third_line=fourth_line,
+        tol=tol,
+    )
+
+    if centerline_status["intersects"]:
+        raise ValueError(
+            "Merged triplet candidate intersects one or both outer centerlines. "
+            "This case is not yet handled."
+        )
+
+    merged_circle = build_merged_intermediate_circle_from_triplet_candidate(
+        circle1=circle1,
+        circle2=circle2,
+        circle3=circle3,
+        center=center,
+        radius=R,
+        # candidate=candidate,
+        # centerline_status=centerline_status,
+    )
+    # print(f"Merged triplet!!!!!!!!!!!!!")
+    return merged_circle
+
+
+def compute_minimal_triplet_merged_center(
+    corner_point1,
+    corner_point2,
+    corner_point3,
+    R,
+    r,
+    tol=1e-9,
+):
+    """
+    Compute the center of the smallest circle containing three corner points.
+
+    The merged IntermediateCircle has radius R and must contain three
+    footprint disks of radius r. Therefore the merged center must be within
+    D = R - r of each corner point.
+
+    :param corner_point1: First corner point.
+    :type corner_point1: Point
+
+    :param corner_point2: Second corner point.
+    :type corner_point2: Point
+
+    :param corner_point3: Third corner point.
+    :type corner_point3: Point
+
+    :param R: Merged circle radius.
+    :type R: float
+
+    :param r: Footprint radius.
+    :type r: float
+
+    :param tol: Numerical tolerance.
+    :type tol: float
+
+    :return: Dictionary with feasibility status and nominal center.
+    :rtype: dict
+    """
+    D = R - r
+
+    p1 = np.array([corner_point1.x, corner_point1.y], dtype=float)
+    p2 = np.array([corner_point2.x, corner_point2.y], dtype=float)
+    p3 = np.array([corner_point3.x, corner_point3.y], dtype=float)
+
+    points = [p1, p2, p3]
+    corner_points = [corner_point1, corner_point2, corner_point3]
+
+    # Pairwise squared distances.
+    d12_sq = np.sum((p2 - p1) ** 2)
+    d23_sq = np.sum((p3 - p2) ** 2)
+    d13_sq = np.sum((p3 - p1) ** 2)
+
+    # Degenerate / almost collinear case:
+    # use midpoint of the longest pair.
+    area2 = np.cross(p2 - p1, p3 - p1)
+
+    use_longest_pair_midpoint = False
+
+    if abs(area2) <= tol:
+        use_longest_pair_midpoint = True
+    else:
+        # If the triangle is right or obtuse, the smallest enclosing circle
+        # has the longest side as diameter.
+        distances = [d12_sq, d23_sq, d13_sq]
+        max_index = int(np.argmax(distances))
+        max_distance_sq = distances[max_index]
+        other_sum = sum(distances) - max_distance_sq
+
+        if max_distance_sq >= other_sum - tol:
+            use_longest_pair_midpoint = True
+
+    if use_longest_pair_midpoint:
+        distances = [d12_sq, d23_sq, d13_sq]
+        max_index = int(np.argmax(distances))
+
+        if max_index == 0:
+            a, b = p1, p2
+            pair = (1, 2)
+        elif max_index == 1:
+            a, b = p2, p3
+            pair = (2, 3)
+        else:
+            a, b = p1, p3
+            pair = (1, 3)
+
+        center_np = 0.5 * (a + b)
+        rule = "longest_pair_midpoint"
+    else:
+        # Circumcenter of the triangle.
+        denominator = 2.0 * (
+            p1[0] * (p2[1] - p3[1])
+            + p2[0] * (p3[1] - p1[1])
+            + p3[0] * (p1[1] - p2[1])
+        )
+
+        if abs(denominator) <= tol:
+            return {
+                "feasible": False,
+                "reason": "circumcenter_degenerate",
+                "center": None,
+                "D": D,
+            }
+
+        ux = (
+            (p1[0] ** 2 + p1[1] ** 2) * (p2[1] - p3[1])
+            + (p2[0] ** 2 + p2[1] ** 2) * (p3[1] - p1[1])
+            + (p3[0] ** 2 + p3[1] ** 2) * (p1[1] - p2[1])
+        ) / denominator
+
+        uy = (
+            (p1[0] ** 2 + p1[1] ** 2) * (p3[0] - p2[0])
+            + (p2[0] ** 2 + p2[1] ** 2) * (p1[0] - p3[0])
+            + (p3[0] ** 2 + p3[1] ** 2) * (p2[0] - p1[0])
+        ) / denominator
+
+        center_np = np.array([ux, uy], dtype=float)
+        rule = "circumcenter"
+        pair = None
+
+    center = Point(center_np[0], center_np[1])
+
+    distances_to_corners = [
+        compute_distance_two_points(center, corner_point)
+        for corner_point in corner_points
+    ]
+
+    max_distance = max(distances_to_corners)
+
+    if max_distance > D + tol:
+        return {
+            "feasible": False,
+            "reason": "triplet_corner_points_do_not_fit_in_radius_D",
+            "center": center,
+            "D": D,
+            "required_radius": max_distance,
+            "distances_to_corners": distances_to_corners,
+            "rule": rule,
+        }
+
+    return {
+        "feasible": True,
+        "reason": "ok",
+        "center": center,
+        "D": D,
+        "required_radius": max_distance,
+        "distances_to_corners": distances_to_corners,
+        "rule": rule,
+        "longest_pair": pair if use_longest_pair_midpoint else None,
+    }
 
 
 def replace_two_circles_with_one(
@@ -1121,6 +1381,29 @@ def replace_two_circles_with_one(
     intermediate_circles_sequence[index] = merged_circle
     intermediate_circles_sequence.remove_at(index + 1)
 
+
+def replace_three_circles_with_one(
+    intermediate_circles_sequence,
+    index,
+    merged_circle,
+):
+    """
+    Replace circles[index], circles[index + 1], and circles[index + 2]
+    with merged_circle.
+
+    :param intermediate_circles_sequence: Circle sequence.
+    :type intermediate_circles_sequence: IntermediateCirclesSequence
+
+    :param index: Index of the first circle to replace.
+    :type index: int
+
+    :param merged_circle: New merged IntermediateCircle.
+    :type merged_circle: IntermediateCircle
+    """
+    intermediate_circles_sequence[index] = merged_circle
+    intermediate_circles_sequence.remove_at(index + 2)
+    intermediate_circles_sequence.remove_at(index + 1)
+    
 
 def reindex_intermediate_circles_sequence(intermediate_circles_sequence):
     """
@@ -1150,9 +1433,6 @@ def build_merged_circle_for_same_turn_pair(
           try to shift it or make it tangent to the crossed centerline(s).
     """
 
-    if circle1.turn_direction != circle2.turn_direction:
-        return None
-
     R = vehicle.max_radius
     r = vehicle.width / 2.0
     S = R + r
@@ -1179,7 +1459,7 @@ def build_merged_circle_for_same_turn_pair(
     )
 
     if not candidate["feasible"]:
-        print(f"Nominal merge infeasible: {candidate['reason']}")
+        # print(f"Nominal merge infeasible: {candidate['reason']}")
         return None
 
     center = candidate["center"]
@@ -1250,29 +1530,29 @@ def build_merged_circle_for_same_turn_pair(
     # ------------------------------------------------------------
     # 4. Build IntermediateCircle from accepted candidate
     # ------------------------------------------------------------
-    corner_point = compute_merged_circle_corner_point(
-        merged_center=center,
-        circle1=circle1,
-        circle2=circle2,
-        corridor_list=corridor_list,
-    )
-    middle_corridor = corridor_list[circle1.corridor_index_end]
-    distance_to_wall = compute_distance_two_points(
-        center,
-        corner_point,
-    )
+    # corner_point = compute_merged_circle_corner_point(
+    #     merged_center=center,
+    #     circle1=circle1,
+    #     circle2=circle2,
+    #     corridor_list=corridor_list,
+    # )
+    # middle_corridor = corridor_list[circle1.corridor_index_end]
+    # distance_to_wall = compute_distance_two_points(
+    #     center,
+    #     corner_point,
+    # )
 
-    s_max = max(0,distance_to_wall + middle_corridor.width - S)
+    # s_max = max(0,distance_to_wall + middle_corridor.width - S)
 
     merged_circle = build_merged_intermediate_circle_from_pair_candidate(
         circle1=circle1,
         circle2=circle2,
         center=center,
         radius=R,
-        corner_point=corner_point,
-        s_max=s_max,
-        candidate=candidate,
-        centerline_status=centerline_status,
+        # corner_point=corner_point,
+        # s_max=s_max,
+        # candidate=candidate,
+        # centerline_status=centerline_status,
     )
 
     return merged_circle
@@ -1283,10 +1563,10 @@ def build_merged_intermediate_circle_from_pair_candidate(
     circle2,
     center,
     radius,
-    corner_point,
-    s_max,
-    candidate=None,
-    centerline_status=None,
+    # corner_point,
+    # s_max,
+    # candidate=None,
+    # centerline_status=None,
 ):
     """
     Build a merged IntermediateCircle from a same-turn pair candidate.
@@ -1300,34 +1580,28 @@ def build_merged_intermediate_circle_from_pair_candidate(
     merged_circle = IntermediateCircle(
         center=center,
         radius=radius,
-        corner_point=corner_point,
+        corner_point=center,
         turn_direction=circle1.turn_direction,
         index=circle1.index,
-        s_max=s_max,
-        edge_pair=None,
-        door_point=None,
-        door_type=None,
-        start_angle_arc=None,
-        rho=None,
         merged=True,
         forbidden_points=forbidden_points
     )
-    merged_circle.shift_direction_world = compute_shift_direction_from_center_to_point(
-        center=merged_circle.center,
-        reference_point=merged_circle.corner_point,
-    )
+    # merged_circle.shift_direction_world = compute_shift_direction_from_center_to_point(
+    #     center=merged_circle.center,
+    #     reference_point=merged_circle.corner_point,
+    # )
 
-    print("MERGE DEBUG")
-    print("circle1 corner:", circle1.corner_point.x, circle1.corner_point.y)
-    print("circle2 corner:", circle2.corner_point.x, circle2.corner_point.y)
-    print("merged center:", center.x, center.y)
-    print("merged projected corner:", corner_point.x, corner_point.y)
-    print("middle edge c1:", circle1.edge_pair[1])
-    print("middle edge c2:", circle2.edge_pair[0])
-    print("shift direction:", merged_circle.shift_direction_world)
-    print("s_max:", merged_circle.s_max)
+    # print("MERGE DEBUG")
+    # print("circle1 corner:", circle1.corner_point.x, circle1.corner_point.y)
+    # print("circle2 corner:", circle2.corner_point.x, circle2.corner_point.y)
+    # print("merged center:", center.x, center.y)
+    # print("merged projected corner:", corner_point.x, corner_point.y)
+    # print("middle edge c1:", circle1.edge_pair[1])
+    # print("middle edge c2:", circle2.edge_pair[0])
+    # print("shift direction:", merged_circle.shift_direction_world)
+    # print("s_max:", merged_circle.s_max)
 
-    merged_circle.s_max_reason = "middle_corridor_width_bound"
+    # merged_circle.s_max_reason = "middle_corridor_width_bound"
 
     merged_circle.is_merged = True
     merged_circle.merged_from = (circle1, circle2)
@@ -1336,8 +1610,67 @@ def build_merged_intermediate_circle_from_pair_candidate(
     merged_circle.corridor_index_start = circle1.corridor_index_start
     merged_circle.corridor_index_end = circle2.corridor_index_end
 
-    merged_circle.nominal_merge_candidate = candidate
-    merged_circle.centerline_status = centerline_status
+    # merged_circle.nominal_merge_candidate = candidate
+    # merged_circle.centerline_status = centerline_status
+
+    return merged_circle
+
+
+def build_merged_intermediate_circle_from_triplet_candidate(
+    circle1,
+    circle2,
+    circle3,
+    center,
+    radius,
+    # corner_point,
+    # s_max,
+    # candidate=None,
+    # centerline_status=None,
+):
+    """
+    Build a merged IntermediateCircle from a same-turn triplet candidate.
+    """
+    
+    forbidden_points = (
+        circle1.forbidden_points + circle2.forbidden_points + circle3.forbidden_points
+    )
+
+    
+    merged_circle = IntermediateCircle(
+        center=center,
+        radius=radius,
+        corner_point=center,
+        turn_direction=circle1.turn_direction,
+        index=circle1.index,
+        merged=True,
+        forbidden_points=forbidden_points
+    )
+    # merged_circle.shift_direction_world = compute_shift_direction_from_center_to_point(
+    #     center=merged_circle.center,
+    #     reference_point=merged_circle.corner_point,
+    # )
+
+    # print("MERGE DEBUG")
+    # print("circle1 corner:", circle1.corner_point.x, circle1.corner_point.y)
+    # print("circle2 corner:", circle2.corner_point.x, circle2.corner_point.y)
+    # print("merged center:", center.x, center.y)
+    # print("merged projected corner:", corner_point.x, corner_point.y)
+    # print("middle edge c1:", circle1.edge_pair[1])
+    # print("middle edge c2:", circle2.edge_pair[0])
+    # print("shift direction:", merged_circle.shift_direction_world)
+    # print("s_max:", merged_circle.s_max)
+
+    # merged_circle.s_max_reason = "middle_corridor_width_bound"
+
+    merged_circle.is_merged = True
+    merged_circle.merged_from = (circle1, circle2, circle3)
+    merged_circle.merged_corner_points = (circle1.corner_point, circle2.corner_point, circle3.corner_point)
+
+    merged_circle.corridor_index_start = circle1.corridor_index_start
+    merged_circle.corridor_index_end = circle3.corridor_index_end
+
+    # merged_circle.nominal_merge_candidate = candidate
+    # merged_circle.centerline_status = centerline_status
 
     return merged_circle
 
@@ -1472,6 +1805,55 @@ def relevant_centerline_equation_from_edge(corridor, edge_index):
         )
 
     raise ValueError(f"Unknown corridor edge index: {edge_index}")
+
+
+def get_outer_centerlines_for_three_circle_merge(
+    circle1,
+    circle3,
+    corridor_list,
+):
+    """
+    Return the relevant centerlines of the first and fourth corridors for a
+    three-circle merge.
+
+    The returned lines are normalized equations:
+
+        a*x + b*y + c = 0
+
+    :param circle1: First IntermediateCircle.
+    :type circle1: IntermediateCircle
+
+    :param circle3: Third IntermediateCircle.
+    :type circle3: IntermediateCircle
+
+    :param corridor_list: Full corridor list.
+    :type corridor_list: list[CorridorWorld]
+
+    :return: first_line, fourth_line
+    :rtype: tuple[tuple[float, float, float], tuple[float, float, float]]
+    """
+    if circle1.corridor_index_end + 1 != circle3.corridor_index_start:
+        raise ValueError(
+            "Cannot extract merge centerlines for non-consecutive triplet circles"
+        )
+
+    corridor1 = corridor_list[circle1.corridor_index_start]
+    corridor4 = corridor_list[circle3.corridor_index_end]
+
+    edge1 = circle1.edge_pair[0]
+    edge4 = circle3.edge_pair[1]
+
+    first_line = relevant_centerline_equation_from_edge(
+        corridor1,
+        edge1,
+    )
+
+    fourth_line = relevant_centerline_equation_from_edge(
+        corridor4,
+        edge4,
+    )
+
+    return first_line, fourth_line
 
 
 def get_outer_centerlines_for_two_circle_merge(
@@ -1616,13 +1998,29 @@ def nominal_overlap_status_for_intermediate_circles(circle1, circle2, vehicle, t
 
     nominal_overlap = distance < required_distance - tol
 
+    R = circle1.radius
     r = vehicle.width / 2.0
+    D = R - r
 
-    can_be_merged = (
-        compute_distance_two_points(circle1.corner_point, circle2.center) + r <= circle2.radius + tol
-        or
-        compute_distance_two_points(circle2.corner_point, circle1.center) + r <= circle1.radius + tol
+    corner_distance = compute_distance_two_points(
+        circle1.corner_point,
+        circle2.corner_point,
     )
+
+    can_be_merged = corner_distance <= 2.0 * D + tol
+
+    # angle_array = np.linspace(0, 2 * np.pi, 100)
+    # circle1_x = circle1.center.x + circle1.radius * np.cos(angle_array)
+    # circle1_y = circle1.center.y + circle1.radius * np.sin(angle_array)
+    # circle2_x = circle2.center.x + circle2.radius * np.cos(angle_array)
+    # circle2_y = circle2.center.y + circle2.radius * np.sin(angle_array)
+    # plt.plot(circle1.center.x, circle1.center.y, 'ro')
+    # plt.plot(circle2.center.x, circle2.center.y, 'bo')
+    # plt.plot(circle1_x, circle1_y, 'r--')
+    # plt.plot(circle2_x, circle2_y, 'b--')
+    # plt.axis('equal')
+    # plt.title(f"Nominal Overlap Status: {nominal_overlap}, Can be merged: {can_be_merged}")
+    # plt.show(block = True)
 
     return {
         "nominal_overlap": nominal_overlap,
@@ -1690,16 +2088,22 @@ def detect_same_turn_nominal_overlap_blocks(
     """
     Detect blocks of consecutive IntermediateCircles that:
         - have the same turn direction;
-        - have nominal overlap between consecutive circles.
+        - can be merged between consecutive circles.
 
     The returned blocks contain circle indices.
 
-    Example:
-        If circle 0 overlaps circle 1, and circle 1 overlaps circle 2,
-        the function returns [[0, 1, 2]].
+    A returned block of length 2 means that one pair can be merged.
+    A returned block of length 3 means that two consecutive pairs can be merged,
+    and the resolver should decide later whether:
+        - all three circles can be merged into one;
+        - only the first pair should be merged;
+        - only the second pair should be merged.
 
     :param intermediate_circles_sequence: Ordered sequence of IntermediateCircle objects.
     :type intermediate_circles_sequence: IntermediateCirclesSequence
+
+    :param vehicle: Vehicle object.
+    :type vehicle: Vehicle
 
     :param max_block_size: Maximum allowed merge block size.
     :type max_block_size: int
@@ -1731,13 +2135,12 @@ def detect_same_turn_nominal_overlap_blocks(
             tol=tol,
         )
 
-        overlaps = status["can_be_merged"]
+        can_be_merged = status["can_be_merged"]
 
-        if same_turn and overlaps:
+        if same_turn and can_be_merged:
             if len(current_block) == 0:
                 current_block = [i, i + 1]
             else:
-                # Continue only if this pair touches the previous block.
                 if current_block[-1] == i:
                     current_block.append(i + 1)
                 else:
@@ -1751,15 +2154,107 @@ def detect_same_turn_nominal_overlap_blocks(
     if len(current_block) > 0:
         blocks.append(current_block)
 
-    # Optional safety: reject blocks that are too large.
     for block in blocks:
         if len(block) > max_block_size:
             raise ValueError(
-                f"Detected same-turn overlap block of size {len(block)}: {block}. "
+                f"Detected same-turn merge block of size {len(block)}: {block}. "
                 f"Current merge logic only supports blocks up to size {max_block_size}."
             )
 
     return blocks
+
+
+def same_turn_triplet_can_be_merged(
+    circle1,
+    circle2,
+    circle3,
+    vehicle,
+    tol=1e-9,
+):
+    """
+    Check whether three consecutive same-turn circles can be treated
+    as one merge block.
+
+    A triplet is accepted only if all three pairs can be merged:
+        - circle1 with circle2
+        - circle2 with circle3
+        - circle1 with circle3
+
+    :param circle1: First intermediate circle.
+    :type circle1: IntermediateCircle
+
+    :param circle2: Second intermediate circle.
+    :type circle2: IntermediateCircle
+
+    :param circle3: Third intermediate circle.
+    :type circle3: IntermediateCircle
+
+    :param vehicle: Vehicle object.
+    :type vehicle: Vehicle
+
+    :param tol: Numerical tolerance.
+    :type tol: float
+
+    :return: Dictionary with triplet mergeability information.
+    :rtype: dict
+    """
+    same_turn = (
+        circle1.turn_direction == circle2.turn_direction
+        and circle2.turn_direction == circle3.turn_direction
+    )
+
+    if not same_turn:
+        return {
+            "can_be_merged": False,
+            "reason": "different_turn_directions",
+            "status12": None,
+            "status23": None,
+            "status13": None,
+        }
+
+    status12 = nominal_overlap_status_for_intermediate_circles(
+        circle1,
+        circle2,
+        vehicle,
+        tol=tol,
+    )
+
+    status23 = nominal_overlap_status_for_intermediate_circles(
+        circle2,
+        circle3,
+        vehicle,
+        tol=tol,
+    )
+
+    status13 = nominal_overlap_status_for_intermediate_circles(
+        circle1,
+        circle3,
+        vehicle,
+        tol=tol,
+    )
+
+    can_be_merged = (
+        status12["can_be_merged"]
+        and status23["can_be_merged"]
+        and status13["can_be_merged"]
+    )
+
+    if not status12["can_be_merged"]:
+        reason = "pair_12_cannot_be_merged"
+    elif not status23["can_be_merged"]:
+        reason = "pair_23_cannot_be_merged"
+    elif not status13["can_be_merged"]:
+        reason = "pair_13_cannot_be_merged"
+    else:
+        reason = "ok"
+
+    return {
+        "can_be_merged": can_be_merged,
+        "reason": reason,
+        "status12": status12,
+        "status23": status23,
+        "status13": status13,
+    }
 
 
 def assign_preferred_turn_directions_to_ambiguous_turns(
@@ -2044,7 +2539,6 @@ def build_intermediate_circles_sequence(
     vehicle,
     start_pose,
     end_pose,
-    build_only_resolved_turns=True,
 ):
     """
     Build an ordered sequence of IntermediateCircle objects for a sequence
@@ -2061,11 +2555,6 @@ def build_intermediate_circles_sequence(
 
     :param end_pose: Final pose of the vehicle.
     :type end_pose: list[float] or numpy.ndarray
-
-    :param build_only_resolved_turns: If True, build only circles for tau in {-1, +1}
-                                      and skip ambiguous tau = 0 turns.
-                                      This is useful for debugging/visualization.
-    :type build_only_resolved_turns: bool
 
     :return: Ordered sequence of available IntermediateCircle objects.
     :rtype: IntermediateCirclesSequence
@@ -2085,31 +2574,28 @@ def build_intermediate_circles_sequence(
     # ------------------------------------------------------------
     # 1. Corridor sequence feasibility check
     # ------------------------------------------------------------
-    validate_corridor_sequence(
-        corridor_list=corridor_list,
-        vehicle=vehicle,
-        min_centerline_distance=2.0 * vehicle.max_radius,
-        plot_invalid=True,
-    )
+    # validate_corridor_sequence(
+    #     corridor_list=corridor_list,
+    #     vehicle=vehicle,
+    #     min_centerline_distance=2.0 * vehicle.max_radius,
+    #     plot_invalid=True,
+    # )
 
     # ------------------------------------------------------------
     # 2. Build turn direction sequence based on corridor tilts
     # ------------------------------------------------------------
-    turn_direction_sequence = []
+    number_of_turns = len(corridor_list) - 1
+    turn_direction_sequence = [0] * number_of_turns
 
-    for i in range(len(corridor_list) - 1):
-        corridor1 = corridor_list[i]
-        corridor2 = corridor_list[i + 1]
-
-        tau = corridor1.compute_relative_turn_direction(corridor2)
-        tau = int(tau)
-
-        turn_direction_sequence.append(tau)
+    for i in range(number_of_turns):
+        turn_direction_sequence[i] = corridor_list[i].compute_relative_turn_direction(
+            corridor_list[i + 1]
+        )
 
     # ------------------------------------------------------------
     # 3. Build intermediate circles for tau in {-1, +1}
     # ------------------------------------------------------------
-    circle_slots = [None] * (len(corridor_list) - 1)
+    circle_slots = [None] * (number_of_turns)
 
     for i, tau in enumerate(turn_direction_sequence):
         if tau not in (-1, 1):
@@ -2123,9 +2609,6 @@ def build_intermediate_circles_sequence(
             corridor2,
             tau,
         )
-
-        print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
-        print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges}")
 
         # figure = plot_corridors(corridor_list, plot_vectors=True)
 
@@ -2144,20 +2627,20 @@ def build_intermediate_circles_sequence(
             or
             (intersecting_edges[0] == 3 and intersecting_edges[1] == 3)
         ):
-            candidate_point, intersection_exists = (
+            candidate_intersection_point, intersection_exists = (
                 get_other_intersection_point_if_present(corridor1, corridor2)
             )
 
             if intersection_exists:
                 # Make sure we pass a Point object to compute_intermediate_circle_geometry.
-                if isinstance(candidate_point, Point):
-                    other_intersection_point = candidate_point
+                if isinstance(candidate_intersection_point, Point):
+                    other_intersection_point = candidate_intersection_point
                 else:
-                    other_intersection_point = Point(*candidate_point)
+                    other_intersection_point = Point(*candidate_intersection_point)
 
         else:
             raise ValueError(
-                f"Unexpected intersecting edges for corridors {i}, {i+1}: "
+                f"Unexpected intersecting edges for corridors {i}, {i+1} with turn direction {tau}: "
                 f"{intersecting_edges}"
             )
 
@@ -2179,7 +2662,8 @@ def build_intermediate_circles_sequence(
         circle = build_intermediate_circle_from_geometry_result(
             geometry_result=geometry_result,
             index=i,
-            edge_pair=intersecting_edges
+            edge_pair=intersecting_edges,
+            merged=False,
         )
         circle.corridor_index_start = i
         circle.corridor_index_end = i + 1
@@ -2188,8 +2672,6 @@ def build_intermediate_circles_sequence(
     # ------------------------------------------------------------
     # 4. Assign preferred turn directions to ambiguous turns tau = 0
     # ------------------------------------------------------------
-    print("Turn direction sequence before ambiguous assignment:")
-    print(turn_direction_sequence)
     turn_direction_sequence = assign_preferred_turn_directions_to_ambiguous_turns(
         corridor_list=corridor_list,
         turn_direction_sequence=turn_direction_sequence,
@@ -2197,8 +2679,7 @@ def build_intermediate_circles_sequence(
         start_pose=start_pose,
         end_pose=end_pose,
     )
-    print("Turn direction sequence after ambiguous assignment:")
-    print(turn_direction_sequence)
+
     # ------------------------------------------------------------
     # 5. Build all the remaining circles
     # ------------------------------------------------------------
@@ -2216,24 +2697,21 @@ def build_intermediate_circles_sequence(
         corridor1 = corridor_list[i]
         corridor2 = corridor_list[i + 1]
 
-        corner_point, intersecting_edges_nominal = get_corner_point_and_intersecting_edges(
+        _, intersecting_edges_nominal = get_corner_point_and_intersecting_edges(
             corridor1,
             corridor2,
             tau,
         )
 
         edge1, edge2 = intersecting_edges_nominal
-
-        print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
-        print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges_nominal}")
-        
+    
         # figure = plot_corridors(corridor_list, plot_vectors=True)
-
         # plot_corridors([corridor1, corridor2], plot_vectors=False, figure=figure, color = "red")
         # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
         # plt.legend()
         # plt.show(block = True)
 
+        # Rotate one of the two corridors to obtain a consistent orientation for the intersection edges.
         if edge1 == 0: 
             corridor2_rotated = corridor2 
             if edge2 == 1: 
@@ -2316,6 +2794,7 @@ def build_intermediate_circles_sequence(
             geometry_result=geometry_result,
             index=i,
             edge_pair=intersecting_edges_nominal,
+            merged=False
         )
         circle.corridor_index_start = i
         circle.corridor_index_end = i + 1
@@ -2335,17 +2814,16 @@ def build_intermediate_circles_sequence(
     #-------------------------------------------------------------
     # Plot for debugging
     #-------------------------------------------------------------
-    figure = plot_corridors(corridor_list, plot_vectors=True)
-    ax = plt.gca()
-    plot_intermediate_circles_sequence_debug(
-        ax=ax,
-        intermediate_circles_sequence=intermediate_circles_sequence,
-        footprint_radius=vehicle.width / 2.0,
-        plot_swept_circle=False,
-        plot_shifted_circle=False,
-        plot_corner_small_circles=True,
-    )
-    plt.show(block=True)
+    # figure = plot_corridors(corridor_list, plot_vectors=True)
+    # ax = plt.gca()
+    # plot_intermediate_circles_sequence_debug(
+    #     ax=ax,
+    #     intermediate_circles_sequence=intermediate_circles_sequence,
+    #     footprint_radius=vehicle.width / 2.0,
+    #     plot_swept_circle=False,
+    #     plot_shifted_circle=False,
+    #     plot_corner_small_circles=True,
+    # )
     # plt.show(block=True)
 
     # ------------------------------------------------------------
@@ -2357,9 +2835,6 @@ def build_intermediate_circles_sequence(
         max_block_size=3,
     )
 
-    print("Same-turn nominal overlap blocks:")
-    print(overlap_blocks)
-    # For now skipped. We only return available circles for visualization.
     intermediate_circles_sequence = resolve_same_turn_nominal_overlap_blocks(
         intermediate_circles_sequence=intermediate_circles_sequence,
         corridor_list=corridor_list,
@@ -2386,8 +2861,8 @@ def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
 
     edge1, edge2 = intersecting_edges_nominal
 
-    print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
-    print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges_nominal}")
+    # print(f"Building intermediate circle for corridors {i} and {i+1}: {tau}")
+    # print(f"Corner point: {corner_point}, intersecting edges: {intersecting_edges_nominal}")
     
     # figure = plot_corridors(corridor_list, plot_vectors=True)
 

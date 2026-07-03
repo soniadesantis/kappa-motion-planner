@@ -248,12 +248,12 @@ def get_corner_point_and_intersecting_edges(corridor1, corridor2, turn):
     """
     candidates = []  # each item: (intersection_point, edge_idx_corridor1, edge_idx_corridor2)
 
-    if turn > 0:  # turn left
-        select_edges1 = np.array([0, 3])  # F and L faces of corridor1
-        select_edges2 = np.array([2, 3])  # B and L faces of corridor2
-    elif turn < 0:  # turn right
-        select_edges1 = np.array([0, 1])  # F and R faces of corridor1
-        select_edges2 = np.array([2, 1])  # B and R faces of corridor2
+    if turn == +1:  # turn left
+        select_edges1 = (0, 3)  # F and L faces of corridor1
+        select_edges2 = (2, 3)  # B and L faces of corridor2
+    elif turn == -1:  # turn right
+        select_edges1 = (0, 1)  # F and R faces of corridor1
+        select_edges2 = (2, 1)  # B and R faces of corridor2
     else:
         return None, []
 
@@ -276,7 +276,7 @@ def get_corner_point_and_intersecting_edges(corridor1, corridor2, turn):
                 candidates.append((np.array(intersection_point), k, i))
 
     if not candidates:
-        print("No corner point was found between these two corridors")
+        print("No corner point was found between two corridors")
         return None, []
 
     # Initialize with first candidate

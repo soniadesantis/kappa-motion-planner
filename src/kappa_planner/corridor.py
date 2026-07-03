@@ -300,16 +300,17 @@ class CorridorWorld:
         :return: Turning direction indicator (1 = left, -1 = right, 0 = straight).
         :rtype: float
         """
-        tol = 1e-5  # numerical tolerance for "straight"
+        tol = 1e-5
+
         turn = (
             self.unit_vector[0] * corridor2.unit_vector[1]
             - corridor2.unit_vector[0] * self.unit_vector[1]
         )
 
         if abs(turn) < tol:
-            return 0.0
+            return 0
 
-        return efficient_sign(turn)  # or np.sign(turn)
+        return int(efficient_sign(turn))
  
     def rotate_corridor(self, angle):
         """Return a new corridor that is a rotated

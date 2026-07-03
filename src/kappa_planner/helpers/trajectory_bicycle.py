@@ -830,11 +830,16 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
         #    Important: this happens AFTER applying successful shifts.
         # ------------------------------------------------------------
         if failed_shifts:
-            print("Some tangent shifts failed.")
+            old_number_of_intermediate_circles = len(intermediate_circles)
 
-            print_failed_tangent_shift_summary(
-                failed_shifts,
-                tol=1e-9,
+            touches_start = (
+                1 in failed_shifts
+                or 1 in corrected_centers
+            )
+
+            touches_end = (
+                old_number_of_intermediate_circles in failed_shifts
+                or old_number_of_intermediate_circles in corrected_centers
             )
 
             updated_any = update_turn_direction_circles(
@@ -849,44 +854,51 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
                 print("No failed circle could be updated.")
                 break
 
-            # The sequence may have structurally changed, so recompute
-            # start/end maneuvers and rerun tangent detection.
-            first_int_circ = intermediate_circles.first
-            corridor1 = corridor_list[0]
+            # Recompute the start maneuver only if the first actual
+            # intermediate circle was shifted or structurally repaired.
+            if touches_start:
+                first_int_circ = intermediate_circles.first
+                corridor1 = corridor_list[0]
 
-            start_maneuvers = compute_traj_to_circle_bicycle(
-                corridor1,
-                start_pose,
-                bicycle,
-                first_int_circ,
-            )
+                start_maneuvers = compute_traj_to_circle_bicycle(
+                    corridor1,
+                    start_pose,
+                    bicycle,
+                    first_int_circ,
+                )
 
-            intermediate_circle0 = extract_intermediate_circle_from_maneuver_list(
-                start_maneuvers
-            )
+                intermediate_circle0 = extract_intermediate_circle_from_maneuver_list(
+                    start_maneuvers
+                )
 
-            last_int_circ = intermediate_circles.last
-            last_corridor = corridor_list[-1]
+            # Recompute the end maneuver only if the last actual
+            # intermediate circle was shifted or structurally repaired.
+            if touches_end:
+                last_int_circ = intermediate_circles.last
+                last_corridor = corridor_list[-1]
 
-            inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(
-                last_corridor,
-                last_int_circ,
-                end_pose,
-            )
+                inv_last_corridor, inv_last_int_circ, inv_end_pose = invert_inputs_all(
+                    last_corridor,
+                    last_int_circ,
+                    end_pose,
+                )
 
-            inv_end_maneuvers = compute_traj_to_circle_bicycle(
-                inv_last_corridor,
-                inv_end_pose,
-                bicycle,
-                inv_last_int_circ,
-            )
+                inv_end_maneuvers = compute_traj_to_circle_bicycle(
+                    inv_last_corridor,
+                    inv_end_pose,
+                    bicycle,
+                    inv_last_int_circ,
+                )
 
-            end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0=0)
+                end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0=0)
 
-            intermediate_circleN = extract_intermediate_circle_from_maneuver_list(
-                end_maneuvers
-            )
+                intermediate_circleN = extract_intermediate_circle_from_maneuver_list(
+                    end_maneuvers
+                )
 
+            # Always rebuild the extended sequence and rerun tangent detection
+            # globally, because internal shifts/structural repairs can affect
+            # neighboring tangent triples.
             extended_circle_sequence = (
                 [intermediate_circle0]
                 + list(intermediate_circles)

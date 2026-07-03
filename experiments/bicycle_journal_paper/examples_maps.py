@@ -221,7 +221,8 @@ def example_corridor_sequence(num):
         corridor11 = CorridorWorld(4.9899998884648085, 4.9899998884648085, [7.834999824874103, 12.924999711103737], 1.5707963267948966)
         corridor12 = CorridorWorld(0.8399999812245369, 10.089999774470925, [10.384999767877162, 14.889999667182565], 0.0)
         corridor13 = CorridorWorld(4.999999888241291, 4.969999888911843, [12.929999710991979, 12.93499971088022], -1.5707963267948966)
-        corridor_list = [corridor1, corridor2,corridor4,  corridor6, corridor8, corridor9, corridor10, corridor11, corridor12, corridor13]
+        corridor_list = [corridor1, corridor2, corridor4,  corridor6, corridor8, corridor9, corridor10, corridor11, corridor12, corridor13]
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor6, corridor7, corridor8, corridor9, corridor10, corridor11, corridor12, corridor13]
         start_pose = [2.0562686920166016, 1.892181396484375, 0.1610918028903515]
         end_pose = [11.480597496032715, 12.35735034942627, -0.933557986462627]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.25, v_max=1.0, v_min=-1.0, delta_max=0.5, delta_min=-0.5)
@@ -298,17 +299,128 @@ def example_corridor_sequence(num):
         corridor11 = CorridorWorld(0.6299999859184031, 6.439999856054783, [2.4949999442324042, 9.05999979749322], 1.5707963267948966)
         corridor12 = CorridorWorld(0.6999999843537804, 2.699999939650297, [1.5899999644607306, 8.24999981559813], 3.141592653589793)
         corridor13 = CorridorWorld(1.6799999624490738, 1.7999999597668648, [1.0799999758601189, 8.709999805316329], 1.5707963267948966)
-        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9, corridor12, corridor13]
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9, corridor10, corridor11,corridor12, corridor13]
         start_pose = [6.2307658195495605, 1.5503556728363037, 2.118358872661069]
         end_pose = [1.5123708248138428, 9.1657075881958, 2.930501583106648]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
 
+    elif num == 22: 
+        corridor1 = CorridorWorld(0.689999984577298, 2.5299999434500933, [0.584999986924231, 11.014999753795564], -1.5707963267948966)
+        corridor2 = CorridorWorld(0.42999999038875103, 2.699999939650297, [1.5899999644607306, 11.34499974641949], 0.0)
+        corridor3 = CorridorWorld(0.43999999016523345, 2.5299999434500933, [1.5599999651312828, 11.014999753795564], -1.5707963267948966)
+        corridor4 = CorridorWorld(0.7099999841302633, 2.699999939650297, [1.5899999644607306, 10.10499977413565], 0.0)
+        corridor5 = CorridorWorld(0.7499999832361933, 4.619999896734953, [2.4349999455735087, 8.149999817833304], -1.5707963267948966)
+        corridor6 = CorridorWorld(0.7699999827891585, 2.699999939650297, [1.5899999644607306, 7.044999842531979], 3.141592653589793)
+        corridor7 = CorridorWorld(0.5199999883770943, 3.4799999222159386, [1.9799999557435513, 6.919999845325947], 0.0)
+        corridor8 = CorridorWorld(0.6799999848008159, 5.949999867007136, [3.3799999244511127, 9.304999792017043], 1.5707963267948966)
+        corridor9 = CorridorWorld(0.5199999883770943, 3.3199999257922173, [4.699999894946814, 8.4399998113513], 0.0)
+        corridor10 = CorridorWorld(0.4799999892711642, 4.099999908357859, [4.499999899417162, 10.229999771341681], 1.5707963267948966)
+        corridor11 = CorridorWorld(0.4999999888241291, 3.3199999257922173, [4.699999894946814, 9.649999784305692], 0.0)
+        corridor12 = CorridorWorld(0.35999999195337334, 5.949999867007136, [5.239999882876873, 9.304999792017043], 1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9, corridor10, corridor11, corridor12]
+        start_pose = [0.5405622124671936, 11.975102424621582, -0.03224566090062711]
+        end_pose = [5.415079593658447, 11.194485664367676, 1.9108924864768193]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+
+    elif num == 23: 
+        corridor1 = CorridorWorld(0.689999984577298, 2.5299999434500933, [0.584999986924231, 11.014999753795564], -1.5707963267948966)
+        corridor2 = CorridorWorld(0.42999999038875103, 2.699999939650297, [1.5899999644607306, 11.34499974641949], 0.0)
+        corridor3 = CorridorWorld(0.43999999016523345, 2.5299999434500933, [1.5599999651312828, 11.014999753795564], -1.5707963267948966)
+        corridor4 = CorridorWorld(0.7099999841302633, 2.699999939650297, [1.5899999644607306, 10.10499977413565], 0.0)
+        corridor5 = CorridorWorld(0.7499999832361933, 4.619999896734953, [2.4349999455735087, 8.149999817833304], -1.5707963267948966)
+        corridor6 = CorridorWorld(0.8999999798834326, 3.8099999148398638, [2.489999944344163, 7.74499982688576], 1.5707963267948966)
+        corridor7 = CorridorWorld(0.6999999843537804, 2.699999939650297, [1.5899999644607306, 8.24999981559813], 3.141592653589793)
+        corridor8 = CorridorWorld(1.6799999624490738, 1.7999999597668648, [1.0799999758601189, 8.709999805316329], 1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor7, corridor8]
+        start_pose = [0.5405622124671936, 11.975102424621582, -0.03224566090062711]
+        end_pose = [1.060972809791565, 8.939371109008789, 2.6292034991557545]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+
+    elif num == 24: 
+
+        corridor1 = CorridorWorld(0.7699999827891588, 2.699999939650297, [1.5899999644607306, 7.044999842531979], 0.0)
+        corridor2 = CorridorWorld(0.5199999883770943, 3.4799999222159386, [1.9799999557435513, 6.919999845325947], 0.0)
+        corridor3 = CorridorWorld(0.6799999848008159, 5.949999867007136, [3.3799999244511127, 9.304999792017043], 1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3]
+        start_pose = [0.5752564072608948, 7.412831783294678, 0.2284963254844108]
+        end_pose = [3.3854763507843018, 11.246527671813965, 1.614247351847231]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+
+    #########################
+    # Large rooms gmap_1.yaml
+    #########################
+    elif num == 25:
+        corridor1 = CorridorWorld(1.0099999774247401, 5.009999888017774, [5.3349998807534575, 8.624999807216227], 3.141592653589793)
+        corridor2 = CorridorWorld(2.379999946802855, 4.969999888911843, [4.039999909698963, 10.464999766089022], 1.5707963267948966)
+        corridor3 = CorridorWorld(0.9299999792128795, 4.9899998884648085, [2.734999938867986, 9.884999779053032], 3.141592653589793)
+        corridor4 = CorridorWorld(2.489999944344163, 2.4699999447911978, [1.4849999668076634, 9.2149997940287], -1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4]
+        start_pose = [5.6766180992126465, 9.044669151306152, -0.0624198795718705]
+        end_pose = [2.1551687717437744, 8.76711654663086, -2.778199852381511]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+        start_pose = compute_start_pose(corridor_list[0], vehicle, 0)
+
+    #########################
+    # Large rooms map_2.yaml
+    #########################
+    elif num == 26: 
+        corridor1 = CorridorWorld(2.959999933838844, 4.9899998884648085, [20.499999541789293, 16.174999638460577], -1.5707963267948966)
+        corridor2 = CorridorWorld(1.0099999774247401, 10.089999774470925, [20.784999535419047, 13.624999695457518], -1.5707963267948966)
+        corridor3 = CorridorWorld(4.989999888464808, 4.979999888688327, [19.499999564141035, 11.07499975245446], 3.141592653589793)
+        corridor4 = CorridorWorld(1.1599999740719782, 10.079999774694443, [16.949999621137977, 12.519999720156193], 3.141592653589793)
+        corridor5 = CorridorWorld(2.2299999501556154, 4.979999888688326, [14.399999678134918, 12.384999723173678], 3.141592653589793)
+        corridor6 = CorridorWorld(2.4599999450147156, 4.899999890476465, [13.149999706074595, 13.719999693334103], 1.5707963267948966)
+        corridor7 = CorridorWorld(0.4099999908357843, 12.73999971523881, [8.009999820962548, 13.94499968830496], 3.141592653589793)
+        corridor8 = CorridorWorld(2.299999948590994, 4.9899998884648085, [9.274999792687595, 13.229999704286456], 0.0)
+        corridor9 = CorridorWorld(1.159999974071979, 7.399999834597111, [9.339999791234732, 10.679999761283398], -1.5707963267948966)
+        corridor10 = CorridorWorld(2.3399999476969238, 4.9899998884648085, [9.199999794363976, 9.474999788217247], -1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor9, corridor10]
+        start_pose = [19.40408706665039, 18.369365692138672, -1.2036224182017405]
+        end_pose = [8.326583862304688, 9.724310874938965, -1.797594522877994]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+
+    ###########################
+    # Large rooms map_14.yaml
+    ###########################
+    elif num == 27:
+        corridor1 = CorridorWorld(4.999999888241291, 4.979999888688326, [4.789999892935157, 21.199999526143074], 1.5707963267948966)
+        corridor2 = CorridorWorld(1.0199999772012234, 7.27999983727932, [5.929999867454171, 21.319999523460865], 0.0)
+        corridor3 = CorridorWorld(1.029999976977706, 7.269999837502837, [11.044999753125012, 21.004999530501664], 0.0)
+        corridor4 = CorridorWorld(2.1199999526143065, 15.239999659359455, [8.499999810010195, 16.089999640360475], -1.5707963267948966)
+        corridor5 = CorridorWorld(1.019999977201222, 23.449999475851655, [8.469999810680747, 11.984999732114375], -1.5707963267948966)
+        corridor6 = CorridorWorld(4.979999888688326, 13.759999692440033, [10.249999770894647, 5.829999869689345], 0.0).invert_dimensions(-1)
+        corridor7 = CorridorWorld(2.3499999474734046, 16.88999962247908, [8.684999805875123, 4.534999898634851], 3.141592653589793)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7]
+        start_pose = [3.0816783905029297, 19.552017211914062, -0.1543182359159075]
+        end_pose = [2.529900550842285, 4.868592262268066, 3.1203191901411564]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+
+    ###########################
+    # Large rooms map_18.yaml
+    ###########################
+    elif num == 28:
+        corridor1 = CorridorWorld(3.0299999322742233, 12.629999717697501, [21.384999522008002, 6.594999852590263], 1.5707963267948966)
+        corridor2 = CorridorWorld(8.619999807327984, 8.31999981403351, [18.879999577999115, 8.59999980777502], 3.141592653589793)
+        corridor3 = CorridorWorld(0.7499999832361945, 13.719999693334103, [16.11499963980168, 11.149999750778079], 1.5707963267948966)
+        corridor4 = CorridorWorld(4.989999888464808, 10.64999976195395, [13.264999703504145, 15.514999653212726], 3.141592653589793)
+        corridor5 = CorridorWorld(5.589999875053764, 10.469999765977263, [10.734999760054052, 18.254999591968954], 1.5707963267948966)
+        corridor6 = CorridorWorld(1.0099999774247417, 14.239999681711197, [12.634999717585742, 20.13999954983592], 1.5707963267948966)
+        corridor7 = CorridorWorld(3.649999918416141, 10.679999761283398, [13.279999703168869, 25.434999431483448], 3.141592653589793)
+        corridor8 = CorridorWorld(0.7699999827891569, 15.779999647289515, [10.72999976016581, 25.52499942947179], 3.141592653589793)
+        corridor9 = CorridorWorld(4.989999888464808, 8.069999819621444, [5.3349998807534575, 23.224999480880797], -1.5707963267948966)
+        corridor10 = CorridorWorld(1.7099999617785222, 10.669999761506915, [3.984999910928309, 24.524999451823533], 1.5707963267948966)
+        corridor11 = CorridorWorld(4.949999889358878, 2.4899999443441625, [2.734999938867986, 28.61499936040491], 1.5707963267948966)
+        corridor12 = CorridorWorld(2.4899999443441625, 4.949999889358878, [1.4849999668076634, 27.364999388344586], -1.5707963267948966)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6, corridor7, corridor8, corridor9, corridor10, corridor11, corridor12]
+        start_pose = [21.973045349121094, 1.0339956283569336, 1.584682689199424]
+        end_pose = [1.617842674255371, 26.465055465698242, -2.4360250174541616]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
 
     return corridor_list, start_pose, end_pose, vehicle
 
 
 if __name__ == "__main__":
-    example_num = 21
+    example_num = 15
 
     # Problems 8 (3 overlapping), 15 (problem with corridor direction)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
@@ -337,11 +449,11 @@ if __name__ == "__main__":
 
 
     ### Define Motion Planner ###
-    plot_corridors(corridor_list, plot_vectors=True, colormap = True, plot_corridor_index = True)
-    plt.show(block = True)
+    # plot_corridors(corridor_list, plot_vectors=True, colormap = True, plot_corridor_index = True)
+    # plt.show(block = True)
     mp = MotionPlanner(vehicle, corridor_list, start_pose, end_pose)
-    figure = mp.plot_planner_inputs()
-    plt.show(block = True)
+    # figure = mp.plot_planner_inputs()
+    # plt.show(block = True)
 
     # mp.plot_planner_inputs()
     # plt.show(block = True)
