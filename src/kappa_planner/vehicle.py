@@ -279,6 +279,8 @@ class Bicycle(Vehicle):
         width=0.430,
         length=0.508,
         wheelbase=0.4,
+        rear_axle_to_front=None,
+        rectangular_footprint=False,
         v_max=0.5,
         v_min=-0.5,
         delta_max=0.5,
@@ -299,6 +301,10 @@ class Bicycle(Vehicle):
         :type length: float
         :param wheelbase: Distance between front and rear axles (m). Defaults to 0.4.
         :type wheelbase: float
+        :param rear_axle_to_front: Distance from rear axle point to the front of the rectangular footprint. If None, defaults to vehicle length.
+        :type rear_axle_to_front: float or None
+        :param rectangular_footprint: If True, use rectangular-footprint swept-radius clearance.
+        :type rectangular_footprint: bool
         :param v_max: Maximum forward velocity (m/s). Defaults to 0.5.
         :type v_max: float
         :param v_min: Minimum forward velocity (m/s). Defaults to −0.5.
@@ -328,6 +334,8 @@ class Bicycle(Vehicle):
                 self.width = params["width"]
                 self.length = params["length"]
                 self.wheelbase = params["wheelbase"]
+                self.rear_axle_to_front = params.get("rear_axle_to_front", self.length)
+                self.rectangular_footprint = params.get("rectangular_footprint", False)
                 self.v_max = params["v_max"]
                 self.v_min = params["v_min"]
                 self.delta_max = params["delta_max"]
@@ -350,6 +358,11 @@ class Bicycle(Vehicle):
             self.width = width
             self.length = length
             self.wheelbase = wheelbase
+            if rear_axle_to_front is None:
+                self.rear_axle_to_front = self.length
+            else:
+                self.rear_axle_to_front = rear_axle_to_front
+            self.rectangular_footprint = rectangular_footprint
             self.v_max = v_max
             self.v_min = v_min
             self.delta_max = delta_max

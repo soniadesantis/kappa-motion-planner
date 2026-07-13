@@ -2,11 +2,18 @@ from ..geometry import IntermediateCirclesSequence, Point, IntermediateCircle, C
 from .corridor_sequence_validity import validate_corridor_sequence
 from .corridor_geometry import get_corner_point, get_corner_point_and_intersecting_edges, point_matches_any_corner
 from .intersections import compute_intersection_two_segments
-from .arc_feasibility import world_to_circle_local, compute_nominal_same_turn_merged_center, compute_intermediate_circle_geometry, build_intermediate_circle_from_geometry_result
+from .arc_feasibility import (
+    world_to_circle_local,
+    compute_nominal_same_turn_merged_center,
+    compute_intermediate_circle_geometry,
+    build_intermediate_circle_from_geometry_result,
+    compute_vehicle_clearance_radii,
+)
 from .geometry_operations import check_point_inside_segment, project_point_onto_segment, compute_distance_two_points, compute_turn_direction_from_three_points, select_tangency_point_from_point_circle
 from .plot_helpers import plot_corridors, plot_intermediate_circles_sequence_debug
-from .primitives import compute_extreme_poses_arc_line
-
+from .primitives import compute_extreme_poses_arc_line, invert_maneuvers
+from .invert_inputs import invert_inputs_all
+from .pose_to_circle_bicycle import compute_traj_to_circle_bicycle
 import matplotlib.pyplot as plt
 import warnings 
 from math import pi
@@ -204,28 +211,55 @@ def update_turn_direction_circles(
 def update_intermediate_circle_centers_from_extended_sequence(
     intermediate_circles,
     new_extended_centers,
+    corrected_centers=None,
+    mark_corrected_as_skip=False,
 ):
     """
     Update only the real intermediate circles.
 
     :param intermediate_circles: IntermediateCirclesSequence or list of IntermediateCircle.
-    :param new_extended_centers: centers computed on
+    :type intermediate_circles: IntermediateCirclesSequence | list
+
+    :param new_extended_centers: Centers computed on
         [initial_circle] + intermediate_circles + [final_circle].
+    :type new_extended_centers: list[Point]
+
+    :param corrected_centers: Dictionary of corrected extended-sequence indices.
+        Extended index 1 corresponds to intermediate_circles[0].
+    :type corrected_centers: dict[int, Point] | None
+
+    :param mark_corrected_as_skip: If True, only corrected circles are marked
+        as skipped for final segment construction.
+    :type mark_corrected_as_skip: bool
     """
     if len(new_extended_centers) != len(intermediate_circles) + 2:
         raise ValueError(
             "new_extended_centers must have length len(intermediate_circles) + 2"
         )
 
+    corrected_centers = corrected_centers or {}
+
     for i, circle in enumerate(intermediate_circles):
-        new_center = new_extended_centers[i + 1]
+        extended_index = i + 1
+        new_center = new_extended_centers[extended_index]
 
         circle.center = Point(new_center.x, new_center.y)
 
         if hasattr(circle, "xc"):
             circle.xc = new_center.x
+
         if hasattr(circle, "yc"):
             circle.yc = new_center.y
+
+        if extended_index in corrected_centers:
+            circle.shifted = True
+
+            if mark_corrected_as_skip:
+                circle.skip = True
+                circle.skip_reason = "shifted_to_reference_tangent"
+        else:
+            circle.shifted = getattr(circle, "shifted", False)
+            circle.skip = getattr(circle, "skip", False)
             
 
 def update_circle_sequence_centers(circle_sequence, new_centers):
@@ -361,7 +395,14 @@ def shifted_center_is_admissible_for_single_circle(circle, shifted_center, tol=1
     return True, "ok", center_local
 
 
-def circle_halfplane_clearance(circle, x1, y1, x2, y2, tol=1e-9):
+def circle_halfplane_clearance(circle, r, x1, y1, x2, y2, tol=1e-9):
+
+    # plt.plot(circle.center.x, circle.center.y, 'ro', label=f"Circle {circle.index} Center")
+    # angle_array = np.linspace(0, 2 * np.pi, 100)
+    # plt.plot(circle.center.x + circle.radius * np.cos(angle_array), circle.center.y + circle.radius * np.sin(angle_array), 'r--', label=f"Circle {circle.index} Boundary")
+    # plt.plot([x1, x2], [y1, y2], 'k--', label="Reference Tangent")
+    # plt.show(block = True)
+    # if circle.shifted:
     signed_distance, n_right = signed_distance_to_directed_line(
         circle.center,
         x1,
@@ -373,7 +414,24 @@ def circle_halfplane_clearance(circle, x1, y1, x2, y2, tol=1e-9):
 
     # Keep this convention consistent with the one that works in your plots.
     side_clearance = signed_distance + circle.turn_direction * circle.radius
+    # side_clearance = signed_distance + circle.turn_direction * r
+
     is_bad = circle.turn_direction * side_clearance < -tol
+    # else: 
+    #     signed_distance, n_right = signed_distance_to_directed_line(
+    #         circle.corner_point,
+    #         x1,
+    #         y1,
+    #         x2,
+    #         y2,
+    #         tol=tol,
+    #     )
+
+    #     # Keep this convention consistent with the one that works in your plots.
+    #     # side_clearance = signed_distance + circle.turn_direction * circle.radius
+    #     side_clearance = signed_distance + circle.turn_direction * r
+
+    #     is_bad = circle.turn_direction * side_clearance < -tol
 
     return is_bad, signed_distance, n_right, side_clearance
 
@@ -489,22 +547,88 @@ def shifted_center_to_reference_tangent(circle, x1, y1, x2, y2, tol=1e-9):
     }
 
 
-def solve_tangent_block_centers(
+def compute_reference_tangent_for_block(
     first_index,
     last_index,
     circle_sequence,
-    corrected_centers,
-    failed_shifts,
+    start_pose=None,
+    end_pose=None,
+    corridor_list=None,
+    bicycle=None,
     tol=1e-9,
 ):
-    
-    # The block is circle_sequence[first_index : last_index + 1] 
-    # If the block has only two circles, there are no interior circles to check
-    if last_index - first_index <= 1:
-        return
+    # virtual_start_index = 0
+    # virtual_end_index = len(circle_sequence) - 1
 
-    # If the block has more than two circles, build the tangent between
-    # the first and last circles, and check the intermediate circles.
+    # touches_start = first_index == virtual_start_index
+    # touches_end = last_index == virtual_end_index
+
+    # touches_both_start_and_end = touches_start and touches_end
+    # if touches_both_start_and_end:
+    #     raise ValueError("To be implemented.")
+
+    # if touches_start:
+    #     fixed_circle_index = last_index
+    #     fixed_circle = circle_sequence[fixed_circle_index]
+    #     corridor1 = corridor_list[0]
+
+    #     start_maneuvers = compute_traj_to_circle_bicycle(
+    #         corridor1,
+    #         start_pose,
+    #         bicycle,
+    #         fixed_circle,
+    #     )
+
+    #     x1, y1, theta1, x2, y2, theta2 = (
+    #         extract_reference_tangent_from_start_maneuvers(start_maneuvers)
+    #     )
+
+    #     return {
+    #         "x1": x1,
+    #         "y1": y1,
+    #         "theta1": theta1,
+    #         "x2": x2,
+    #         "y2": y2,
+    #         "theta2": theta2,
+    #         "start_maneuvers": start_maneuvers,
+    #         "end_maneuvers": None,
+    #     }
+
+    # if touches_end:
+    #     fixed_circle_index = first_index
+    #     fixed_circle = circle_sequence[fixed_circle_index]
+    #     last_corridor = corridor_list[-1]
+
+    #     inv_last_corridor, inv_fixed_circle, inv_end_pose = invert_inputs_all(
+    #         last_corridor,
+    #         fixed_circle,
+    #         end_pose,
+    #     )
+
+    #     inv_end_maneuvers = compute_traj_to_circle_bicycle(
+    #         inv_last_corridor,
+    #         inv_end_pose,
+    #         bicycle,
+    #         inv_fixed_circle,
+    #     )
+
+    #     end_maneuvers = invert_maneuvers(inv_end_maneuvers, t0=0)
+
+    #     x1, y1, theta1, x2, y2, theta2 = (
+    #         extract_reference_tangent_from_end_maneuvers(end_maneuvers)
+    #     )
+
+    #     return {
+    #         "x1": x1,
+    #         "y1": y1,
+    #         "theta1": theta1,
+    #         "x2": x2,
+    #         "y2": y2,
+    #         "theta2": theta2,
+    #         "start_maneuvers": None,
+    #         "end_maneuvers": end_maneuvers,
+    #     }
+
     first_circle = circle_sequence[first_index]
     last_circle = circle_sequence[last_index]
 
@@ -518,14 +642,133 @@ def solve_tangent_block_centers(
         first_circle.radius,
     )
 
-    good_indices = []
+    return {
+        "x1": x1,
+        "y1": y1,
+        "theta1": theta1,
+        "x2": x2,
+        "y2": y2,
+        "theta2": theta2,
+        "start_maneuvers": None,
+        "end_maneuvers": None,
+    }
+
+
+def extract_reference_tangent_from_start_maneuvers(maneuvers):
+    """
+    Extract the tangent segment from a start boundary maneuver.
+
+    Expected structure:
+        optional backward arcs + arc + segment
+    """
+    segment = maneuvers[-1]
+
+    return (
+        segment.x0,
+        segment.y0,
+        segment.theta0,
+        segment.xf,
+        segment.yf,
+        segment.thetaf,
+    )
+
+
+def maneuver_is_segment(maneuver):
+    return not hasattr(maneuver, "xc")
+
+
+def extract_reference_tangent_from_end_maneuvers(maneuvers):
+    """
+    Extract the tangent segment from an end boundary maneuver in global order.
+    """
+    for maneuver in maneuvers:
+        if maneuver_is_segment(maneuver):
+            return (
+                maneuver.x0,
+                maneuver.y0,
+                maneuver.theta0,
+                maneuver.xf,
+                maneuver.yf,
+                maneuver.thetaf,
+            )
+
+    raise ValueError("No tangent segment found in end boundary maneuvers.")
+
+
+def solve_tangent_block_centers(
+    first_index,
+    last_index,
+    circle_sequence,
+    corrected_centers,
+    failed_shifts,
+    boundary_updates,
+    start_pose=None,
+    end_pose=None,
+    corridor_list=None,
+    bicycle=None,
+    tol=1e-9,
+):
+    """
+    Solve one tangent-intersection block by shifting its interior circles.
+
+    The block is circle_sequence[first_index : last_index + 1].
+
+    The function:
+        1. Computes the reference tangent for the block.
+        2. Computes each interior circle clearance and shift result once.
+        3. Splits the block if an interior circle is on the correct side
+           and cannot be shifted to the reference tangent.
+        4. Otherwise accepts all feasible shifts together, or rejects the
+           whole block if at least one shift is infeasible.
+    """
+
+    # No interior circles to shift.
+    if last_index - first_index <= 1:
+        return
+
+    reference_result = compute_reference_tangent_for_block(
+        first_index=first_index,
+        last_index=last_index,
+        circle_sequence=circle_sequence,
+        start_pose=start_pose,
+        end_pose=end_pose,
+        corridor_list=corridor_list,
+        bicycle=bicycle,
+        tol=tol,
+    )
+
+    x1 = reference_result["x1"]
+    y1 = reference_result["y1"]
+    theta1 = reference_result["theta1"]
+    x2 = reference_result["x2"]
+    y2 = reference_result["y2"]
+    theta2 = reference_result["theta2"]
+
+    if reference_result["start_maneuvers"] is not None:
+        boundary_updates["start_maneuvers"] = reference_result["start_maneuvers"]
+
+    if reference_result["end_maneuvers"] is not None:
+        boundary_updates["end_maneuvers"] = reference_result["end_maneuvers"]
+
+    circle_results = {}
+
+    # plot_corridors(corridor_list, label="Corridors")
+    # angle_array = np.linspace(0, 2 * np.pi, 100)
+    # for circle_index in range(first_index, last_index + 1):
+    #     circle = circle_sequence[circle_index]
+    #     plt.plot(circle.center.x, circle.center.y, 'ro', label=f"Circle {circle_index} Center")
+    #     plt.plot(circle.center.x + circle.radius * np.cos(angle_array), circle.center.y + circle.radius * np.sin(angle_array), 'r--', label=f"Circle {circle_index} Boundary")
+    # plt.plot([x1, x2], [y1, y2], 'k--', label="Reference Tangent")
+    # plt.title(f"Tangent Block: {first_index} to {last_index}")
+    # plt.axis('equal')
+    # plt.show(block = True)
 
     for circle_index in range(first_index + 1, last_index):
         circle = circle_sequence[circle_index]
 
-        # A circle is good if it actively pushes the tangent along the correct direction
         is_bad, signed_distance, n_right, side_clearance = circle_halfplane_clearance(
             circle,
+            bicycle.width/2,
             x1,
             y1,
             x2,
@@ -533,45 +776,6 @@ def solve_tangent_block_centers(
             tol=tol,
         )
 
-        if not is_bad:
-            good_indices.append(circle_index)
-
-    # Split the block in case one circle that actively pushes the tangent is found
-    if good_indices:
-        split_index = good_indices[0]
-
-        solve_tangent_block_centers(
-            first_index,
-            split_index,
-            circle_sequence,
-            corrected_centers,
-            failed_shifts,
-            tol=tol,
-        )
-
-        solve_tangent_block_centers(
-            split_index,
-            last_index,
-            circle_sequence,
-            corrected_centers,
-            failed_shifts,
-            tol=tol,
-        )
-
-        return
-
-    # If no good circles are found, it is time to resolve the intersection by shiftin
-    # If no good circles are found, try to resolve the intersection by shifting.
-    # The block correction is accepted only if all required shifts are feasible.
-    block_corrected_centers = {} # tentative successful shifts for this block
-    # temporary because the block is accepted only if all required shifts are feasible.
-    block_failed_shifts = {} # failed shifts for this block
-
-    for circle_index in range(first_index + 1, last_index):
-        circle = circle_sequence[circle_index]
-
-        # Shift the circle until it is tangent to the reference line
-        # and check if the shifted center is admissible.
         shift_result = shifted_center_to_reference_tangent(
             circle,
             x1,
@@ -580,6 +784,67 @@ def solve_tangent_block_centers(
             y2,
             tol=tol,
         )
+
+        circle_results[circle_index] = {
+            "circle": circle,
+            "is_bad": is_bad,
+            "signed_distance": signed_distance,
+            "n_right": n_right,
+            "side_clearance": side_clearance,
+            "shift_result": shift_result,
+        }
+        stop = 1
+
+    # Split the block if a circle is already on the correct side but cannot
+    # be shifted onto the current reference tangent.
+    good_indices = []
+
+    for circle_index, result in circle_results.items():
+        if (
+            not result["is_bad"]
+            # and not result["shift_result"]["feasible"]
+        ):
+            good_indices.append(circle_index)
+
+    if good_indices:
+        split_index = good_indices[0]
+
+        solve_tangent_block_centers(
+            first_index=first_index,
+            last_index=split_index,
+            circle_sequence=circle_sequence,
+            corrected_centers=corrected_centers,
+            failed_shifts=failed_shifts,
+            boundary_updates=boundary_updates,
+            start_pose=start_pose,
+            end_pose=end_pose,
+            corridor_list=corridor_list,
+            bicycle=bicycle,
+            tol=tol,
+        )
+
+        solve_tangent_block_centers(
+            first_index=split_index,
+            last_index=last_index,
+            circle_sequence=circle_sequence,
+            corrected_centers=corrected_centers,
+            failed_shifts=failed_shifts,
+            boundary_updates=boundary_updates,
+            start_pose=start_pose,
+            end_pose=end_pose,
+            corridor_list=corridor_list,
+            bicycle=bicycle,
+            tol=tol,
+        )
+
+        return
+
+    block_corrected_centers = {}
+    block_failed_shifts = {}
+
+    for circle_index, result in circle_results.items():
+        circle = result["circle"]
+        shift_result = result["shift_result"]
 
         if shift_result["feasible"]:
             block_corrected_centers[circle_index] = shift_result["center"]
@@ -591,36 +856,21 @@ def solve_tangent_block_centers(
                 "circle": circle,
             }
 
-    # If at least one circle failed, reject all shifts in this block.
-    # The failed circles will be structurally repaired later, and the whole
-    # tangent-intersection check will be run again.
+    # If at least one circle failed, reject all tentative shifts in this block.
     if block_failed_shifts:
-        # save the failure information from local to global failed_shifts
         for circle_index, failure in block_failed_shifts.items():
             failed_shifts[circle_index] = failure
-
-            # print(
-            #     f"Circle {circle_index} cannot be shifted: "
-            #     f"{failure['reason']}"
-            # )
-
-        # print(
-        #     f"Block ({first_index}, {last_index}) rejected. "
-        #     "All tentative shifts in this block are discarded."
-        # )
-
         return
 
-    # If no failures occurred, accept all shifts in this block.
+    # Accept all shifts in this block.
     for circle_index, new_center in block_corrected_centers.items():
-        # save the successful shift information from local to global corrected_centers
         corrected_centers[circle_index] = new_center
-        # print(f"Circle {circle_index} shifted successfully.")
 
 
-def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9):
+def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, start_pose=None, end_pose=None, corridor_list=None, bicycle=None , tol=1e-9):
     corrected_centers = {}
     failed_shifts = {}
+    boundary_updates = {}
 
     # For each block, solve the intersection for each circle by
     # 1- Shifting
@@ -633,7 +883,12 @@ def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9
             circle_sequence,
             corrected_centers,
             failed_shifts,
-            tol=tol,
+            boundary_updates,
+            start_pose,
+            end_pose,
+            corridor_list,
+            bicycle,
+            tol,
         )
 
     new_centers = []
@@ -644,7 +899,7 @@ def solve_tangent_intersections_blocks_centers(blocks, circle_sequence, tol=1e-9
         else:
             new_centers.append(circle.center)
 
-    return new_centers, corrected_centers, failed_shifts
+    return new_centers, corrected_centers, failed_shifts, boundary_updates
      
 
 def signed_distance_to_directed_line(point, x1, y1, x2, y2, tol=1e-9):
@@ -730,7 +985,7 @@ def signed_distance_to_directed_line(point, x1, y1, x2, y2, tol=1e-9):
 #     plt.show(block=True)
 
             
-def detect_tangent_intersections_blocks(circle_sequence, tol=1e-9):
+def detect_tangent_intersections_blocks(circle_sequence, bicycle, tol=1e-9):
     flags = []
 
     for index in range(len(circle_sequence) - 2):
@@ -748,9 +1003,23 @@ def detect_tangent_intersections_blocks(circle_sequence, tol=1e-9):
             circle1.radius,
         )
 
+        # if index == len(circle_sequence) - 3:
+        #     angle_array = np.linspace(0, 2 * np.pi, 100)
+        #     plt.plot(circle2.center.x, circle2.center.y, 'ro', label=f"Circle {circle2.index} Center")
+        #     plt.plot(circle1.center.x, circle1.center.y, 'bo', label=f"Circle {circle1.index} Center")
+        #     plt.plot(circle3.center.x, circle3.center.y, 'go', label=f"Circle {circle3.index} Center")
+        #     plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), 'b--', label=f"Circle {circle1.index} Boundary")
+        #     plt.plot(circle3.center.x + circle3.radius * np.cos(angle_array), circle3.center.y + circle3.radius * np.sin(angle_array), 'g--', label=f"Circle {circle3.index} Boundary")
+        #     plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), 'r--', label=f"Circle {circle2.index} Boundary")
+        #     plt.plot([x1, x2], [y1, y2], 'k--', label="Reference Tangent")
+        #     plt.title(f"Tangent Block Detection: {index} to {index + 2}")
+        #     plt.axis('equal')
+        #     plt.show(block = True)
+
         try:
             is_bad, signed_distance, n_right, side_clearance = circle_halfplane_clearance(
                 circle2,
+                bicycle.width/2,
                 x1,
                 y1,
                 x2,
@@ -903,11 +1172,10 @@ def compute_big_circle_tangent_to_small_circle_and_centerline(
     :return: Best candidate big Circle, or None.
     :rtype: Circle or None
     """
-    R = radius
-    r = vehicle.width / 2.0
+    r, R, S, D = compute_vehicle_clearance_radii(vehicle)
 
     R_inner = R - r      # distance big center -> active small center
-    R_check = R + r      # swept radius tangent to centerline
+    R_check = S      # swept radius tangent to centerline
 
     if R_inner <= tol:
         return None
@@ -1136,6 +1404,7 @@ def resolve_same_turn_nominal_overlap_blocks(
 
     return intermediate_circles_sequence
 
+
 def build_merged_circle_for_same_turn_triplet(
     circle1,
     circle2,
@@ -1162,8 +1431,7 @@ def build_merged_circle_for_same_turn_triplet(
     ):
         return None
 
-    R = vehicle.max_radius
-    r = vehicle.width / 2.0
+    r, R, S, D = compute_vehicle_clearance_radii(vehicle)
 
     candidate = compute_minimal_triplet_merged_center(
         corner_point1=circle1.corner_point,
@@ -1179,6 +1447,26 @@ def build_merged_circle_for_same_turn_triplet(
 
     center = candidate["center"]
 
+    forbidden_points = (
+        circle1.forbidden_points
+        + circle2.forbidden_points
+        + circle3.forbidden_points
+    )
+
+    avoids_forbidden_points, forbidden_status = merged_center_avoids_forbidden_points(
+        center=center,
+        forbidden_points=forbidden_points,
+        swept_radius=S,
+        tol=tol,
+    )
+
+    if not avoids_forbidden_points:
+        print(
+            "Merged triplet candidate is not valid because of a forbidden point. "
+            "This case is not yet handled."
+        )
+        return None
+
     first_line, fourth_line = get_outer_centerlines_for_three_circle_merge(
         circle1=circle1,
         circle3=circle3,
@@ -1187,7 +1475,7 @@ def build_merged_circle_for_same_turn_triplet(
 
     centerline_status = merged_candidate_centerline_intersection_status(
         center=center,
-        radius=vehicle.max_radius + vehicle.width / 2.0,
+        radius=S,
         first_line=first_line,
         third_line=fourth_line,
         tol=tol,
@@ -1433,9 +1721,7 @@ def build_merged_circle_for_same_turn_pair(
           try to shift it or make it tangent to the crossed centerline(s).
     """
 
-    R = vehicle.max_radius
-    r = vehicle.width / 2.0
-    S = R + r
+    r, R, S, D = compute_vehicle_clearance_radii(vehicle)
 
     # ------------------------------------------------------------
     # 1. Get outer centerlines
@@ -1521,14 +1807,34 @@ def build_merged_circle_for_same_turn_pair(
 
             centerline_status = merged_candidate_centerline_intersection_status(
                 center=center,
-                radius=R + r,   # IMPORTANT if this status checks swept-circle line crossing
+                radius=R,   # IMPORTANT if this status checks swept-circle line crossing
                 first_line=first_line,
                 third_line=third_line,
                 tol=tol,
             )
-
     # ------------------------------------------------------------
-    # 4. Build IntermediateCircle from accepted candidate
+    # 4. Check forbidden points
+    # ------------------------------------------------------------
+    forbidden_points = (
+        circle1.forbidden_points
+        + circle2.forbidden_points
+    )
+
+    avoids_forbidden_points, forbidden_status = merged_center_avoids_forbidden_points(
+        center=center,
+        forbidden_points=forbidden_points,
+        swept_radius=S,
+        tol=tol,
+    )
+
+    if not avoids_forbidden_points:
+        print(
+            "Merged pair candidate is not valid because of a forbidden point. "
+            "This case is not yet handled."
+        )
+        return None
+    # ------------------------------------------------------------
+    # 5. Build IntermediateCircle from accepted candidate
     # ------------------------------------------------------------
     # corner_point = compute_merged_circle_corner_point(
     #     merged_center=center,
@@ -1614,6 +1920,50 @@ def build_merged_intermediate_circle_from_pair_candidate(
     # merged_circle.centerline_status = centerline_status
 
     return merged_circle
+
+
+def merged_center_avoids_forbidden_points(
+    center,
+    forbidden_points,
+    swept_radius,
+    tol=1e-9,
+):
+    """
+    Check whether a merged-circle center avoids all forbidden points.
+
+    :param center: Candidate merged-circle center.
+    :type center: Point
+
+    :param forbidden_points: Forbidden points to avoid.
+    :type forbidden_points: list[Point]
+
+    :param swept_radius: Swept radius S.
+    :type swept_radius: float
+
+    :param tol: Numerical tolerance.
+    :type tol: float
+
+    :return: Feasibility flag and diagnostic dictionary.
+    :rtype: tuple[bool, dict]
+    """
+    failed_forbidden_points = []
+
+    for forbidden_index, forbidden_point in enumerate(forbidden_points):
+        distance = compute_distance_two_points(center, forbidden_point)
+
+        if distance < swept_radius - tol:
+            failed_forbidden_points.append(
+                {
+                    "forbidden_index": forbidden_index,
+                    "forbidden_point": forbidden_point,
+                    "distance": distance,
+                    "required_distance": swept_radius,
+                }
+            )
+
+    return len(failed_forbidden_points) == 0, {
+        "failed_forbidden_points": failed_forbidden_points,
+    }
 
 
 def build_merged_intermediate_circle_from_triplet_candidate(
@@ -1723,7 +2073,7 @@ def compute_merged_circle_s_max(
 
     :return: s_max.
     """
-    S = vehicle.max_radius + vehicle.width / 2.0
+    _, _, S, _ = compute_vehicle_clearance_radii(vehicle)
 
     distance_to_wall = compute_distance_two_points(
         merged_circle.center,
@@ -1998,9 +2348,7 @@ def nominal_overlap_status_for_intermediate_circles(circle1, circle2, vehicle, t
 
     nominal_overlap = distance < required_distance - tol
 
-    R = circle1.radius
-    r = vehicle.width / 2.0
-    D = R - r
+    r, R, S, D = compute_vehicle_clearance_radii(vehicle)
 
     corner_distance = compute_distance_two_points(
         circle1.corner_point,
@@ -2574,12 +2922,12 @@ def build_intermediate_circles_sequence(
     # ------------------------------------------------------------
     # 1. Corridor sequence feasibility check
     # ------------------------------------------------------------
-    # validate_corridor_sequence(
-    #     corridor_list=corridor_list,
-    #     vehicle=vehicle,
-    #     min_centerline_distance=2.0 * vehicle.max_radius,
-    #     plot_invalid=True,
-    # )
+    validate_corridor_sequence(
+        corridor_list=corridor_list,
+        vehicle=vehicle,
+        min_centerline_distance=2.0 * vehicle.max_radius,
+        plot_invalid=True,
+    )
 
     # ------------------------------------------------------------
     # 2. Build turn direction sequence based on corridor tilts
@@ -2640,7 +2988,7 @@ def build_intermediate_circles_sequence(
 
         else:
             raise ValueError(
-                f"Unexpected intersecting edges for corridors {i}, {i+1} with turn direction {tau}: "
+                f"Unexpected intersecting edges for corridors {i}, {i+1} with turn direction {tau} determined from the corridors' tilts: "
                 f"{intersecting_edges}"
             )
 
@@ -2845,8 +3193,6 @@ def build_intermediate_circles_sequence(
     return intermediate_circles_sequence
 
 
-
-
 def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
 
     tau_from_corridors = corridor1.compute_relative_turn_direction(corridor2)
@@ -2871,7 +3217,7 @@ def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
     # plt.legend()
     # plt.show(block = True)
 
-    if tau == 1 and edge1 == 1 and edge2 == 1: 
+    if tau == 1 and edge1 == 3 and edge2 == 3: 
         corridor1_rotated = corridor1
         corridor2_rotated = corridor2
     elif tau == -1 and edge1 == 1 and edge2 == 1:

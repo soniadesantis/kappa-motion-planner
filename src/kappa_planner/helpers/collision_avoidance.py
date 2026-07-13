@@ -409,7 +409,7 @@ def collision_avoidance_check_bicycle(arc, corridor, bicycle, margin = 0):
                                                                                                                  corridor = corridor,
                                                                                                                  margin = margin) 
     iota_primitive = arc.iota # Extract the central angle of the arc primitive
-    one_point_left = len(int_points_left) == 1 # Check if there is only one intersection point
+    one_point_left = len(int_points_left) == 1 # Check if there is only one intersection point (the circle is tangent and that is ok)
     ## 3.a- If a collision with the left wall of the corridor is detected (left_int = True and there's more than one intersection point)
     if left_int and not(one_point_left):
         # Compute the angle of the arc between the start point of the robot and the intersection points with the left wall

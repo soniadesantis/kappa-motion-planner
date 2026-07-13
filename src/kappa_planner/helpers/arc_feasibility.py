@@ -6,7 +6,117 @@ from ..geometry import Point, IntermediateCircle
 from .geometry_operations import compute_distance_two_points
 
 
+def world_to_transition_local_point(
+    corner_point,
+    ex,
+    ey,
+    point,
+):
+    """
+    Express a world point in the local transition frame.
 
+    :param corner_point: Origin of the local frame.
+    :type corner_point: Point
+
+    :param ex: Local x-axis in world coordinates.
+    :type ex: np.ndarray
+
+    :param ey: Local y-axis in world coordinates.
+    :type ey: np.ndarray
+
+    :param point: World point to convert.
+    :type point: Point
+
+    :return: Local coordinates of the point.
+    :rtype: np.ndarray
+    """
+    A = np.column_stack((ex, ey))
+
+    v = np.array(
+        [
+            point.x - corner_point.x,
+            point.y - corner_point.y,
+        ],
+        dtype=float,
+    )
+
+    return np.linalg.solve(A, v)
+
+
+def generate_forbidden_tangent_candidate(
+    corner_point,
+    other_intersection_point,
+    ex,
+    ey,
+    a,
+    b,
+    D,
+    S,
+    tol=1e-9,
+):
+    """
+    Generate a fallback center tangent to the forbidden intersection point.
+
+    The candidate lies on the ray from the corner point to the forbidden
+    intersection point and satisfies distance(center, forbidden_point) = S.
+
+    :param corner_point: Transition corner point.
+    :type corner_point: Point
+
+    :param other_intersection_point: Forbidden intersection point.
+    :type other_intersection_point: Point
+
+    :param ex: Local x-axis in world coordinates.
+    :type ex: np.ndarray
+
+    :param ey: Local y-axis in world coordinates.
+    :type ey: np.ndarray
+
+    :param a: Clamped lower bound for local x.
+    :type a: float
+
+    :param b: Clamped lower bound for local y.
+    :type b: float
+
+    :param D: Admissible radius.
+    :type D: float
+
+    :param S: Swept radius.
+    :type S: float
+
+    :param tol: Numerical tolerance.
+    :type tol: float
+
+    :return: Candidate tuple or None.
+    :rtype: tuple[str, np.ndarray] or None
+    """
+    forbidden_local = world_to_transition_local_point(
+        corner_point=corner_point,
+        ex=ex,
+        ey=ey,
+        point=other_intersection_point,
+    )
+
+    distance = np.linalg.norm(forbidden_local)
+
+    if distance <= S + tol:
+        return None
+
+    scale = 1.0 - S / distance
+    center_local = scale * forbidden_local
+
+    x, y = center_local
+
+    if x < a - tol:
+        return None
+
+    if y < b - tol:
+        return None
+
+    if x * x + y * y > D * D + tol:
+        return None
+
+    return "forbidden_tangent_ray", center_local
 
 
 def compute_nominal_same_turn_merged_center(
@@ -195,51 +305,54 @@ def generate_local_center_candidates(a, b, h1, h2, D, tol=1e-9):
     Generate local Intermediate Circle center candidates in priority order.
 
     Priority:
-        1. 45-degree point, if it already satisfies the safe-half constraints.
-        2. Shifted safe-half point, if safe-half placement is possible.
+        1. 45-degree point, if it satisfies both ordinary and safe-half constraints.
+        2. Shifted safe-half point, if it satisfies ordinary and safe-half constraints.
         3. 45-degree point, if it satisfies ordinary wall-clearance constraints.
         4. Basic shifted point, if ordinary feasibility is possible.
+
+    All candidates must satisfy:
+        x >= a
+        y >= b
+        x^2 + y^2 <= D^2
     """
     candidates = []
 
     q = D / np.sqrt(2.0)
 
-    forty_five_safe_half_feasible = (
-        q >= h1 - tol and
-        q >= h2 - tol
-    )
+    def candidate_is_basic_feasible(x, y):
+        return (
+            x >= a - tol
+            and y >= b - tol
+            and x * x + y * y <= D * D + tol
+        )
 
-    safe_half_shifted_feasible = (
-        h1 >= a - tol and
-        h2 >= b - tol and
-        h1 * h1 + h2 * h2 <= D * D + tol
-    )
+    def candidate_is_safe_half_feasible(x, y):
+        return (
+            candidate_is_basic_feasible(x, y)
+            and x >= h1 - tol
+            and y >= h2 - tol
+        )
 
-    forty_five_basic_feasible = (
-        q >= a - tol and
-        q >= b - tol
-    )
-
-    basic_shifted_feasible = (
-        a * a + b * b <= D * D + tol
-    )
-
-    if forty_five_safe_half_feasible:
+    # 1. Preferred 45-degree safe-half candidate.
+    if candidate_is_safe_half_feasible(q, q):
         candidates.append(
             ("forty_five_safe_half", np.array([q, q], dtype=float))
         )
 
-    if safe_half_shifted_feasible:
+    # 2. Shifted safe-half candidate.
+    if candidate_is_safe_half_feasible(h1, h2):
         candidates.append(
             ("safe_half_shifted", np.array([h1, h2], dtype=float))
         )
 
-    if forty_five_basic_feasible:
+    # 3. Ordinary 45-degree candidate.
+    if candidate_is_basic_feasible(q, q):
         candidates.append(
             ("forty_five_basic", np.array([q, q], dtype=float))
         )
 
-    if basic_shifted_feasible:
+    # 4. Ordinary shifted candidate.
+    if candidate_is_basic_feasible(a, b):
         candidates.append(
             ("basic_shifted", np.array([a, b], dtype=float))
         )
@@ -605,6 +718,30 @@ def build_intermediate_circle_from_geometry_result(
     return circle
 
 
+def compute_vehicle_clearance_radii(vehicle):
+    """
+    Compute footprint, admissible, and swept radii used by the corridor planner.
+
+    :param vehicle: Vehicle object.
+    :type vehicle: Vehicle
+
+    :return: Tuple (r, R, S, D).
+    :rtype: tuple[float, float, float, float]
+    """
+    r = vehicle.width / 2.0
+    R = vehicle.max_radius
+
+    if getattr(vehicle, "rectangular_footprint", False):
+        f = getattr(vehicle, "rear_axle_to_front", vehicle.length)
+        S = np.sqrt((R + r) ** 2 + f ** 2)
+    else:
+        S = R + r
+
+    D = R - r
+
+    return r, R, S, D
+
+
 def compute_intermediate_circle_geometry(
     corridor1,
     corridor2,
@@ -657,10 +794,7 @@ def compute_intermediate_circle_geometry(
     # ------------------------------------------------------------
     # Basic geometric quantities
     # ------------------------------------------------------------
-    r = vehicle.width / 2.0
-    R = vehicle.max_radius
-    S = R + r
-    D = R - r
+    r, R, S, D = compute_vehicle_clearance_radii(vehicle)
 
     other_intersection_point_before_check = other_intersection_point
 
@@ -694,9 +828,9 @@ def compute_intermediate_circle_geometry(
                 "other_intersection_point": other_intersection_point_before_check,
             }
 
-        # If the forbidden point is at distance at least D + S = 2R
+        # If the forbidden point is at distance at least D+S
         # from the corner, it cannot affect any admissible center.
-        if distance_corner_forbidden >= 2.0 * R - tol:
+        if distance_corner_forbidden >= D + S - tol:
             other_intersection_point = None
 
     w1 = corridor1.width
@@ -802,6 +936,66 @@ def compute_intermediate_circle_geometry(
             "ey": ey,
             "other_intersection_point": other_intersection_point_before_check,
         }
+    
+    # ------------------------------------------------------------
+    # Fallback: if all preferred candidates were blocked by the
+    # other intersection point, try a center tangent to the forbidden
+    # point along the corner-to-forbidden ray.
+    # ------------------------------------------------------------
+    if (
+        other_intersection_point is not None
+        and len(candidates) > 0
+        and len(blocked_candidates) == len(candidates)
+    ):
+        fallback_candidate = generate_forbidden_tangent_candidate(
+            corner_point=corner_point,
+            other_intersection_point=other_intersection_point,
+            ex=ex,
+            ey=ey,
+            a=a,
+            b=b,
+            D=D,
+            S=S,
+            tol=tol,
+        )
+
+        if fallback_candidate is not None:
+            rule, center_local = fallback_candidate
+
+            center_world = local_to_world_point(
+                corner_point=corner_point,
+                ex=ex,
+                ey=ey,
+                center_local=center_local,
+            )
+
+            return {
+                "feasible": True,
+                "reason": "ok",
+                "center": center_world,
+                "center_local": center_local,
+                "rule": rule,
+                "R": R,
+                "r": r,
+                "S": S,
+                "D": D,
+                "q": q,
+                "a": a,
+                "b": b,
+                "lower_bound_x_unclamped": lower_bound_x_unclamped,
+                "lower_bound_y_unclamped": lower_bound_y_unclamped,
+                "h1": h1,
+                "h2": h2,
+                "w1": w1,
+                "w2": w2,
+                "turn_direction": turn_direction,
+                "corner_point": corner_point,
+                "ex": ex,
+                "ey": ey,
+                "other_intersection_point": other_intersection_point_before_check,
+                "candidate_rules": [rule for rule, _ in candidates],
+                "blocked_candidates": blocked_candidates,
+            }
 
     # ------------------------------------------------------------
     # If no candidate was generated, the width pair itself is infeasible.

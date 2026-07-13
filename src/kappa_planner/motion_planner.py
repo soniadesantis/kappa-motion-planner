@@ -345,6 +345,7 @@ class MotionPlanner:
                 )
 
     def _refresh_analytical_planner_state(self):
+
         if not isinstance(self.vehicle, (Unicycle, Bicycle, Bicycle_Acceleration)):
             return
 
@@ -374,14 +375,8 @@ class MotionPlanner:
 
         # Extension version
         elif self.assumptions == "core":
-            # self.intermediate_circles_choice_sequence = create_intermediate_circle_choice_sequence(
-            # self.corridor_list,
-            # self.vehicle,
-            # self.start_pose,
-            # self.end_pose,
-            #     )
             
-            self.intermediate_circles_sequence =build_intermediate_circles_sequence(
+            self.intermediate_circles_sequence = build_intermediate_circles_sequence(
                 self.corridor_list,
                 self.vehicle,
                 self.start_pose,
@@ -438,7 +433,6 @@ class MotionPlanner:
             )
 
         self.vehicle.update(state=self.start_pose)
-
 
     def _compute_unicycle_trajectory(
         self,
@@ -518,10 +512,7 @@ class MotionPlanner:
                 )
             self.comp_time_analytical_sol = timer()
 
-
-        
         return trajectory
-    
 
     def _compute_bicycle_trajectory(
         self,

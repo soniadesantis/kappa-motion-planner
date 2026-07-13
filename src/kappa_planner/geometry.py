@@ -142,6 +142,9 @@ class IntermediateCircle(Circle):
         ey=None,
         forbidden_points=None,
         merged = False,
+        shifted = False,
+        skip = False,
+        skip_reason = None
     ):
         super().__init__(center=center, radius=radius)
 
@@ -175,6 +178,9 @@ class IntermediateCircle(Circle):
         self.ex = ex
         self.ey = ey
         self.forbidden_points = forbidden_points if forbidden_points is not None else []
+        self.shifted = shifted
+        self.skip = skip
+        self.skip_reason = skip_reason
 
         if self.start_angle_arc is not None and rho is not None:
             self.end_angle_arc = self.start_angle_arc - turn_direction * pi / 2
