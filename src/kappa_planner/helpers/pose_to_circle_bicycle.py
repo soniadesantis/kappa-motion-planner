@@ -582,7 +582,7 @@ def compute_full_traj_bicycle_with_two_fixed_circles(start_maneuvers, end_maneuv
         x0, y0, theta0 = start_maneuvers[0].x0, start_maneuvers[0].y0, start_maneuvers[0].theta0
         first_backward_arc = []
         first_fixed_circle = Circle(center = Point(x = start_maneuvers[0].xc, y = start_maneuvers[0].yc), radius = start_maneuvers[0].radius)
-        turn_direction_fixed_circle = start_maneuvers[0].turn_direction
+        turn_direction_first_fixed_circle = start_maneuvers[0].turn_direction
 
     if isinstance(end_maneuvers[-1], BackwardArc):
         xf, yf, thetaf = end_maneuvers[-2].xf, end_maneuvers[-2].yf, end_maneuvers[-2].thetaf

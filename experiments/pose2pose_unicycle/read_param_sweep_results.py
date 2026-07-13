@@ -234,7 +234,7 @@ def analytical_primitives_to_effective_sequence(
 
 if __name__ == "__main__":
 
-    RESULTS_FILENAME = "orientation_sweep_test30.json"
+    RESULTS_FILENAME = "orientation_sweep_test.json"
 
     current_dir = Path(__file__).resolve().parent
 
@@ -255,8 +255,44 @@ if __name__ == "__main__":
     for key, value in metadata.items():
         print(f"{key}: {value}")
 
-    for case in results:
-        print_case(case)
+    # -------------------------------------------------------------------------
+    # Check consistency of discretization settings
+    # -------------------------------------------------------------------------
+
+    case_N_values = sorted({
+        case.get("N")
+        for case in results
+        if case.get("N") is not None
+    })
+
+    case_M_values = sorted({
+        case.get("M")
+        for case in results
+        if case.get("M") is not None
+    })
+
+    print("\n" + "=" * 80)
+    print("DISCRETIZATION CONSISTENCY CHECK")
+    print("=" * 80)
+
+    print(f"N values found in cases: {case_N_values}")
+    print(f"M values found in cases: {case_M_values}")
+
+    metadata_N = metadata.get("N")
+    metadata_M = metadata.get("M")
+
+    if len(case_N_values) == 1 and case_N_values[0] == metadata_N:
+        print("N consistency           : OK")
+    else:
+        print("N consistency           : WARNING")
+
+    if len(case_M_values) == 1 and case_M_values[0] == metadata_M:
+        print("M consistency           : OK")
+    else:
+        print("M consistency           : WARNING")
+
+    # for case in results:
+    #     print_case(case)
 
     print("\n" + "=" * 80)
     print(f"TOTAL CASES LOADED: {len(results)}")
