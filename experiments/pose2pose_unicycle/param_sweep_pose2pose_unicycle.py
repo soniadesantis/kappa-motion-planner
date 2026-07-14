@@ -37,7 +37,7 @@ SWEEP1_N_ANGLES = 90
 
 # Sobol sampling power for Sweep 4:
 # number of requested samples = 2**SOBOL_POWER
-SOBOL_POWER = 12
+SOBOL_POWER = 13
 
 # Print the keys returned by the OCP solver for the first successful case.
 # This is useful for verifying whether an exact time grid is returned.
@@ -453,7 +453,7 @@ def generate_sweep_cases(sweep_id):
 
         metadata = {
             "sweep_id": 1,
-            "sweep_name": "orientation_sweep",
+            "sweep_name": "orientation_sweep_OCP_path_saved",
             "description": (
                 "Fixed positions and R. "
                 "Vary theta0 and thetaf."
