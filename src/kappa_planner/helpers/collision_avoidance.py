@@ -1,6 +1,7 @@
-from math import asin, atan2, cos, pi, sin
+from math import asin, atan2, cos, pi, sin, sqrt
 
 import sympy as sp
+import numpy as np
 
 from .helper_functions import (
     compute_center_coordinates_first_circle,

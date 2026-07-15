@@ -7,7 +7,7 @@ from .primitives import (
     compute_extreme_poses_arc_line,
 )
 from .poses import absolute_to_relative_pose, relative_to_absolute_pose
-from .collision_avoidance import collision_avoidance_check_bicycle, check_arc_collision
+from .collision_avoidance import collision_avoidance_check_bicycle, check_arc_collision, compute_wall_tangent_circle_centers
 from .intersections import circle_intersection
 from ..geometry import Point, Pose, Circle
 from .helper_functions import (
@@ -17,6 +17,8 @@ from .helper_functions import (
 
 from kappa_planner.helpers.plot_helpers import (
     plot_analytical_trajectory,
+    plot_corridors,
+    plot_circular_footprint,
 )
 from math import sqrt, asin, atan2, cos, sin, pi
 import matplotlib.pyplot as plt
@@ -273,6 +275,21 @@ def compute_traj_to_circle_bicycle_circular(
     )
 
     if corrective_collision:
+        figure = plot_corridors([corridor1])
+        plot_analytical_trajectory([corrective_arc], figure = figure)
+        ax = plt.gca()
+
+        plot_circular_footprint(
+        [corrective_arc],
+        bicycle.width/2,
+        ax=ax,
+        step=1,
+        color="k",
+        linewidth=0.5,
+        linestyle="-",
+        alpha=0.2,
+        )
+        plt.show(block=True)
         if corrective_wall == corridor1.FWD:
             raise RuntimeError(
                 "The corrective backward arc collides with the front wall"
