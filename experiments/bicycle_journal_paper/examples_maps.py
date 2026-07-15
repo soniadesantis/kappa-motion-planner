@@ -455,7 +455,7 @@ def example_corridor_sequence(num):
 
 
 if __name__ == "__main__":
-    example_num = 26
+    example_num = 29
 
     # Problems 8 (3 overlapping), 15, 16 (problem with connecting start and end to the right circles)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
