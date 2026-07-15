@@ -325,6 +325,21 @@ def compute_traj_to_circle_bicycle_circular(
     )
 
     if forward_collision:
+        figure = plot_corridors([corridor1])
+        plot_analytical_trajectory([corrective_arc, corrected_forward_arc], figure = figure)
+        ax = plt.gca()
+
+        plot_circular_footprint(
+        [corrective_arc, corrected_forward_arc],
+        bicycle.width/2,
+        ax=ax,
+        step=1,
+        color="k",
+        linewidth=0.5,
+        linestyle="-",
+        alpha=0.2,
+        )
+        plt.show(block=True)
         if forward_wall == corridor1.FWD:
             raise RuntimeError(
                 "The corrected forward arc collides with the front wall"

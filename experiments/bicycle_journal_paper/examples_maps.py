@@ -470,11 +470,24 @@ def example_corridor_sequence(num):
         end_pose = [5.177893161773682, 8.025226593017578, -1.4711307327774705]
         vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
 
+    elif num == 31:
+        corridor1 = CorridorWorld(1.0999999754130843, 2.699999939650297, [5.839999869465828, 2.509999943897128], 1.5707963267948966)
+        corridor2 = CorridorWorld(0.5399999879300587, 6.149999862536788, [3.314999925903976, 3.519999921321869], 3.141592653589793)
+        corridor3 = CorridorWorld(0.4499999899417165, 5.069999886676669, [4.944999889470637, 3.694999917410314], 1.5707963267948966)
+        corridor4 = CorridorWorld(0.4299999903887506, 3.5599999204277992, [4.639999896287918, 4.644999896176159], 3.141592653589793)
+        corridor5 = CorridorWorld(0.4499999899417163, 2.249999949708581, [4.194999906234443, 5.104999885894358], 1.5707963267948966)
+        corridor6 = CorridorWorld(0.4299999903887506, 3.5499999206513166, [4.634999896399677, 5.194999883882701], 3.141592653589793)
+        corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5, corridor6]
+        start_pose = [5.992624282836914, 1.7426304817199707, 1.6733771147387526]
+        end_pose = [4.010105609893799, 5.181060314178467, 2.826377427796413]
+        vehicle = Bicycle([0, 0, 0], width=0.1, length=0.1, wheelbase=0.2, v_max=1.0, v_min=-1.0, delta_max=0.785, delta_min=-0.785)
+
+
     return corridor_list, start_pose, end_pose, vehicle
 
 
 if __name__ == "__main__":
-    example_num = 3
+    example_num = 31
 
     # Problems 8 (3 overlapping), 15, 16 (problem with connecting start and end to the right circles)
     corridor_list, start_pose, end_pose, vehicle = example_corridor_sequence(example_num)
