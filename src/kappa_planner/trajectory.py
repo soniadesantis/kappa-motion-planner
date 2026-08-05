@@ -480,7 +480,7 @@ class LinearSegmentUnicycle(Trajectory):
     """ Linear segment trajectory segment for a unicycle-type vehicle. 
     """
 
-    def __init__(self, x0, y0, xf, yf, theta, v, unicycle=None, t0=0, samples_number=10):
+    def __init__(self, x0, y0, xf, yf, theta, v, unicycle=None, t0=0, samples_number=10, start_circle_index = None, end_circle_index = None):
         """ Initialize attributes of the linear segment.
         :param x0: initial x position
         :type x0: float
@@ -500,6 +500,10 @@ class LinearSegmentUnicycle(Trajectory):
         :type t0: float
         :param samples_number: number of samples
         :type samples_number: int
+        :param start_circle_index: index of the circle at the segment start
+        :type start_circle_index: int or None
+        :param end_circle_index: index of the circle at the segment end
+        :type end_circle_index: int or None
         """
         # Initialize attributes
         self.x0 = x0
@@ -511,6 +515,8 @@ class LinearSegmentUnicycle(Trajectory):
         self.unicycle   = unicycle
         self.t0 = t0
         self.samples_number = samples_number
+        self.start_circle_index = start_circle_index
+        self.end_circle_index = end_circle_index
         self.radius = -100000 # For consistency with other trajectory types
         self.curvature = 0
 
@@ -969,7 +975,7 @@ class BackwardArc(Trajectory):
         """
         self.samples_number = new_samples_number
         angles = np.linspace(self.epsilon,
-                            self.epsilon + self.turn_direction * self.iota,
+                            self.epsilon - self.turn_direction * self.iota,
                             new_samples_number)
         self.path_coordinates = np.column_stack((
             self.xc + self.radius * np.cos(angles),

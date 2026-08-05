@@ -7,7 +7,7 @@ from .primitives import (
     compute_extreme_poses_arc_line,
 )
 from .poses import absolute_to_relative_pose, relative_to_absolute_pose
-from .collision_avoidance import collision_avoidance_check_bicycle, check_arc_collision, compute_wall_tangent_circle_centers
+from .collision_avoidance import collision_avoidance_check_bicycle, check_arc_collision, compute_wall_tangent_circle_centers, check_segment_collision_corridor_union, check_arc_collision_corridor_union
 from .intersections import circle_intersection
 from ..geometry import Point, Pose, Circle
 from .helper_functions import (
@@ -27,10 +27,12 @@ import numpy as np
 
 def compute_traj_to_circle_bicycle(
     corridor1,
+    corridor2,
     start_pose,
     bicycle,
     circ1,
     tau0=0,
+    figure = None,
 ):
     # if getattr(bicycle, "rectangular_footprint", False):
     #     return compute_traj_to_circle_bicycle_rectangular(
@@ -43,10 +45,12 @@ def compute_traj_to_circle_bicycle(
 
     return compute_traj_to_circle_bicycle_circular(
         corridor1=corridor1,
+        corridor2=corridor2,
         start_pose=start_pose,
         bicycle=bicycle,
         circ1=circ1,
         tau0=tau0,
+        figure = figure,
     )
 
 
@@ -117,12 +121,304 @@ def compute_traj_to_circle_bicycle(
 #     return start_maneuvers
 
 
+# def compute_traj_to_circle_bicycle_circular(
+#     corridor1,
+#     corridor2,
+#     start_pose,
+#     bicycle,
+#     circ1,
+#     tau0=0,
+#     figure=None,
+# ):
+#     """
+#     Build a trajectory from ``start_pose`` to ``circ1``.
+
+#     Candidate families:
+
+#         CS
+#         C_back CS
+
+#     The initial backward arc, when present, is required to remain inside
+#     the first corridor.
+
+#     The forward arc and tangent segment are checked against the union of
+#     the first and second corridors. This permits the trajectory and robot
+#     footprint to pass through the admissible intersection region between
+#     consecutive corridors.
+
+#     If the free-space solution is infeasible, the function attempts to
+#     construct one corrective backward arc.
+
+#     :param corridor1: corridor containing the initial pose
+#     :type corridor1: CorridorWorld
+#     :param corridor2: subsequent corridor
+#     :type corridor2: CorridorWorld
+#     :param start_pose: initial pose [x, y, theta]
+#     :type start_pose: list or numpy.ndarray
+#     :param bicycle: considered bicycle vehicle
+#     :type bicycle: Bicycle
+#     :param circ1: first intermediate circle
+#     :type circ1: IntermediateCircle
+#     :param tau0: prescribed initial turn direction, or zero if unknown
+#     :type tau0: int
+#     :param figure: optional plotting figure
+#     :type figure: matplotlib.figure.Figure or None
+
+#     :return: list of trajectory primitives, or None if infeasible
+#     :rtype: list or None
+#     """
+#     tau1 = circ1.turn_direction
+#     corner_point1 = circ1.corner_point
+
+#     admissible_corridors = [
+#         corridor1,
+#         corridor2,
+#     ]
+
+#     if tau0 == 0:
+#         tau0 = compute_initial_turn_direction(
+#             circ1.xc,
+#             circ1.yc,
+#             circ1.radius,
+#             start_pose[0],
+#             start_pose[1],
+#             start_pose[2],
+#             tau1,
+#         )
+
+#     original_pose = Pose(
+#         position=Point(
+#             start_pose[0],
+#             start_pose[1],
+#         ),
+#         theta=start_pose[2],
+#     )
+
+#     # ---------------------------------------------------------------
+#     # 1. Build the free-space candidate
+#     # ---------------------------------------------------------------
+#     free_space_maneuvers = []
+#     current_pose = list(start_pose)
+#     next_t0 = 0.0
+
+#     backward_is_better, _, _, _ = (
+#         rule_initial_backward_maneuver(
+#             start_pose,
+#             circ1,
+#             tau0,
+#         )
+#     )
+
+#     optimal_backward_arc = None
+
+#     if backward_is_better:
+#         optimal_backward_arc = compute_backward_arc_optimal(
+#             original_pose,
+#             tau0,
+#             tau1,
+#             circ1,
+#             bicycle,
+#         )
+
+#         free_space_maneuvers.append(
+#             optimal_backward_arc
+#         )
+
+#         current_pose = [
+#             optimal_backward_arc.xf,
+#             optimal_backward_arc.yf,
+#             optimal_backward_arc.thetaf,
+#         ]
+
+#         next_t0 = optimal_backward_arc.tf
+
+#     forward_arc, tangent_segment = (
+#         compute_two_maneuvers_bicycle(
+#             current_pose,
+#             bicycle,
+#             circ1,
+#             tau1,
+#             t0=next_t0,
+#             tau1=tau0,
+#             figure=figure,
+#         )
+#     )
+
+#     free_space_maneuvers.extend(
+#         [
+#             forward_arc,
+#             tangent_segment,
+#         ]
+#     )
+
+#     # if figure is not None:
+#     #     plot_analytical_trajectory(
+#     #         free_space_maneuvers,
+#     #         figure=figure,
+#     #     )
+
+#     #     plt.show(block=True)
+
+#     # ---------------------------------------------------------------
+#     # 2. Check the optional time-optimal backward arc
+#     #
+#     # The backward arc must remain in the first corridor.
+#     # ---------------------------------------------------------------
+#     colliding_wall = None
+
+#     if optimal_backward_arc is not None:
+#         collision, wall = check_arc_collision(
+#             optimal_backward_arc,
+#             corridor1,
+#         )
+
+#         if collision:
+#             if wall == corridor1.FWD:
+#                 return None
+
+#             # Discard the optional backward arc and construct one
+#             # corrective backward arc from the original pose.
+#             colliding_wall = wall
+
+#     # ---------------------------------------------------------------
+#     # 3. Check the forward CS portion
+#     #
+#     # Both the forward arc and the segment may pass from corridor 1
+#     # into corridor 2.
+#     # ---------------------------------------------------------------
+#     if colliding_wall is None:
+#         arc_collision, _ = (
+#             check_arc_collision_corridor_union(
+#                 arc=forward_arc,
+#                 corridors=admissible_corridors,
+#             )
+#         )
+
+#         segment_collision, _ = (
+#             check_segment_collision_corridor_union(
+#                 segment=tangent_segment,
+#                 corridors=admissible_corridors,
+#             )
+#         )
+
+#         if (
+#             not arc_collision
+#             and not segment_collision
+#         ):
+#             _finalize_maneuver_sequence(
+#                 free_space_maneuvers
+#             )
+
+#             return free_space_maneuvers
+
+#         # The corrective-arc construction currently requires the wall
+#         # of the first corridor that is violated by the forward arc.
+#         first_corridor_collision, wall = (
+#             check_arc_collision(
+#                 forward_arc,
+#                 corridor1,
+#             )
+#         )
+
+#         if not first_corridor_collision:
+#             # The trajectory leaves the total corridor union, but not
+#             # through a wall for which the current correction method
+#             # is defined.
+#             return None
+
+#         if wall == corridor1.FWD:
+#             return None
+
+#         colliding_wall = wall
+
+#     # ---------------------------------------------------------------
+#     # 4. Build exactly one corrective backward arc
+#     #
+#     # The corrective backward arc remains inside corridor 1.
+#     # ---------------------------------------------------------------
+#     corrective_arc = compute_backward_arc(
+#         corridor=corridor1,
+#         pose=original_pose,
+#         bicycle=bicycle,
+#         tau=forward_arc.turn_direction,
+#         radius=bicycle.max_radius,
+#         wall=colliding_wall,
+#         corner_point=corner_point1,
+#     )
+
+#     if corrective_arc is None:
+#         return None
+
+#     corrective_collision, _ = check_arc_collision(
+#         corrective_arc,
+#         corridor1,
+#     )
+
+#     if corrective_collision:
+#         return None
+
+#     # ---------------------------------------------------------------
+#     # 5. Recompute CS after the corrective backward arc
+#     # ---------------------------------------------------------------
+#     corrected_start_pose = [
+#         corrective_arc.xf,
+#         corrective_arc.yf,
+#         corrective_arc.thetaf,
+#     ]
+
+#     corrected_forward_arc, corrected_segment = (
+#         compute_two_maneuvers_bicycle(
+#             corrected_start_pose,
+#             bicycle,
+#             circ1,
+#             tau1,
+#             t0=corrective_arc.tf,
+#             tau1=tau0,
+#             figure=figure,
+#         )
+#     )
+
+#     corrected_arc_collision, _ = (
+#         check_arc_collision_corridor_union(
+#             arc=corrected_forward_arc,
+#             corridors=admissible_corridors,
+#         )
+#     )
+
+#     if corrected_arc_collision:
+#         return None
+
+#     corrected_segment_collision, _ = (
+#         check_segment_collision_corridor_union(
+#             segment=corrected_segment,
+#             corridors=admissible_corridors,
+#         )
+#     )
+
+#     if corrected_segment_collision:
+#         return None
+
+#     corrected_maneuvers = [
+#         corrective_arc,
+#         corrected_forward_arc,
+#         corrected_segment,
+#     ]
+
+#     _finalize_maneuver_sequence(
+#         corrected_maneuvers
+#     )
+
+#     return corrected_maneuvers
+
+
 def compute_traj_to_circle_bicycle_circular(
     corridor1,
+    corridor2,
     start_pose,
     bicycle,
     circ1,
     tau0=0,
+    figure = None,
 ):
     """
     Build a trajectory from ``start_pose`` to ``circ1``.
@@ -132,13 +428,12 @@ def compute_traj_to_circle_bicycle_circular(
         CS
         C_back CS
 
-    If the free-space solution collides with the front wall, the function
-    raises an error. If it collides with another wall, the free-space
-    solution is discarded and one corrective backward arc is constructed.
+    If the free-space solution is infeasible, the function attempts to build
+    one corrective backward arc. If no feasible trajectory can be constructed,
+    the function returns ``None``.
 
-    :return: list of trajectory primitives
-    :raises RuntimeError: if the front wall is hit or no feasible corrected
-                          trajectory can be constructed
+    :return: list of trajectory primitives, or ``None`` if no feasible
+             trajectory can be constructed
     """
     tau1 = circ1.turn_direction
     corner_point1 = circ1.corner_point
@@ -163,7 +458,7 @@ def compute_traj_to_circle_bicycle_circular(
     # 1. Build the free-space candidate
     # ---------------------------------------------------------------
     free_space_maneuvers = []
-    current_pose = list(start_pose) # from which the forward connection CS is built
+    current_pose = list(start_pose)
     next_t0 = 0.0
 
     backward_is_better, _, _, _ = rule_initial_backward_maneuver(
@@ -192,7 +487,7 @@ def compute_traj_to_circle_bicycle_circular(
         ]
 
         next_t0 = optimal_backward_arc.tf
-
+    # figure = plot_corridors([corridor1, corridor2])
     forward_arc, tangent_segment = compute_two_maneuvers_bicycle(
         current_pose,
         bicycle,
@@ -200,16 +495,26 @@ def compute_traj_to_circle_bicycle_circular(
         tau1,
         t0=next_t0,
         tau1=tau0,
+        figure = figure,
     )
+    if forward_arc is None or tangent_segment is None:
+        raise ValueError("Failed to compute forward arc and tangent segment due to overlapping circles.")
 
     free_space_maneuvers.extend([
         forward_arc,
         tangent_segment,
     ])
 
+    # plot_analytical_trajectory(
+    #     free_space_maneuvers, figure=figure)
+    # plt.show(block = True)
+    
+
     # ---------------------------------------------------------------
-    # 2. Check the optional time-optimal backward arc (because if present, it is the first maneuver)
+    # 2. Check the optional time-optimal backward arc
     # ---------------------------------------------------------------
+    colliding_wall = None
+
     if optimal_backward_arc is not None:
         collision, wall = check_arc_collision(
             optimal_backward_arc,
@@ -218,18 +523,11 @@ def compute_traj_to_circle_bicycle_circular(
 
         if collision:
             if wall == corridor1.FWD:
-                raise RuntimeError(
-                    "The optional backward arc collides with the front wall"
-                )
+                return None
 
-            # Do not add another backward arc. Discard the free-space
-            # candidate and use one corrective backward arc from the
-            # original pose.
+            # Discard the optional backward arc and construct one
+            # corrective backward arc from the original pose.
             colliding_wall = wall
-        else:
-            colliding_wall = None
-    else:
-        colliding_wall = None
 
     # ---------------------------------------------------------------
     # 3. Check the free-space forward arc
@@ -245,9 +543,7 @@ def compute_traj_to_circle_bicycle_circular(
             return free_space_maneuvers
 
         if wall == corridor1.FWD:
-            raise RuntimeError(
-                "The free-space forward arc collides with the front wall"
-            )
+            return None
 
         colliding_wall = wall
 
@@ -265,39 +561,15 @@ def compute_traj_to_circle_bicycle_circular(
     )
 
     if corrective_arc is None:
-        raise RuntimeError(
-            "No corrective backward arc could be constructed"
-        )
+        return None
 
-    corrective_collision, corrective_wall = check_arc_collision(
+    corrective_collision, _ = check_arc_collision(
         corrective_arc,
         corridor1,
     )
 
     if corrective_collision:
-        figure = plot_corridors([corridor1])
-        plot_analytical_trajectory([corrective_arc], figure = figure)
-        ax = plt.gca()
-
-        plot_circular_footprint(
-        [corrective_arc],
-        bicycle.width/2,
-        ax=ax,
-        step=1,
-        color="k",
-        linewidth=0.5,
-        linestyle="-",
-        alpha=0.2,
-        )
-        plt.show(block=True)
-        if corrective_wall == corridor1.FWD:
-            raise RuntimeError(
-                "The corrective backward arc collides with the front wall"
-            )
-
-        raise RuntimeError(
-            "The corrective backward arc is not collision-free"
-        )
+        return None
 
     # ---------------------------------------------------------------
     # 5. Recompute CS after the corrective backward arc
@@ -319,35 +591,16 @@ def compute_traj_to_circle_bicycle_circular(
         )
     )
 
-    forward_collision, forward_wall = check_arc_collision(
+    if corrected_forward_arc is None or corrected_segment is None:
+        raise ValueError("Failed to compute corrected forward arc and tangent segment due to overlapping circles.")
+
+    forward_collision, _ = check_arc_collision(
         corrected_forward_arc,
         corridor1,
     )
 
     if forward_collision:
-        figure = plot_corridors([corridor1])
-        plot_analytical_trajectory([corrective_arc, corrected_forward_arc], figure = figure)
-        ax = plt.gca()
-
-        plot_circular_footprint(
-        [corrective_arc, corrected_forward_arc],
-        bicycle.width/2,
-        ax=ax,
-        step=1,
-        color="k",
-        linewidth=0.5,
-        linestyle="-",
-        alpha=0.2,
-        )
-        plt.show(block=True)
-        if forward_wall == corridor1.FWD:
-            raise RuntimeError(
-                "The corrected forward arc collides with the front wall"
-            )
-
-        raise RuntimeError(
-            "The corrected forward arc is still not collision-free"
-        )
+        return None
 
     corrected_maneuvers = [
         corrective_arc,
@@ -531,7 +784,7 @@ def compute_backward_arc_optimal(pose, tau1, tau2, circ2, bicycle):
     return backward_arc
 
 
-def compute_two_maneuvers_bicycle(start_pose, bicycle, circ2, tau2, t0 = 0, tau1 = 0):
+def compute_two_maneuvers_bicycle(start_pose, bicycle, circ2, tau2, t0 = 0, tau1 = 0, figure = None,):
     '''
     Compute the two maneuvers required to reach a circumference centered in (xc2, yc2): arc and segment.
 
@@ -566,23 +819,19 @@ def compute_two_maneuvers_bicycle(start_pose, bicycle, circ2, tau2, t0 = 0, tau1
     tau1 = compute_initial_turn_direction(circ2.center.x, circ2.center.y, r_nominal, x0, y0, theta0, tau2) if tau1 == 0 else tau1
     # Compute the coordinates of the first circumference
     circ1 = compute_first_circle(x0, y0, theta0, tau1, r_nominal)
-    # Check for collision avoidance 
-    # lw_intersected, rw_intersected, points_lw, points_rw = compute_intersection_points_between_line_circle_new(x0 = x0, y0 = y0, xc = xc1, yc = yc1, turn = tau1, radius = r_nominal, corridor = corridor, margin = bicycle.width*0.5) 
-    # if lw_intersected:
-    #     R1 = get_max_radius(corridor.shrink(bicycle.width*0.5), start_pose, tau1, wall = 'left')
-    #     xc1, yc1 = compute_center_coordinates_first_circle(x0, y0, theta0, tau1, R1)
-    # elif rw_intersected:
-    #     R1 = get_max_radius(corridor.shrink(bicycle.width*0.5), start_pose, tau1, wall = 'right')
-    #     xc1, yc1 = compute_center_coordinates_first_circle(x0, y0, theta0, tau1, R1)
-    # else:
-    #     R1 = r_nominal
-
-    # R2 = r_nominal
-    # # Compute the extreme poses for each maneuver
-    # x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line_two_radii(xc1, yc1, xc2, yc2, tau1, tau2, R1, R2)
-     
-    # # Compute the extreme poses for each maneuver
+ 
+    # # # Compute the extreme poses for each maneuver
+    # plt.plot(circ1.xc, circ1.yc, 'ro')
+    # plt.plot(circ2.xc, circ2.yc, 'bo')
+    # plt.arrow(x0, y0, 0.5 * np.cos(theta0), 0.5 * np.sin(theta0), head_width=0.1, head_length=0.1, fc='k', ec='k')
+    # plt.plot(circ1.xc + circ1.radius * np.cos(np.linspace(0, 2*pi, 100)), circ1.yc + circ1.radius * np.sin(np.linspace(0, 2*pi, 100)), 'r--')
+    # plt.plot(circ2.xc + circ2.radius * np.cos(np.linspace(0, 2*pi, 100)), circ2.yc + circ2.radius * np.sin(np.linspace(0, 2*pi, 100)), 'b--')
+    # plt.plot(x0, y0, 'go')
+    # plt.title('Initial Pose and Intermediate Circles tau_0 = {}, tau_1 = {}'.format(tau1, tau2))
+    # plt.show(block = True)
     pose1, pose2 = compute_extreme_poses_arc_line_two_radii_oo(circ1, circ2, tau1, tau2)
+    if pose1 is None or pose2 is None:
+        return None, None
     #Compute orientations for each primitive
     theta0_p1 = theta0
     thetaf_p1 = theta0_p1 + compute_angular_difference_with_turn_direction(theta0, pose1.theta, tau1)
@@ -598,7 +847,7 @@ def compute_two_maneuvers_bicycle(start_pose, bicycle, circ2, tau2, t0 = 0, tau1
                                         omega = omega1, unicycle = bicycle,
                                         t0 = t0, samples_number = 100)
     # Primitive 2: segment
-    primitive2 = LinearSegmentUnicycle(x0=pose1.x, y0=pose1.y, xf=pose2.x, yf=pose2.y, theta=theta_p2, v=v_max, t0 = primitive1.tf, unicycle = bicycle, samples_number=10)
+    primitive2 = LinearSegmentUnicycle(x0=pose1.x, y0=pose1.y, xf=pose2.x, yf=pose2.y, theta=theta_p2, v=v_max, t0 = primitive1.tf, unicycle = bicycle, samples_number=10, start_circle_index = 0, end_circle_index = circ2.index)
 
     return primitive1, primitive2
 
@@ -944,7 +1193,7 @@ def compute_extreme_poses_arc_line_two_radii_oo(circ1, circ2, tau1, tau2, overla
         return pose1, pose2
     except ValueError: 
         print('Overlapping circles ERROR')
-        return None, None, None, None, None, None
+        return None, None
     
 
 def compute_traj_to_circle_bicycle_with_fixed_forward_circle(start_maneuvers, bicycle, circle_to_reach, fixed_circle):
@@ -1038,8 +1287,8 @@ def compute_traj_to_circle_bicycle_with_fixed_forward_circle(start_maneuvers, bi
 
     # new_start_maneuvers = first_backward_arc + [new_arc, segment] if first_backward_arc else [new_arc, segment]
 
-    plot_analytical_trajectory(new_start_maneuvers)
-    plt.show(block = True)
+    # plot_analytical_trajectory(new_start_maneuvers)
+    # plt.show(block = True)
     return new_start_maneuvers
 
 
@@ -1104,3 +1353,53 @@ def compute_full_traj_bicycle_with_two_fixed_circles(start_maneuvers, end_maneuv
     new_end_maneuvers = last_backward_arc + [new_last_arc] if last_backward_arc else [new_last_arc]
 
     return new_start_maneuvers, new_end_maneuvers
+
+
+def compute_traj_to_circle_free_space_bicycle(start_pose, bicycle, circ1, tau0 = 0):
+    """
+    Build the initial part of the trajectory from the start pose to the first intermediate circle.
+    
+    :param corridor1: first corridor in the sequence
+    :type corridor1: CorridorWorld
+    :param start_pose: initial pose of the vehicle
+    :type start_pose: list of floats
+    :param bicycle: bicycle vehicle
+    :type Bicycle: Bicycle
+    :param circ1: first intermediate circle
+    :type circ1: IntermediateCircle object
+    """
+    tau1 = circ1.turn_direction
+    tau0 = compute_initial_turn_direction(
+        circ1.xc,
+        circ1.yc,
+        circ1.radius,
+        start_pose[0],
+        start_pose[1],
+        start_pose[2],
+        tau1) if tau0 == 0 else tau0
+    
+    ## Compute the first two maneuvers from start pose to the second circumference
+    start_pose_fw_drive = start_pose.copy()
+    start_pose_object = Pose(position=Point(start_pose[0], start_pose[1]), theta = start_pose[2])
+    start_maneuvers = []
+
+    # First check whether a backward maneuver is required for time-optimality
+    not_optimal, _, _, _ = rule_initial_backward_maneuver(start_pose, circ1, tau0)
+    if not_optimal: # Case tau1 = tau2 and iota > 90 degrees
+        bw_arc = compute_backward_arc_optimal(start_pose_object, tau0, tau1, circ1, bicycle)
+        start_pose_fw_drive = [bw_arc.xf, bw_arc.yf, bw_arc.thetaf]
+        start_pose_object = Pose(position=Point(bw_arc.xf, bw_arc.yf), theta = bw_arc.thetaf)
+        start_maneuvers.append(bw_arc)  
+    # Compute the free space solution
+    arc1, segment2 = compute_two_maneuvers_bicycle(start_pose_fw_drive, bicycle, circ1, tau1, t0 = 0, tau1 = tau0)
+    if arc1 is None or segment2 is None:
+        raise ValueError("Failed to compute the two maneuvers from start pose to the first intermediate circle due to overlapping circles.")
+    start_maneuvers.append(arc1)
+    start_maneuvers.append(segment2)
+    
+    # Adjust the time grid and angles
+    for i in range(len(start_maneuvers)-1):
+        if start_maneuvers[i+1].time_grid[0] != start_maneuvers[i].time_grid[-1]:
+            start_maneuvers[i+1].add_time_offset(abs(start_maneuvers[i+1].time_grid[0] - start_maneuvers[i].time_grid[-1]))
+    correct_angles(start_maneuvers)
+    return start_maneuvers

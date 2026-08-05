@@ -6,7 +6,7 @@ functions, typically used to exploit symmetry in motion planning problems.
 """
 
 from math import pi
-
+from copy import deepcopy
 import numpy as np
 
 from ..corridor import CorridorWorld
@@ -227,53 +227,172 @@ def invert_inputs_start_inside_second_circle_case(
 def invert_inputs_all(*inputs):
     """
     Invert geometric inputs.
-    Supported types are CorridorWorld, Pose, and IntermediateCircle.
 
-    :param inputs: geometric objects to invert
-    :type inputs: CorridorWorld | Pose | IntermediateCircle
+    Supported types are CorridorWorld, Pose, IntermediateCircle, and
+    pose-like arrays of length three.
 
-    :return: inverted objects in the same order as inputs
-    :rtype: list
+    For IntermediateCircle objects, all non-index metadata is retained.
+    Corridor indices are copied unchanged here because their correct
+    remapping depends on the size of the reversed corridor sequence.
+    That remapping is performed by
+    `invert_and_reverse_intermediate_circle_sequence`.
+
+    Parameters
+    ----------
+    inputs:
+        Geometric objects to invert.
+
+    Returns
+    -------
+    list
+        Inverted objects in the same order as the inputs.
     """
     inverted_inputs = []
 
     for item in inputs:
         if isinstance(item, CorridorWorld):
-            inverted_inputs.append(item.rotate_corridor(pi))
+            inverted_inputs.append(
+                item.rotate_corridor(pi)
+            )
 
         elif isinstance(item, Pose):
             inverted_inputs.append(
                 Pose(
-                    position=Point(item.x, item.y),
-                    theta=wrapPositiveAngle(item.theta + pi),
+                    position=Point(
+                        item.x,
+                        item.y,
+                    ),
+                    theta=wrapPositiveAngle(
+                        item.theta + pi
+                    ),
                 )
             )
 
         elif isinstance(item, IntermediateCircle):
-            inverted_inputs.append(
-                IntermediateCircle(
-                    center=Point(
-                        x=item.center.x,
-                        y=item.center.y,
-                    ),
-                    radius=item.radius,
-                    corner_point=Point(
-                        x=item.corner_point.x,
-                        y=item.corner_point.y,
-                    ),
-                    turn_direction=-item.turn_direction,
-                )
+            # Start from a deep copy so that all additional properties
+            # carried by the circle are retained.
+            inverted_circle = deepcopy(item)
+
+            # Inversion leaves the circle center, radius, and corner point
+            # unchanged, while reversing its turn direction.
+            inverted_circle.center = Point(
+                x=item.center.x,
+                y=item.center.y,
             )
 
-        elif isinstance(item, (list, tuple, np.ndarray)) and np.size(item) == 3:
-            x, y, theta = item
+            inverted_circle.radius = item.radius
+
+            inverted_circle.corner_point = Point(
+                x=item.corner_point.x,
+                y=item.corner_point.y,
+            )
+
+            inverted_circle.turn_direction = (
+                -item.turn_direction
+            )
+
+            # The two corridors exchange roles when the planning problem
+            # is inverted. Their inversion metadata must therefore also
+            # be exchanged.
+            corridor1_inversion = getattr(
+                item,
+                "corridor1_inversion",
+                0,
+            )
+            corridor2_inversion = getattr(
+                item,
+                "corridor2_inversion",
+                0,
+            )
+
+            inverted_circle.corridor1_inversion = (
+                corridor2_inversion
+            )
+            inverted_circle.corridor2_inversion = (
+                corridor1_inversion
+            )
+
+            # Preserve the index values temporarily. They are remapped
+            # later when the complete reversed corridor count is known.
+            if hasattr(item, "corridor_index_start"):
+                inverted_circle.corridor_index_start = (
+                    item.corridor_index_start
+                )
+
+            if hasattr(item, "corridor_index_end"):
+                inverted_circle.corridor_index_end = (
+                    item.corridor_index_end
+                )
+
+            # Recursively invert the source circles of a merged circle.
+            # Their order is reversed because the planning direction is
+            # reversed.
+            if getattr(item, "is_merged", False):
+                merged_from = getattr(
+                    item,
+                    "merged_from",
+                    None,
+                )
+
+                if merged_from is None:
+                    raise ValueError(
+                        "Merged intermediate circle does not contain "
+                        "'merged_from' metadata."
+                    )
+
+                inverted_merged_from = []
+
+                for source_circle in reversed(
+                    tuple(merged_from)
+                ):
+                    inverted_source, = invert_inputs_all(
+                        source_circle
+                    )
+                    inverted_merged_from.append(
+                        inverted_source
+                    )
+
+                inverted_circle.is_merged = True
+                inverted_circle.merged_from = tuple(
+                    inverted_merged_from
+                )
+
+                if hasattr(
+                    item,
+                    "merged_corner_points",
+                ):
+                    inverted_circle.merged_corner_points = tuple(
+                        reversed(
+                            item.merged_corner_points
+                        )
+                    )
+
             inverted_inputs.append(
-                np.array([x, y, wrapPositiveAngle(theta + pi)])
+                inverted_circle
+            )
+
+        elif (
+            isinstance(
+                item,
+                (list, tuple, np.ndarray),
+            )
+            and np.size(item) == 3
+        ):
+            x, y, theta = item
+
+            inverted_inputs.append(
+                np.array(
+                    [
+                        x,
+                        y,
+                        wrapPositiveAngle(theta + pi),
+                    ]
+                )
             )
 
         else:
             raise TypeError(
-                "invert_inputs: unsupported input type "
+                "invert_inputs_all: unsupported input type "
                 f"{type(item).__name__}"
             )
 

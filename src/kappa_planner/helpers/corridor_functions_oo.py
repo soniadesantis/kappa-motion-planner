@@ -498,52 +498,7 @@ def compute_arc_from_two_tangents_objects(segment1, segment2, circ, vehicle):
 
 
 
-def compute_traj_to_circle_free_space_bicycle(start_pose, bicycle, circ1, tau0 = 0):
-    """
-    Build the initial part of the trajectory from the start pose to the first intermediate circle.
-    
-    :param corridor1: first corridor in the sequence
-    :type corridor1: CorridorWorld
-    :param start_pose: initial pose of the vehicle
-    :type start_pose: list of floats
-    :param bicycle: bicycle vehicle
-    :type Bicycle: Bicycle
-    :param circ1: first intermediate circle
-    :type circ1: IntermediateCircle object
-    """
-    tau1 = circ1.turn_direction
-    tau0 = compute_initial_turn_direction(
-        circ1.xc,
-        circ1.yc,
-        circ1.radius,
-        start_pose[0],
-        start_pose[1],
-        start_pose[2],
-        tau1) if tau0 == 0 else tau0
-    
-    ## Compute the first two maneuvers from start pose to the second circumference
-    start_pose_fw_drive = start_pose.copy()
-    start_pose_object = Pose(position=Point(start_pose[0], start_pose[1]), theta = start_pose[2])
-    start_maneuvers = []
 
-    # First check whether a backward maneuver is required for time-optimality
-    not_optimal, _, _, _ = rule_initial_backward_maneuver(start_pose, circ1, tau0)
-    if not_optimal: # Case tau1 = tau2 and iota > 90 degrees
-        bw_arc = compute_backward_arc_optimal(start_pose_object, tau0, tau1, circ1, bicycle)
-        start_pose_fw_drive = [bw_arc.xf, bw_arc.yf, bw_arc.thetaf]
-        start_pose_object = Pose(position=Point(bw_arc.xf, bw_arc.yf), theta = bw_arc.thetaf)
-        start_maneuvers.append(bw_arc)  
-    # Compute the free space solution
-    arc1, segment2 = compute_two_maneuvers_bicycle(start_pose_fw_drive, bicycle, circ1, tau1, t0 = 0, tau1 = tau0)
-    start_maneuvers.append(arc1)
-    start_maneuvers.append(segment2)
-    
-    # Adjust the time grid and angles
-    for i in range(len(start_maneuvers)-1):
-        if start_maneuvers[i+1].time_grid[0] != start_maneuvers[i].time_grid[-1]:
-            start_maneuvers[i+1].add_time_offset(abs(start_maneuvers[i+1].time_grid[0] - start_maneuvers[i].time_grid[-1]))
-    correct_angles(start_maneuvers)
-    return start_maneuvers
 
 
     

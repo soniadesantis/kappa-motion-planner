@@ -7,30 +7,36 @@ requires-python = ">=3.7"
 license = { text = "GNU LGPLv3" }
 
 authors = [
-    { name = "Sonia De Santis" },
-    { name = "Alejandro Astudillo" }
+{ name = "Sonia De Santis" },
+{ name = "Alejandro Astudillo" },
 ]
 
 maintainers = [
-    { email = "sonia.desantis@kuleuven.be" }
+{ email = "[sonia.desantis@kuleuven.be](mailto:sonia.desantis@kuleuven.be)" },
 ]
 
 dependencies = [
-    "numpy>=1.20",
-    "scipy>=1.8",
-    "matplotlib",
-    "PyYAML>=6.0",
-    "sympy>=1.12",
+"numpy>=1.20",
+"scipy>=1.8",
+"matplotlib",
+"PyYAML>=6.0",
+"sympy>=1.12",
 ]
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
 [tool.ruff]
 line-length = 88
 
 [tool.ruff.lint]
-select = ["ALL"]
+select = [
+"E",  # pycodestyle errors
+"F",  # Pyflakes: undefined names, unused imports, etc.
+"W",  # pycodestyle warnings
+"I",  # import sorting
+]

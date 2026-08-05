@@ -1,4 +1,4 @@
-from math import asin, atan2, cos, pi, sin, sqrt
+from math import asin, atan2, cos, pi, sin, sqrt, ceil
 
 import sympy as sp
 import numpy as np
@@ -854,4 +854,335 @@ def compute_wall_tangent_circle_centers(
             )
 
     return candidate_centers
+
+
+def check_robot_footprint_inside_corridor_union(
+    corridors,
+    center,
+    robot_radius,
+    angular_samples=72,
+    radial_layers=4,
+):
+    """
+    Check whether a circular robot footprint is contained in the union
+    of a collection of corridors.
+
+    A footprint point is admissible when it belongs to at least one
+    corridor. This permits the robot footprint to straddle two
+    consecutive corridors near their intersection.
+
+    The footprint disk is checked numerically using concentric radial
+    layers.
+
+    :param corridors: corridors defining the admissible region
+    :type corridors: list[CorridorWorld]
+    :param center: coordinates of the robot center
+    :type center: array-like, shape (2,)
+    :param robot_radius: radius of the circular robot footprint
+    :type robot_radius: float
+    :param angular_samples: samples on each radial layer
+    :type angular_samples: int
+    :param radial_layers: number of radial layers inside the footprint
+    :type radial_layers: int
+
+    :return: True if the footprint is contained in the corridor union
+    :rtype: bool
+    """
+    center = np.asarray(center, dtype=float)
+
+    def point_inside_union(point):
+        return any(
+            check_point_inside_corridor(corridor, point)
+            for corridor in corridors
+        )
+
+    # The robot center must itself lie in the admissible union.
+    if not point_inside_union(center):
+        return False
+
+    if robot_radius <= 0.0:
+        return True
+
+    angles = np.linspace(
+        0.0,
+        2.0 * pi,
+        angular_samples,
+        endpoint=False,
+    )
+
+    # Include interior radial layers, not only the footprint boundary.
+    radii = np.linspace(
+        robot_radius / radial_layers,
+        robot_radius,
+        radial_layers,
+    )
+
+    for radius in radii:
+        for angle in angles:
+            footprint_point = center + radius * np.array(
+                [
+                    cos(angle),
+                    sin(angle),
+                ]
+            )
+
+            if not point_inside_union(footprint_point):
+                return False
+
+    return True
+
+
+def _get_arc_angular_direction(arc):
+    """
+    Return the direction followed around the geometric arc circle.
+
+    The result is:
+        +1 for counterclockwise motion,
+        -1 for clockwise motion.
+    """
+    is_backward = getattr(arc, "label", "") == "backward arc"
+
+    if is_backward:
+        return -arc.turn_direction
+
+    return arc.turn_direction
+
+
+def _compute_point_on_arc(
+    arc,
+    start_angle,
+    angular_direction,
+    amplitude,
+):
+    """
+    Compute the robot-center position after travelling the given
+    angular amplitude along an arc.
+    """
+    angle = start_angle + angular_direction * amplitude
+
+    return np.array(
+        [
+            arc.xc + arc.radius * cos(angle),
+            arc.yc + arc.radius * sin(angle),
+        ],
+        dtype=float,
+    )
+
+
+def check_arc_collision_corridor_union(
+    arc,
+    corridors,
+    max_spatial_step=None,
+    angular_samples=72,
+    radial_layers=4,
+):
+    """
+    Check whether an arc leaves the union of multiple corridors.
+
+    The robot is represented by a circular footprint. The footprint may
+    occupy portions of different corridors simultaneously, which permits
+    admissible motion through the wedge region created at the intersection
+    of consecutive corridors.
+
+    Tangential contact is accepted according to the tolerance used by
+    ``check_point_inside_corridor``.
+
+    :param arc: circular trajectory primitive
+    :type arc: CurvilinearArcUnicycle or BackwardArc
+    :param corridors: corridors defining the admissible region
+    :type corridors: list[CorridorWorld]
+    :param max_spatial_step: maximum distance between consecutive arc samples
+    :type max_spatial_step: float or None
+    :param angular_samples: angular samples for the robot footprint
+    :type angular_samples: int
+    :param radial_layers: radial samples for the robot footprint
+    :type radial_layers: int
+
+    :return:
+        collision:
+            True if a nonzero portion of the arc leaves the corridor union
+
+        first_invalid_amplitude:
+            first sampled angular amplitude outside the admissible region,
+            or None when no collision occurs
+    :rtype: tuple[bool, float | None]
+    """
+    vehicle = getattr(arc, "bicycle", None)
+
+    if vehicle is None:
+        vehicle = getattr(arc, "unicycle", None)
+
+    if vehicle is None:
+        raise ValueError(
+            "The arc must contain either a 'bicycle' or "
+            "'unicycle' attribute."
+        )
+
+    if not corridors:
+        raise ValueError(
+            "At least one corridor must be provided."
+        )
+
+    robot_radius = 0.5 * vehicle.width
+
+    start_angle = atan2(
+        arc.y0 - arc.yc,
+        arc.x0 - arc.xc,
+    )
+
+    angular_direction = _get_arc_angular_direction(arc)
+
+    arc_length = abs(arc.radius * arc.iota)
+
+    if max_spatial_step is None:
+        # Keep the trajectory sampling reasonably fine relative to both
+        # the maneuver radius and the robot footprint.
+        radius_based_step = 0.02 * arc.radius
+        footprint_based_step = 0.25 * max(robot_radius, 1e-3)
+
+        max_spatial_step = max(
+            1e-3,
+            min(
+                radius_based_step,
+                footprint_based_step,
+            ),
+        )
+
+    number_of_intervals = max(
+        1,
+        int(ceil(arc_length / max_spatial_step)),
+    )
+
+    amplitudes = np.linspace(
+        0.0,
+        arc.iota,
+        number_of_intervals + 1,
+    )
+
+    for amplitude in amplitudes:
+        center = _compute_point_on_arc(
+            arc,
+            start_angle,
+            angular_direction,
+            amplitude,
+        )
+
+        footprint_inside = (
+            check_robot_footprint_inside_corridor_union(
+                corridors=corridors,
+                center=center,
+                robot_radius=robot_radius,
+                angular_samples=angular_samples,
+                radial_layers=radial_layers,
+            )
+        )
+
+        if not footprint_inside:
+            return True, float(amplitude)
+
+    return False, None
+
+
+def check_segment_collision_corridor_union(
+    segment,
+    corridors,
+    max_spatial_step=None,
+    angular_samples=72,
+    radial_layers=4,
+):
+    """
+    Check whether a straight trajectory segment leaves the union of
+    multiple corridors.
+
+    :param segment: straight trajectory primitive
+    :type segment: LinearSegmentUnicycle
+    :param corridors: corridors defining the admissible region
+    :type corridors: list[CorridorWorld]
+    :param max_spatial_step: maximum distance between samples
+    :type max_spatial_step: float or None
+    :param angular_samples: angular samples for the robot footprint
+    :type angular_samples: int
+    :param radial_layers: radial samples for the robot footprint
+    :type radial_layers: int
+
+    :return:
+        collision:
+            True if a portion of the segment leaves the corridor union
+
+        first_invalid_fraction:
+            normalized location along the segment at which the first
+            invalid sample is detected
+    :rtype: tuple[bool, float | None]
+    """
+    vehicle = getattr(segment, "bicycle", None)
+
+    if vehicle is None:
+        vehicle = getattr(segment, "unicycle", None)
+
+    if vehicle is None:
+        raise ValueError(
+            "The segment must contain either a 'bicycle' or "
+            "'unicycle' attribute."
+        )
+
+    if not corridors:
+        raise ValueError(
+            "At least one corridor must be provided."
+        )
+
+    robot_radius = 0.5 * vehicle.width
+
+    start = np.array(
+        [
+            segment.x0,
+            segment.y0,
+        ],
+        dtype=float,
+    )
+
+    end = np.array(
+        [
+            segment.xf,
+            segment.yf,
+        ],
+        dtype=float,
+    )
+
+    displacement = end - start
+    segment_length = np.linalg.norm(displacement)
+
+    if max_spatial_step is None:
+        max_spatial_step = max(
+            1e-3,
+            0.25 * max(robot_radius, 1e-3),
+        )
+
+    number_of_intervals = max(
+        1,
+        int(ceil(segment_length / max_spatial_step)),
+    )
+
+    fractions = np.linspace(
+        0.0,
+        1.0,
+        number_of_intervals + 1,
+    )
+
+    for fraction in fractions:
+        center = start + fraction * displacement
+
+        footprint_inside = (
+            check_robot_footprint_inside_corridor_union(
+                corridors=corridors,
+                center=center,
+                robot_radius=robot_radius,
+                angular_samples=angular_samples,
+                radial_layers=radial_layers,
+            )
+        )
+
+        if not footprint_inside:
+            return True, float(fraction)
+
+    return False, None
     

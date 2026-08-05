@@ -332,6 +332,8 @@ def compute_segment_between_two_circles_objects(
     circ2,
     vehicle,
     overlap=False,
+    start_circle_index=None,
+    end_circle_index=None,
 ):
     x1, y1, theta1, x2, y2, _ = compute_extreme_poses_arc_line(
         circ1.xc,
@@ -354,4 +356,423 @@ def compute_segment_between_two_circles_objects(
         t0=0,
         unicycle=vehicle,
         samples_number=10,
+        start_circle_index=start_circle_index,
+        end_circle_index=end_circle_index,
     )
+
+
+def compute_reversal_maneuver_on_segment(
+    segment,
+    bicycle,
+    side,
+    offset=0.0,
+):
+    """
+    Compute the geometry of a two-arc cusp reversal on a linear segment.
+
+    The reversal consists of:
+
+        backward quarter-circle
+        forward quarter-circle
+
+    The maneuver starts and ends on the supporting segment, with opposite
+    vehicle orientations. The two circular arcs have radius ``R``.
+
+    Collision checking is not performed yet.
+
+    :param segment: supporting linear segment
+    :type segment: LinearSegmentUnicycle
+    :param bicycle: bicycle vehicle model
+    :param side: side on which the reversal is constructed;
+                 +1 for left and -1 for right
+    :type side: int
+    :param offset: distance from the beginning of the segment at which the
+                   reversal starts
+    :type offset: float
+    :return: reversal geometry, or None if the segment is too short
+    """
+    if side not in (-1, 1):
+        raise ValueError("side must be either -1 or 1")
+
+    if offset < 0.0:
+        raise ValueError("offset must be non-negative")
+
+    radius = bicycle.max_radius
+    required_length = offset + 2.0 * radius
+
+    if segment.path_length < required_length:
+        return None
+
+    direction = np.array(
+        [
+            np.cos(segment.path_heading),
+            np.sin(segment.path_heading),
+        ],
+        dtype=float,
+    )
+
+    left_normal = np.array(
+        [
+            -direction[1],
+            direction[0],
+        ],
+        dtype=float,
+    )
+
+    normal = side * left_normal
+
+    segment_start = np.array(
+        [segment.x0, segment.y0],
+        dtype=float,
+    )
+
+    # Start and end points of the reversal on the original segment.
+    reversal_start = segment_start + offset * direction
+    reversal_end = reversal_start + 2.0 * radius * direction
+
+    # Centers of the two quarter-circle arcs.
+    first_arc_center = reversal_start + radius * normal
+    second_arc_center = reversal_end + radius * normal
+
+    # Cusp connecting the two quarter-circle arcs.
+    cusp_point = (
+        reversal_start
+        + radius * direction
+        + radius * normal
+    )
+
+    # TODO:
+    # Check whether the parallel segment from first_arc_center to
+    # second_arc_center lies in a suitable corridor with footprint clearance.
+    #
+    # TODO:
+    # Construct the actual backward and forward circular-arc objects.
+    #
+    # TODO:
+    # Validate both arcs using the existing arc collision checker.
+
+    return {
+        "segment": segment,
+        "offset": offset,
+        "side": side,
+        "radius": radius,
+        "start_point": reversal_start,
+        "end_point": reversal_end,
+        "cusp_point": cusp_point,
+        "first_arc_center": first_arc_center,
+        "second_arc_center": second_arc_center,
+        "parallel_start": first_arc_center,
+        "parallel_end": second_arc_center,
+    }
+
+def build_segment_with_reversal(
+    segment,
+    reversal_geometry,
+    bicycle,
+    first_arc_backward=True,
+    tol=1e-9,
+):
+    """
+    Replace a linear segment with a cusp-based reversal sequence.
+
+    The returned sequence consists of:
+
+        segment_before
+        first quarter-circle arc
+        second quarter-circle arc
+        segment_after
+
+    The reversal changes the motion direction at the cusp:
+
+        - if ``first_arc_backward`` is True, the sequence changes from
+          backward motion to forward motion;
+
+        - if ``first_arc_backward`` is False, the sequence changes from
+          forward motion to backward motion.
+
+    The first and last linear portions are omitted when their lengths are
+    numerically zero.
+
+    Collision checking is not performed here.
+
+    Parameters
+    ----------
+    segment:
+        Original supporting linear segment.
+
+    reversal_geometry:
+        Geometry returned by
+        ``compute_reversal_maneuver_on_segment``.
+
+    bicycle:
+        Bicycle vehicle model.
+
+    first_arc_backward:
+        Whether the first circular arc is traversed backward.
+
+    tol:
+        Numerical tolerance used to omit zero-length linear portions.
+
+    Returns
+    -------
+    list
+        Replacement maneuver sequence.
+    """
+    radius = float(
+        reversal_geometry["radius"]
+    )
+
+    side = int(
+        reversal_geometry["side"]
+    )
+
+    if side not in (-1, 1):
+        raise ValueError(
+            "The reversal side must be either -1 or 1."
+        )
+
+    reversal_start = np.asarray(
+        reversal_geometry["start_point"],
+        dtype=float,
+    )
+
+    cusp_point = np.asarray(
+        reversal_geometry["cusp_point"],
+        dtype=float,
+    )
+
+    reversal_end = np.asarray(
+        reversal_geometry["end_point"],
+        dtype=float,
+    )
+
+    first_center = np.asarray(
+        reversal_geometry["first_arc_center"],
+        dtype=float,
+    )
+
+    second_center = np.asarray(
+        reversal_geometry["second_arc_center"],
+        dtype=float,
+    )
+
+    segment_start = np.asarray(
+        [segment.x0, segment.y0],
+        dtype=float,
+    )
+
+    segment_end = np.asarray(
+        [segment.xf, segment.yf],
+        dtype=float,
+    )
+
+    path_heading = wrapPositiveAngle(
+        segment.path_heading
+    )
+
+    opposite_heading = wrapPositiveAngle(
+        path_heading + np.pi
+    )
+
+    # ---------------------------------------------------------------
+    # Determine the heading and velocity on each side of the cusp
+    # ---------------------------------------------------------------
+    if first_arc_backward:
+        # Before the cusp, the vehicle travels backward along the
+        # supporting-segment direction.
+        first_is_backward = True
+
+        first_theta0 = opposite_heading
+
+        # The geometric path turns toward ``side``. Since this arc is
+        # traversed backward, the vehicle heading changes by
+        # +side*pi/2.
+        first_thetaf = wrapPositiveAngle(
+            opposite_heading
+            + side * np.pi / 2
+        )
+
+        second_theta0 = first_thetaf
+        second_thetaf = path_heading
+
+        segment_before_theta = opposite_heading
+        segment_before_velocity = -bicycle.v_max
+
+        segment_after_theta = path_heading
+        segment_after_velocity = bicycle.v_max
+
+    else:
+        # Before the cusp, the vehicle travels forward along the
+        # supporting-segment direction.
+        first_is_backward = False
+
+        first_theta0 = path_heading
+
+        first_thetaf = wrapPositiveAngle(
+            path_heading
+            + side * np.pi / 2
+        )
+
+        second_theta0 = first_thetaf
+        second_thetaf = opposite_heading
+
+        segment_before_theta = path_heading
+        segment_before_velocity = bicycle.v_max
+
+        segment_after_theta = opposite_heading
+        segment_after_velocity = -bicycle.v_max
+
+    maneuvers = []
+    current_time = segment.t0
+
+    # ---------------------------------------------------------------
+    # 1. Linear portion before the reversal
+    # ---------------------------------------------------------------
+    length_before = np.linalg.norm(
+        reversal_start - segment_start
+    )
+
+    if length_before > tol:
+        segment_before = LinearSegmentUnicycle(
+            x0=segment.x0,
+            y0=segment.y0,
+            xf=reversal_start[0],
+            yf=reversal_start[1],
+            theta=segment_before_theta,
+            v=segment_before_velocity,
+            unicycle=bicycle,
+            t0=current_time,
+            samples_number=segment.samples_number,
+            start_circle_index=segment.start_circle_index,
+            end_circle_index=None,
+        )
+
+        maneuvers.append(
+            segment_before
+        )
+
+        current_time = segment_before.tf
+
+    # ---------------------------------------------------------------
+    # 2. First quarter-circle arc
+    # ---------------------------------------------------------------
+    if first_is_backward:
+        first_arc = BackwardArc(
+            xc=first_center[0],
+            yc=first_center[1],
+            x0=reversal_start[0],
+            y0=reversal_start[1],
+            theta0=first_theta0,
+            xf=cusp_point[0],
+            yf=cusp_point[1],
+            thetaf=first_thetaf,
+            radius=radius,
+            turn_direction=-side,
+            v=-bicycle.v_max,
+            omega=side * bicycle.omega_max,
+            bicycle=bicycle,
+            t0=current_time,
+            samples_number=50,
+        )
+
+    else:
+        first_arc = CurvilinearArcUnicycle(
+            xc=first_center[0],
+            yc=first_center[1],
+            x0=reversal_start[0],
+            y0=reversal_start[1],
+            theta0=first_theta0,
+            xf=cusp_point[0],
+            yf=cusp_point[1],
+            thetaf=first_thetaf,
+            radius=radius,
+            turn_direction=side,
+            v=bicycle.v_max,
+            omega=side * bicycle.omega_max,
+            unicycle=bicycle,
+            t0=current_time,
+            samples_number=50,
+        )
+
+    maneuvers.append(
+        first_arc
+    )
+
+    current_time = first_arc.tf
+
+    # ---------------------------------------------------------------
+    # 3. Second quarter-circle arc
+    # ---------------------------------------------------------------
+    if first_is_backward:
+        second_arc = CurvilinearArcUnicycle(
+            xc=second_center[0],
+            yc=second_center[1],
+            x0=cusp_point[0],
+            y0=cusp_point[1],
+            theta0=second_theta0,
+            xf=reversal_end[0],
+            yf=reversal_end[1],
+            thetaf=second_thetaf,
+            radius=radius,
+            turn_direction=side,
+            v=bicycle.v_max,
+            omega=side * bicycle.omega_max,
+            unicycle=bicycle,
+            t0=current_time,
+            samples_number=50,
+        )
+
+    else:
+        second_arc = BackwardArc(
+            xc=second_center[0],
+            yc=second_center[1],
+            x0=cusp_point[0],
+            y0=cusp_point[1],
+            theta0=second_theta0,
+            xf=reversal_end[0],
+            yf=reversal_end[1],
+            thetaf=second_thetaf,
+            radius=radius,
+            turn_direction=-side,
+            v=-bicycle.v_max,
+            omega=side * bicycle.omega_max,
+            bicycle=bicycle,
+            t0=current_time,
+            samples_number=50,
+        )
+
+    maneuvers.append(
+        second_arc
+    )
+
+    current_time = second_arc.tf
+
+    # ---------------------------------------------------------------
+    # 4. Linear portion after the reversal
+    # ---------------------------------------------------------------
+    length_after = np.linalg.norm(
+        segment_end - reversal_end
+    )
+
+    if length_after > tol:
+        segment_after = LinearSegmentUnicycle(
+            x0=reversal_end[0],
+            y0=reversal_end[1],
+            xf=segment.xf,
+            yf=segment.yf,
+            theta=segment_after_theta,
+            v=segment_after_velocity,
+            unicycle=bicycle,
+            t0=current_time,
+            samples_number=segment.samples_number,
+            start_circle_index=None,
+            end_circle_index=segment.end_circle_index,
+        )
+
+        maneuvers.append(
+            segment_after
+        )
+
+    return maneuvers
+
+

@@ -8,7 +8,7 @@ from .helpers.plot_helpers import plot_planner_inputs
 from .helpers.corridor_geometry import shrink_corridor_list
 from .helpers.trajectory_unicycle import compute_trajectory_unicycle_two_corridors, compute_trajectory_unicycle_multiple_corridors_optimal
 from .helpers.axis_aligned_int_circle_sequence import build_intermediate_circles_sequence
-
+from .helpers.corridor_sequence_validity import check_bicycle_boundary_pose_separation
 from .helpers.trajectory_bicycle import compute_trajectory_bicycle_multiple_corridors_optimal, compute_trajectory_bicycle_two_corridors_optimal
 from .helpers.trajectory_unicycle_core import compute_trajectory_unicycle_multiple_corridors_core, compute_trajectory_unicycle_two_corridors_core
 
@@ -533,27 +533,35 @@ class MotionPlanner:
 
         if len(corridors) == 2:
             with Timer() as timer:
-                trajectory = compute_trajectory_bicycle_two_corridors_optimal(
-                    corridors[0],
-                    corridors[1],
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles_sequence,
+                trajectory = (
+                    compute_trajectory_bicycle_two_corridors_optimal(
+                        corridors[0],
+                        corridors[1],
+                        start_pose,
+                        end_pose,
+                        vehicle,
+                        self.intermediate_circles_sequence,
+                    )
                 )
+
         elif len(corridors) > 2:
             with Timer() as timer:
-                trajectory = compute_trajectory_bicycle_multiple_corridors_optimal(
-                    corridors,
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles_sequence,
+                trajectory = (
+                    compute_trajectory_bicycle_multiple_corridors_optimal(
+                        corridors,
+                        start_pose,
+                        end_pose,
+                        vehicle,
+                        self.intermediate_circles_sequence,
+                    )
                 )
+
         elif len(corridors) == 1:
             raise NotImplementedError(
-                "Analytical bicycle trajectory computation is not implemented for one corridor."
+                "Analytical bicycle trajectory computation is not "
+                "implemented for one corridor."
             )
-        
+
         self.comp_time_analytical_sol = timer()
+
         return trajectory

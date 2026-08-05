@@ -53,44 +53,6 @@ def arrow(
     return arr
 
 
-def curved_arrow(
-    ax,
-    center,
-    radius,
-    theta1,
-    theta2,
-    *,
-    linewidth=1.2,
-    mutation_scale=10,
-    color="black",
-    zorder=6,
-):
-    """Draw a curved arrow."""
-    t = np.linspace(theta1, theta2, 80)
-
-    x = center[0] + radius * np.cos(t)
-    y = center[1] + radius * np.sin(t)
-
-    ax.plot(
-        x,
-        y,
-        color=color,
-        linewidth=linewidth,
-        zorder=zorder,
-    )
-
-    arrow(
-        ax,
-        np.array([x[-5], y[-5]]),
-        np.array([x[-1], y[-1]]),
-        arrowstyle="->",
-        linewidth=linewidth,
-        mutation_scale=mutation_scale,
-        color=color,
-        zorder=zorder + 1,
-    )
-
-
 def angle_arc(
     ax,
     center,
@@ -154,7 +116,7 @@ def add_rounded_wheel(
     edgecolor="0.45",
     facecolor="0.90",
 ):
-    """Draw a rounded wheel on the lowest layer."""
+    """Draw a rounded equivalent wheel on the lowest layer."""
     transform = (
         Affine2D()
         .rotate(orientation)
@@ -177,46 +139,72 @@ def add_rounded_wheel(
     ax.add_patch(wheel)
 
 
+def right_angle_marker(
+    ax,
+    vertex,
+    direction_1,
+    direction_2,
+    *,
+    size=0.11,
+    color="black",
+):
+    """Draw a right-angle marker."""
+    p1 = vertex + size * direction_1
+    p2 = p1 + size * direction_2
+    p3 = vertex + size * direction_2
+
+    ax.plot(
+        [p1[0], p2[0], p3[0]],
+        [p1[1], p2[1], p3[1]],
+        color=color,
+        linewidth=0.8,
+        zorder=7,
+    )
+
+
 def dimension_line(
     ax,
     start,
     end,
+    normal,
     *,
+    offset,
     label,
-    tick_direction,
     tick_length=0.10,
-    label_offset=(0.0, 0.0),
 ):
-    """Draw a dimension line with end ticks."""
+    """Draw a dimension line parallel to a segment."""
+    start_dim = start + offset * normal
+    end_dim = end + offset * normal
+
     ax.plot(
-        [start[0], end[0]],
-        [start[1], end[1]],
+        [start_dim[0], end_dim[0]],
+        [start_dim[1], end_dim[1]],
         color="black",
         linewidth=0.9,
         zorder=6,
     )
 
-    tick_vector = tick_length * tick_direction
+    tick_vector = tick_length * normal
 
     ax.plot(
-        [start[0] - tick_vector[0], start[0] + tick_vector[0]],
-        [start[1] - tick_vector[1], start[1] + tick_vector[1]],
+        [start_dim[0] - tick_vector[0], start_dim[0] + tick_vector[0]],
+        [start_dim[1] - tick_vector[1], start_dim[1] + tick_vector[1]],
         color="black",
         linewidth=0.9,
         zorder=6,
     )
 
     ax.plot(
-        [end[0] - tick_vector[0], end[0] + tick_vector[0]],
-        [end[1] - tick_vector[1], end[1] + tick_vector[1]],
+        [end_dim[0] - tick_vector[0], end_dim[0] + tick_vector[0]],
+        [end_dim[1] - tick_vector[1], end_dim[1] + tick_vector[1]],
         color="black",
         linewidth=0.9,
         zorder=6,
     )
 
     label_position = (
-        0.5 * (start + end)
-        + np.asarray(label_offset)
+        0.5 * (start_dim + end_dim)
+        + 0.10 * normal
     )
 
     ax.text(
@@ -232,12 +220,16 @@ def dimension_line(
 # ---------------------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------------------
-theta = np.deg2rad(35)
+theta = np.deg2rad(28)
+delta = np.deg2rad(35)
 
-# Axle midpoint and robot reference point
-p = np.array([0.0, 0.0])
+# Rear-wheel midpoint and reference point
+p_rear = np.array([0.0, 0.0])
 
-# Body-frame directions
+# Wheelbase
+L = 1.55
+
+# Vehicle directions
 e_heading = np.array([
     np.cos(theta),
     np.sin(theta),
@@ -248,30 +240,42 @@ e_lateral = np.array([
     np.cos(theta),
 ])
 
-# Differential-drive geometry
-b = 1.45
-r = 0.42
+# Front-wheel midpoint
+p_front = p_rear + L * e_heading
 
-wheel_length = 2 * r
-wheel_width = 0.22
+# Front-wheel direction
+front_angle = theta + delta
 
-left_wheel_center = p + (b / 2.0) * e_lateral
-right_wheel_center = p - (b / 2.0) * e_lateral
+e_front = np.array([
+    np.cos(front_angle),
+    np.sin(front_angle),
+])
+
+# Equivalent-wheel dimensions
+wheel_length = 0.58
+wheel_width = 0.18
+
+
+# ---------------------------------------------------------------------
+# Instantaneous center of rotation
+# ---------------------------------------------------------------------
+R = L / np.tan(delta)
+p_icr = p_rear + R * e_lateral
 
 
 # ---------------------------------------------------------------------
 # Figure
 # ---------------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(6.2, 4.6))
+fig, ax = plt.subplots(figsize=(6.2, 4.8))
 
 
 # ---------------------------------------------------------------------
 # Global coordinate axes
 # ---------------------------------------------------------------------
-axis_origin = np.array([-1.75, -1.15])
+axis_origin = np.array([-1.55, -1.05])
 
-x_axis_end = axis_origin + np.array([4.00, 0.0])
-y_axis_end = axis_origin + np.array([0.0, 3.25])
+x_axis_end = axis_origin + np.array([3.85, 0.0])
+y_axis_end = axis_origin + np.array([0.0, 3.30])
 
 arrow(
     ax,
@@ -315,12 +319,12 @@ ax.text(
 # ---------------------------------------------------------------------
 # Coordinate projections
 # ---------------------------------------------------------------------
-x_projection = np.array([p[0], axis_origin[1]])
-y_projection = np.array([axis_origin[0], p[1]])
+x_projection = np.array([p_rear[0], axis_origin[1]])
+y_projection = np.array([axis_origin[0], p_rear[1]])
 
 ax.plot(
-    [p[0], p[0]],
-    [axis_origin[1], p[1]],
+    [p_rear[0], p_rear[0]],
+    [axis_origin[1], p_rear[1]],
     color="black",
     linewidth=0.8,
     linestyle="--",
@@ -328,8 +332,8 @@ ax.plot(
 )
 
 ax.plot(
-    [axis_origin[0], p[0]],
-    [p[1], p[1]],
+    [axis_origin[0], p_rear[0]],
+    [p_rear[1], p_rear[1]],
     color="black",
     linewidth=0.8,
     linestyle="--",
@@ -356,11 +360,11 @@ ax.text(
 
 
 # ---------------------------------------------------------------------
-# Wheels: lowest layer
+# Bicycle wheels: lowest layer
 # ---------------------------------------------------------------------
 add_rounded_wheel(
     ax,
-    left_wheel_center,
+    p_rear,
     theta,
     wheel_length,
     wheel_width,
@@ -370,8 +374,8 @@ add_rounded_wheel(
 
 add_rounded_wheel(
     ax,
-    right_wheel_center,
-    theta,
+    p_front,
+    front_angle,
     wheel_length,
     wheel_width,
     edgecolor=geometry_color,
@@ -380,25 +384,52 @@ add_rounded_wheel(
 
 
 # ---------------------------------------------------------------------
-# Axle: above the wheels
+# Wheelbase: above the wheels
 # ---------------------------------------------------------------------
 ax.plot(
-    [left_wheel_center[0], right_wheel_center[0]],
-    [left_wheel_center[1], right_wheel_center[1]],
+    [p_rear[0], p_front[0]],
+    [p_rear[1], p_front[1]],
     color=geometry_color,
-    linewidth=1.5,
+    linewidth=1.6,
     zorder=3,
 )
 
 
 # ---------------------------------------------------------------------
-# Dashed horizontal reference for theta
+# Reference directions at the front wheel
 # ---------------------------------------------------------------------
-heading_reference_length = 0.95
+reference_length = 0.90
+
+# Horizontal world direction
+horizontal_end = p_front + reference_length * np.array([1.0, 0.0])
 
 ax.plot(
-    [p[0], p[0] + heading_reference_length],
-    [p[1], p[1]],
+    [p_front[0], horizontal_end[0]],
+    [p_front[1], horizontal_end[1]],
+    color="black",
+    linewidth=0.8,
+    linestyle="--",
+    zorder=5,
+)
+
+# Wheelbase direction
+heading_extension_end = p_front + reference_length * e_heading
+
+ax.plot(
+    [p_front[0], heading_extension_end[0]],
+    [p_front[1], heading_extension_end[1]],
+    color="black",
+    linewidth=0.8,
+    linestyle="--",
+    zorder=5,
+)
+
+# Front-wheel direction
+front_direction_end = p_front + reference_length * e_front
+
+ax.plot(
+    [p_front[0], front_direction_end[0]],
+    [p_front[1], front_direction_end[1]],
     color="black",
     linewidth=0.8,
     linestyle="--",
@@ -407,29 +438,41 @@ ax.plot(
 
 
 # ---------------------------------------------------------------------
-# Heading angle theta
+# Heading and steering angles
 # ---------------------------------------------------------------------
 angle_arc(
     ax,
-    p,
-    radius=0.56,
+    p_front,
+    radius=0.31,
     theta1=0.0,
     theta2=theta,
     label=r"$\theta$",
-    label_radius=0.70,
-    label_offset=(0.02, -0.04),
+    label_radius=0.43,
+    label_offset=(0.03, -0.01),
+    zorder=7,
+)
+
+angle_arc(
+    ax,
+    p_front,
+    radius=0.46,
+    theta1=theta,
+    theta2=front_angle,
+    label=r"$\delta$",
+    label_radius=0.61,
+    label_offset=(0.03, 0.04),
     zorder=7,
 )
 
 
 # ---------------------------------------------------------------------
-# Forward velocity v
+# Longitudinal velocity: on top of the wheelbase and wheels
 # ---------------------------------------------------------------------
-velocity_end = p + 1.40 * e_heading
+velocity_end = p_rear + 1.05 * e_heading
 
 arrow(
     ax,
-    p,
+    p_rear,
     velocity_end,
     arrowstyle="-|>",
     linewidth=1.25,
@@ -438,8 +481,15 @@ arrow(
     zorder=8,
 )
 
+velocity_label_position = (
+    p_rear
+    + 0.76 * e_heading
+    + 0.13 * e_lateral
+)
+
 ax.text(
-    *(p + 1.57 * e_heading),
+    velocity_label_position[0],
+    velocity_label_position[1],
     r"$v$",
     ha="center",
     va="center",
@@ -448,94 +498,44 @@ ax.text(
 
 
 # ---------------------------------------------------------------------
-# Angular velocity omega
+# Wheelbase dimension L
 # ---------------------------------------------------------------------
-omega_center = p + 0.04 * e_lateral
-
-curved_arrow(
-    ax,
-    omega_center,
-    radius=0.34,
-    theta1=theta + 0.30,
-    theta2=theta + 1.55,
-    linewidth=1.15,
-    mutation_scale=9,
-    zorder=8,
-)
-
-omega_label_position = (
-    omega_center
-    + 0.50 * np.array([
-        np.cos(theta + 1.02),
-        np.sin(theta + 1.02),
-    ])
-)
-
-ax.text(
-    omega_label_position[0],
-    omega_label_position[1],
-    r"$\omega$",
-    ha="center",
-    va="center",
-    zorder=10,
-)
-
-
-# ---------------------------------------------------------------------
-# Wheel separation b
-# ---------------------------------------------------------------------
-dimension_offset = -0.58 * e_heading
-
-b_start = left_wheel_center + dimension_offset
-b_end = right_wheel_center + dimension_offset
-
-# Guide lines
-ax.plot(
-    [left_wheel_center[0], b_start[0]],
-    [left_wheel_center[1], b_start[1]],
-    color="black",
-    linewidth=0.8,
-    zorder=5,
-)
-
-ax.plot(
-    [right_wheel_center[0], b_end[0]],
-    [right_wheel_center[1], b_end[1]],
-    color="black",
-    linewidth=0.8,
-    zorder=5,
-)
-
 dimension_line(
     ax,
-    b_start,
-    b_end,
-    label=r"$b$",
-    tick_direction=e_heading,
+    p_rear,
+    p_front,
+    -e_lateral,
+    offset=0.30,
+    label=r"$L$",
     tick_length=0.08,
-    label_offset=-0.13 * e_heading,
 )
 
 
 # ---------------------------------------------------------------------
-# Wheel labels
+# ICR construction
 # ---------------------------------------------------------------------
-ax.text(
-    *(
-        left_wheel_center
-        + 0.33 * e_lateral
-    ),
-    r"$L$",
-    ha="center",
-    va="center",
-    zorder=10,
+ax.plot(
+    [p_rear[0], p_icr[0]],
+    [p_rear[1], p_icr[1]],
+    color="black",
+    linewidth=0.9,
+    linestyle="--",
+    zorder=5,
 )
 
+ax.plot(
+    [p_front[0], p_icr[0]],
+    [p_front[1], p_icr[1]],
+    color="black",
+    linewidth=0.9,
+    linestyle="--",
+    zorder=5,
+)
+
+radius_midpoint = 0.5 * (p_rear + p_icr)
+
 ax.text(
-    *(
-        right_wheel_center
-        - 0.33 * e_lateral
-    ),
+    *(radius_midpoint - 0.12 * e_heading),
     r"$R$",
     ha="center",
     va="center",
@@ -544,15 +544,65 @@ ax.text(
 
 
 # ---------------------------------------------------------------------
-# Reference point: highest layer
+# Right-angle markers
+# ---------------------------------------------------------------------
+right_angle_marker(
+    ax,
+    p_rear,
+    e_lateral,
+    e_heading,
+    size=0.11,
+)
+
+front_to_icr = p_icr - p_front
+front_to_icr /= np.linalg.norm(front_to_icr)
+
+right_angle_marker(
+    ax,
+    p_front,
+    front_to_icr,
+    e_front,
+    size=0.10,
+)
+
+
+# ---------------------------------------------------------------------
+# Reference points and ICR: highest layer
 # ---------------------------------------------------------------------
 ax.plot(
-    p[0],
-    p[1],
+    p_rear[0],
+    p_rear[1],
     marker="o",
     markersize=4,
     color="black",
     zorder=11,
+)
+
+ax.plot(
+    p_front[0],
+    p_front[1],
+    marker="o",
+    markersize=3.5,
+    color="black",
+    zorder=11,
+)
+
+ax.plot(
+    p_icr[0],
+    p_icr[1],
+    marker="o",
+    markersize=5,
+    color="black",
+    zorder=11,
+)
+
+ax.text(
+    p_icr[0] - 0.08,
+    p_icr[1] + 0.10,
+    r"$\mathrm{ICR}$",
+    ha="right",
+    va="bottom",
+    zorder=12,
 )
 
 
@@ -560,8 +610,8 @@ ax.plot(
 # Formatting
 # ---------------------------------------------------------------------
 ax.set_aspect("equal", adjustable="box")
-ax.set_xlim(-2.00, 2.55)
-ax.set_ylim(-1.40, 2.50)
+ax.set_xlim(-1.8, 2.75)
+ax.set_ylim(-1.3, 2.65)
 ax.axis("off")
 
 fig.tight_layout()
@@ -574,12 +624,12 @@ fig_dir = Path(__file__).resolve().parent / "saved_figures"
 fig_dir.mkdir(parents=True, exist_ok=True)
 
 fig.savefig(
-    fig_dir / "differential_drive_model.pdf",
+    fig_dir / "bicycle_model.pdf",
     bbox_inches="tight",
 )
 
 fig.savefig(
-    fig_dir / "differential_drive_model.png",
+    fig_dir / "bicycle_model.png",
     dpi=300,
     bbox_inches="tight",
 )

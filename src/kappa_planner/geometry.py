@@ -319,7 +319,39 @@ class IntermediateCirclesSequence:
 
     def radii(self):
         return [c.radius for c in self._items]
-    
+
+    def copy(self):
+        """
+        Return a shallow copy of the sequence.
+
+        The sequence container is copied, while the contained
+        IntermediateCircle objects are shared.
+        """
+        return IntermediateCirclesSequence(self._items)
+
+
+    def remove_first(self):
+        """
+        Remove the first intermediate circle in place.
+        """
+        if not self._items:
+            raise IndexError(
+                "Cannot remove the first circle from an empty sequence."
+            )
+
+        del self._items[0]
+
+
+    def remove_last(self):
+        """
+        Remove the last intermediate circle in place.
+        """
+        if not self._items:
+            raise IndexError(
+                "Cannot remove the last circle from an empty sequence."
+            )
+
+        del self._items[-1]
 
 class IntermediateCircleChoice:
     """
