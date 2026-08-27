@@ -394,14 +394,39 @@ def shifted_center_is_admissible_for_single_circle(circle, shifted_center, tol=1
 
     return True, "ok", center_local
 
+def closest_point_on_segment(A, B, P, tol=1e-9):
+    """
+    Compute the closest point on segment AB to point P.
+
+    :return:
+        closest_point:
+            closest point on the segment
+
+        t:
+            normalized segment coordinate:
+                t = 0 at A,
+                t = 1 at B
+    """
+    A = np.asarray(A, dtype=float)
+    B = np.asarray(B, dtype=float)
+    P = np.asarray(P, dtype=float)
+
+    AB = B - A
+    length_squared = np.dot(AB, AB)
+
+    if length_squared <= tol**2:
+        raise ValueError("Degenerate segment.")
+
+    t = np.dot(P - A, AB) / length_squared
+    t_clamped = np.clip(t, 0.0, 1.0)
+
+    closest_point = A + t_clamped * AB
+
+    return closest_point, t_clamped
 
 def circle_halfplane_clearance(circle, r, x1, y1, x2, y2, tol=1e-9):
 
-    # plt.plot(circle.center.x, circle.center.y, 'ro', label=f"Circle {circle.index} Center")
-    # angle_array = np.linspace(0, 2 * np.pi, 100)
-    # plt.plot(circle.center.x + circle.radius * np.cos(angle_array), circle.center.y + circle.radius * np.sin(angle_array), 'r--', label=f"Circle {circle.index} Boundary")
-    # plt.plot([x1, x2], [y1, y2], 'k--', label="Reference Tangent")
-    # plt.show(block = True)
+
     # if circle.shifted:
     signed_distance, n_right = signed_distance_to_directed_line(
         circle.center,
@@ -417,6 +442,50 @@ def circle_halfplane_clearance(circle, r, x1, y1, x2, y2, tol=1e-9):
     # side_clearance = signed_distance + circle.turn_direction * r
 
     is_bad = circle.turn_direction * side_clearance < -tol
+
+    # Circle center.
+    center = np.array(
+        [
+            circle.center.x,
+            circle.center.y,
+        ],
+        dtype=float,
+    )
+    # Orthogonal projection of the circle center onto the tangent line.
+    projection = center - signed_distance * n_right
+    # if not check_point_inside_segment([x1,y1], [x2,y2], projection, tol=1e-9):
+    #     is_bad = True
+
+    # plt.plot(circle.center.x, circle.center.y, 'ro', label=f"Circle {circle.index} Center")
+    # angle_array = np.linspace(0, 2 * np.pi, 100)
+    # plt.plot(circle.center.x + circle.radius * np.cos(angle_array), circle.center.y + circle.radius * np.sin(angle_array), 'r--', label=f"Circle {circle.index} Boundary")
+    # plt.plot([x1, x2], [y1, y2], 'k--', label="Reference Tangent")
+    # plt.title(f"Circle {circle.index} Clearance: {side_clearance:.4f}, Is Bad: {is_bad}")
+    # # Perpendicular segment from the center to the tangent line.
+    # plt.plot(
+    #     [
+    #         circle.center.x,
+    #         projection[0],
+    #     ],
+    #     [
+    #         circle.center.y,
+    #         projection[1],
+    #     ],
+    #     "b-",
+    #     linewidth=2,
+    #     label="Signed Distance",
+    # )
+
+    # # Projected point on the tangent line.
+    # plt.plot(
+    #     projection[0],
+    #     projection[1],
+    #     "bo",
+    #     label="Orthogonal Projection",
+    # )
+    # plt.axis("equal")
+    # plt.gcf().set_size_inches(7, 7)
+    # plt.show(block = True)
     # else: 
     #     signed_distance, n_right = signed_distance_to_directed_line(
     #         circle.corner_point,
@@ -1005,16 +1074,17 @@ def detect_tangent_intersections_blocks(circle_sequence, bicycle, tol=1e-9):
 
         # if index == len(circle_sequence) - 3:
         #     angle_array = np.linspace(0, 2 * np.pi, 100)
-        #     plt.plot(circle2.center.x, circle2.center.y, 'ro', label=f"Circle {circle2.index} Center")
-        #     plt.plot(circle1.center.x, circle1.center.y, 'bo', label=f"Circle {circle1.index} Center")
+        #     plt.plot(circle2.center.x, circle2.center.y, 'ro', label=f"Circle {circle2.index} Center. Circle 2")
+        #     plt.plot(circle1.center.x, circle1.center.y, 'bo', label=f"Circle {circle1.index} Center. Circle 1")
         #     plt.plot(circle3.center.x, circle3.center.y, 'go', label=f"Circle {circle3.index} Center")
         #     plt.plot(circle1.center.x + circle1.radius * np.cos(angle_array), circle1.center.y + circle1.radius * np.sin(angle_array), 'b--', label=f"Circle {circle1.index} Boundary")
         #     plt.plot(circle3.center.x + circle3.radius * np.cos(angle_array), circle3.center.y + circle3.radius * np.sin(angle_array), 'g--', label=f"Circle {circle3.index} Boundary")
         #     plt.plot(circle2.center.x + circle2.radius * np.cos(angle_array), circle2.center.y + circle2.radius * np.sin(angle_array), 'r--', label=f"Circle {circle2.index} Boundary")
         #     plt.plot([x1, x2], [y1, y2], 'k--', label="Reference Tangent")
         #     plt.title(f"Tangent Block Detection: {index} to {index + 2}")
+        #     plt.legend()
         #     plt.axis('equal')
-        #     plt.show(block = True)
+            # plt.show(block = True)
 
         try:
             is_bad, signed_distance, n_right, side_clearance = circle_halfplane_clearance(
@@ -2882,315 +2952,7 @@ def get_other_intersection_point_if_present(corridor1, corridor2):
     return int_point, intersects
 
 
-def build_intermediate_circles_sequence(
-    corridor_list,
-    vehicle,
-    start_pose,
-    end_pose,
-):
-    """
-    Build an ordered sequence of IntermediateCircle objects for a sequence
-    of corridors.
-
-    :param corridor_list: Ordered list of corridors followed by the planner.
-    :type corridor_list: list[CorridorWorld]
-
-    :param vehicle: Vehicle object used to retrieve footprint and turning radius.
-    :type vehicle: Vehicle
-
-    :param start_pose: Initial pose of the vehicle.
-    :type start_pose: list[float] or numpy.ndarray
-
-    :param end_pose: Final pose of the vehicle.
-    :type end_pose: list[float] or numpy.ndarray
-
-    :return: Ordered sequence of available IntermediateCircle objects.
-    :rtype: IntermediateCirclesSequence
-    """
-
-    # ------------------------------------------------------------
-    # Basic input checks
-    # ------------------------------------------------------------
-    if corridor_list is None:
-        raise ValueError("corridor_list cannot be None")
-
-    if len(corridor_list) < 2:
-        raise ValueError(
-            "At least two corridors are required to build intermediate circles"
-        )
-
-    # ------------------------------------------------------------
-    # 1. Corridor sequence feasibility check
-    # ------------------------------------------------------------
-    validate_corridor_sequence(
-        corridor_list=corridor_list,
-        vehicle=vehicle,
-        min_centerline_distance=2.0 * vehicle.max_radius,
-        plot_invalid=True,
-    )
-
-    # ------------------------------------------------------------
-    # 2. Build turn direction sequence based on corridor tilts
-    # ------------------------------------------------------------
-    number_of_turns = len(corridor_list) - 1
-    turn_direction_sequence = [0] * number_of_turns
-
-    for i in range(number_of_turns):
-        turn_direction_sequence[i] = corridor_list[i].compute_relative_turn_direction(
-            corridor_list[i + 1]
-        )
-
-    # ------------------------------------------------------------
-    # 3. Build intermediate circles for tau in {-1, +1}
-    # ------------------------------------------------------------
-    circle_slots = [None] * (number_of_turns)
-
-    for i, tau in enumerate(turn_direction_sequence):
-        if tau not in (-1, 1):
-            continue
-
-        corridor1 = corridor_list[i]
-        corridor2 = corridor_list[i + 1]
-
-        corner_point, intersecting_edges = get_corner_point_and_intersecting_edges(
-            corridor1,
-            corridor2,
-            tau,
-        )
-
-        # figure = plot_corridors(corridor_list, plot_vectors=True)
-
-        # plot_corridors([corridor1, corridor2], plot_vectors=False, figure=figure, color = "red")
-        # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
-        # plt.legend()
-        # plt.show(block = True)
-
-        # --------------------------------------------------------
-        # Optional additional intersection point
-        # --------------------------------------------------------
-        other_intersection_point = None
-
-        if (
-            (intersecting_edges[0] == 1 and intersecting_edges[1] == 1)
-            or
-            (intersecting_edges[0] == 3 and intersecting_edges[1] == 3)
-        ):
-            candidate_intersection_point, intersection_exists = (
-                get_other_intersection_point_if_present(corridor1, corridor2)
-            )
-
-            if intersection_exists:
-                # Make sure we pass a Point object to compute_intermediate_circle_geometry.
-                if isinstance(candidate_intersection_point, Point):
-                    other_intersection_point = candidate_intersection_point
-                else:
-                    other_intersection_point = Point(*candidate_intersection_point)
-
-        else:
-            raise ValueError(
-                f"Unexpected intersecting edges for corridors {i}, {i+1} with turn direction {tau} determined from the corridors' tilts: "
-                f"{intersecting_edges}"
-            )
-
-        geometry_result = compute_intermediate_circle_geometry(
-            corridor1=corridor1,
-            corridor2=corridor2,
-            corner_point=Point(*corner_point),
-            turn_direction=tau,
-            vehicle=vehicle,
-            other_intersection_point=other_intersection_point,
-        )
-
-        if not geometry_result["feasible"]:
-            raise ValueError(
-                f"Unfeasible intermediate circle geometry for corridors "
-                f"{i} and {i+1}: {geometry_result}"
-            )
-
-        circle = build_intermediate_circle_from_geometry_result(
-            geometry_result=geometry_result,
-            index=i,
-            edge_pair=intersecting_edges,
-            merged=False,
-        )
-        circle.corridor_index_start = i
-        circle.corridor_index_end = i + 1
-        circle_slots[i] = circle
-
-    # ------------------------------------------------------------
-    # 4. Assign preferred turn directions to ambiguous turns tau = 0
-    # ------------------------------------------------------------
-    turn_direction_sequence = assign_preferred_turn_directions_to_ambiguous_turns(
-        corridor_list=corridor_list,
-        turn_direction_sequence=turn_direction_sequence,
-        circle_slots=circle_slots,
-        start_pose=start_pose,
-        end_pose=end_pose,
-    )
-
-    # ------------------------------------------------------------
-    # 5. Build all the remaining circles
-    # ------------------------------------------------------------
-    for i, circle in enumerate(circle_slots):
-        if circle is not None:
-            continue
-
-        tau = turn_direction_sequence[i]
-
-        if tau not in (-1, 1):
-            raise ValueError(
-                f"Turn direction at index {i} was not resolved: tau={tau}"
-            )
-
-        corridor1 = corridor_list[i]
-        corridor2 = corridor_list[i + 1]
-
-        _, intersecting_edges_nominal = get_corner_point_and_intersecting_edges(
-            corridor1,
-            corridor2,
-            tau,
-        )
-
-        edge1, edge2 = intersecting_edges_nominal
-    
-        # figure = plot_corridors(corridor_list, plot_vectors=True)
-        # plot_corridors([corridor1, corridor2], plot_vectors=False, figure=figure, color = "red")
-        # plt.plot(corner_point[0], corner_point[1], "ko", label="corner point")
-        # plt.legend()
-        # plt.show(block = True)
-
-        # Rotate one of the two corridors to obtain a consistent orientation for the intersection edges.
-        if edge1 == 0: 
-            corridor2_rotated = corridor2 
-            if edge2 == 1: 
-                corridor1_rotated = corridor1.invert_dimensions(1)
-            elif edge2 == 3: 
-                corridor1_rotated = corridor1.invert_dimensions(-1)
-            else:
-                raise ValueError(
-                    f"Unexpected intersecting edges for corridors {i}, {i+1}: "
-                    f"{intersecting_edges_nominal}"
-                )
-            
-        elif edge2 == 2: 
-            corridor1_rotated = corridor1
-            if edge1 == 1: 
-                corridor2_rotated = corridor2.invert_dimensions(-1)
-            elif edge1 == 3: 
-                corridor2_rotated = corridor2.invert_dimensions(1)
-            else:
-                raise ValueError(
-                    f"Unexpected intersecting edges for corridors {i}, {i+1}: "
-                    f"{intersecting_edges_nominal}"
-                )
-
-        corner_point, intersecting_edges = get_corner_point_and_intersecting_edges(
-            corridor1_rotated,
-            corridor2_rotated,
-            tau,
-        )
-
-        # plot_corridors(corridor_list, plot_vectors=True)
-        # plot_corridors([corridor1_rotated, corridor2_rotated], color = "red", plot_vectors=True)
-        # plt.plot(corner_point_rotated[0], corner_point_rotated[1], "ko", label="corner point")
-        # plt.legend()
-        # plt.show(block = True)
-
-        # --------------------------------------------------------
-        # Additional intersection point
-        # --------------------------------------------------------
-        other_intersection_point = None
-
-        if (
-            (intersecting_edges[0] == 1 and intersecting_edges[1] == 1)
-            or
-            (intersecting_edges[0] == 3 and intersecting_edges[1] == 3)
-        ):
-            candidate_point, intersection_exists = (
-                get_other_intersection_point_if_present(corridor1_rotated, corridor2_rotated)
-            )
-
-            if intersection_exists:
-                # Make sure we pass a Point object to compute_intermediate_circle_geometry.
-                if isinstance(candidate_point, Point):
-                    other_intersection_point = candidate_point
-                else:
-                    other_intersection_point = Point(*candidate_point)
-
-        else:
-            raise ValueError(
-                f"Unexpected intersecting edges for corridors {i}, {i+1}: "
-                f"{intersecting_edges}"
-            )
-
-        geometry_result = compute_intermediate_circle_geometry(
-            corridor1=corridor1_rotated,
-            corridor2=corridor2_rotated,
-            corner_point=Point(*corner_point),
-            turn_direction=tau,
-            vehicle=vehicle,
-            other_intersection_point=other_intersection_point,
-        )
-
-        if not geometry_result["feasible"]:
-            raise ValueError(
-                f"Unfeasible intermediate circle geometry for corridors "
-                f"{i} and {i+1}: {geometry_result}"
-            )
-
-        circle = build_intermediate_circle_from_geometry_result(
-            geometry_result=geometry_result,
-            index=i,
-            edge_pair=intersecting_edges_nominal,
-            merged=False
-        )
-        circle.corridor_index_start = i
-        circle.corridor_index_end = i + 1
-        circle_slots[i] = circle
-
-    # ------------------------------------------------------------
-    # Convert available slots into IntermediateCirclesSequence
-    # ------------------------------------------------------------
-    intermediate_circles_sequence = IntermediateCirclesSequence()
-
-    for circle in circle_slots:
-        if circle is None:
-            continue
-
-        intermediate_circles_sequence.append(circle)
-
-    #-------------------------------------------------------------
-    # Plot for debugging
-    #-------------------------------------------------------------
-    # figure = plot_corridors(corridor_list, plot_vectors=True)
-    # ax = plt.gca()
-    # plot_intermediate_circles_sequence_debug(
-    #     ax=ax,
-    #     intermediate_circles_sequence=intermediate_circles_sequence,
-    #     footprint_radius=vehicle.width / 2.0,
-    #     plot_swept_circle=False,
-    #     plot_shifted_circle=False,
-    #     plot_corner_small_circles=True,
-    # )
-    # plt.show(block=True)
-
-    # ------------------------------------------------------------
-    # 6. Merge or shift overlapping circles
-    # ------------------------------------------------------------
-    overlap_blocks = detect_same_turn_nominal_overlap_blocks(
-        intermediate_circles_sequence,
-        vehicle,
-        max_block_size=3,
-    )
-
-    intermediate_circles_sequence = resolve_same_turn_nominal_overlap_blocks(
-        intermediate_circles_sequence=intermediate_circles_sequence,
-        corridor_list=corridor_list,
-        vehicle=vehicle,
-        overlap_blocks=overlap_blocks,
-    )
-
-    return intermediate_circles_sequence
+ 
 
 
 def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
@@ -3312,6 +3074,426 @@ def build_circle_from_two_corridors(corridor1, corridor2, tau, vehicle, i):
     circle.corridor_index_end = i + 1
 
     return circle
+
+
+def build_intermediate_circles_sequence(
+    corridor_list,
+    vehicle,
+    start_pose,
+    end_pose,
+):
+    """
+    Build an ordered sequence of IntermediateCircle objects for a
+    sequence of corridors.
+
+    Each ordinary intermediate circle stores the indices of the two
+    corridors from which it was constructed, together with the dimension
+    inversions used to obtain the effective orthogonal representation:
+
+        circle.corridor_index_start
+        circle.corridor_index_end
+        circle.corridor1_inversion
+        circle.corridor2_inversion
+
+    The inversion values belong to {-1, 0, +1}. A value of 0 means that
+    the original corridor parametrization was used.
+
+    Parameters
+    ----------
+    corridor_list:
+        Ordered list of corridors followed by the planner.
+
+    vehicle:
+        Vehicle object used to retrieve the footprint and turning radius.
+
+    start_pose:
+        Initial vehicle pose.
+
+    end_pose:
+        Final vehicle pose.
+
+    Returns
+    -------
+    IntermediateCirclesSequence
+        Ordered sequence of available intermediate circles.
+    """
+
+    # ------------------------------------------------------------
+    # Basic input checks
+    # ------------------------------------------------------------
+    if corridor_list is None:
+        raise ValueError(
+            "corridor_list cannot be None"
+        )
+
+    if len(corridor_list) < 2:
+        raise ValueError(
+            "At least two corridors are required to build "
+            "intermediate circles."
+        )
+
+    # ------------------------------------------------------------
+    # 1. Corridor sequence feasibility check
+    # ------------------------------------------------------------
+    validate_corridor_sequence(
+        corridor_list=corridor_list,
+        vehicle=vehicle,
+        min_centerline_distance=2.0 * vehicle.max_radius,
+        plot_invalid=True,
+    )
+
+    # ------------------------------------------------------------
+    # 2. Build turn-direction sequence from corridor tilts
+    # ------------------------------------------------------------
+    number_of_turns = len(corridor_list) - 1
+    turn_direction_sequence = [0] * number_of_turns
+
+    for i in range(number_of_turns):
+        turn_direction_sequence[i] = (
+            corridor_list[i].compute_relative_turn_direction(
+                corridor_list[i + 1]
+            )
+        )
+
+    # ------------------------------------------------------------
+    # 3. Build circles for unambiguous turns tau in {-1, +1}
+    # ------------------------------------------------------------
+    circle_slots = [None] * number_of_turns
+
+    for i, tau in enumerate(turn_direction_sequence):
+        if tau not in (-1, 1):
+            continue
+
+        corridor1 = corridor_list[i]
+        corridor2 = corridor_list[i + 1]
+
+        (
+            corner_point,
+            intersecting_edges,
+        ) = get_corner_point_and_intersecting_edges(
+            corridor1,
+            corridor2,
+            tau,
+        )
+
+        # --------------------------------------------------------
+        # Optional additional intersection point
+        # --------------------------------------------------------
+        other_intersection_point = None
+
+        if (
+            (
+                intersecting_edges[0] == 1
+                and intersecting_edges[1] == 1
+            )
+            or
+            (
+                intersecting_edges[0] == 3
+                and intersecting_edges[1] == 3
+            )
+        ):
+            (
+                candidate_intersection_point,
+                intersection_exists,
+            ) = get_other_intersection_point_if_present(
+                corridor1,
+                corridor2,
+            )
+
+            if intersection_exists:
+                if isinstance(
+                    candidate_intersection_point,
+                    Point,
+                ):
+                    other_intersection_point = (
+                        candidate_intersection_point
+                    )
+                else:
+                    other_intersection_point = Point(
+                        *candidate_intersection_point
+                    )
+
+        else:
+            raise ValueError(
+                f"Unexpected intersecting edges for corridors "
+                f"{i}, {i + 1} with turn direction {tau} "
+                f"determined from the corridor tilts: "
+                f"{intersecting_edges}."
+            )
+
+        geometry_result = compute_intermediate_circle_geometry(
+            corridor1=corridor1,
+            corridor2=corridor2,
+            corner_point=Point(*corner_point),
+            turn_direction=tau,
+            vehicle=vehicle,
+            other_intersection_point=other_intersection_point,
+        )
+
+        if not geometry_result["feasible"]:
+            raise ValueError(
+                f"Unfeasible intermediate-circle geometry for "
+                f"corridors {i} and {i + 1}: "
+                f"{geometry_result}"
+            )
+
+        circle = build_intermediate_circle_from_geometry_result(
+            geometry_result=geometry_result,
+            index=i,
+            edge_pair=intersecting_edges,
+            merged=False,
+        )
+
+        # Original corridor-sequence correspondence.
+        circle.corridor_index_start = i
+        circle.corridor_index_end = i + 1
+
+        # No equivalent reparametrization was required.
+        circle.corridor1_inversion = 0
+        circle.corridor2_inversion = 0
+
+        circle_slots[i] = circle
+
+    # ------------------------------------------------------------
+    # 4. Resolve ambiguous turns tau = 0
+    # ------------------------------------------------------------
+    turn_direction_sequence = (
+        assign_preferred_turn_directions_to_ambiguous_turns(
+            corridor_list=corridor_list,
+            turn_direction_sequence=turn_direction_sequence,
+            circle_slots=circle_slots,
+            start_pose=start_pose,
+            end_pose=end_pose,
+        )
+    )
+
+    # ------------------------------------------------------------
+    # 5. Build circles for the previously ambiguous transitions
+    # ------------------------------------------------------------
+    for i, circle in enumerate(circle_slots):
+        if circle is not None:
+            continue
+
+        tau = turn_direction_sequence[i]
+
+        if tau not in (-1, 1):
+            raise ValueError(
+                f"Turn direction at index {i} was not resolved: "
+                f"tau={tau}."
+            )
+
+        corridor1 = corridor_list[i]
+        corridor2 = corridor_list[i + 1]
+
+        (
+            _,
+            intersecting_edges_nominal,
+        ) = get_corner_point_and_intersecting_edges(
+            corridor1,
+            corridor2,
+            tau,
+        )
+
+        edge1, edge2 = intersecting_edges_nominal
+
+        # Record the equivalent corridor parametrization used to build
+        # this circle.
+        corridor1_inversion = 0
+        corridor2_inversion = 0
+
+        # --------------------------------------------------------
+        # Obtain an equivalent orthogonal corridor representation
+        # --------------------------------------------------------
+        if edge1 == 0:
+            corridor2_rotated = corridor2
+
+            if edge2 == 1:
+                corridor1_inversion = 1
+                corridor1_rotated = corridor1.invert_dimensions(
+                    corridor1_inversion
+                )
+
+            elif edge2 == 3:
+                corridor1_inversion = -1
+                corridor1_rotated = corridor1.invert_dimensions(
+                    corridor1_inversion
+                )
+
+            else:
+                raise ValueError(
+                    f"Unexpected intersecting edges for corridors "
+                    f"{i}, {i + 1}: "
+                    f"{intersecting_edges_nominal}."
+                )
+
+        elif edge2 == 2:
+            corridor1_rotated = corridor1
+
+            if edge1 == 1:
+                corridor2_inversion = -1
+                corridor2_rotated = corridor2.invert_dimensions(
+                    corridor2_inversion
+                )
+
+            elif edge1 == 3:
+                corridor2_inversion = 1
+                corridor2_rotated = corridor2.invert_dimensions(
+                    corridor2_inversion
+                )
+
+            else:
+                raise ValueError(
+                    f"Unexpected intersecting edges for corridors "
+                    f"{i}, {i + 1}: "
+                    f"{intersecting_edges_nominal}."
+                )
+
+        else:
+            raise ValueError(
+                f"Unable to obtain an equivalent orthogonal "
+                f"representation for corridors {i}, {i + 1}. "
+                f"Nominal intersecting edges: "
+                f"{intersecting_edges_nominal}."
+            )
+
+        (
+            corner_point,
+            intersecting_edges,
+        ) = get_corner_point_and_intersecting_edges(
+            corridor1_rotated,
+            corridor2_rotated,
+            tau,
+        )
+
+        # --------------------------------------------------------
+        # Optional additional intersection point
+        # --------------------------------------------------------
+        other_intersection_point = None
+
+        if (
+            (
+                intersecting_edges[0] == 1
+                and intersecting_edges[1] == 1
+            )
+            or
+            (
+                intersecting_edges[0] == 3
+                and intersecting_edges[1] == 3
+            )
+        ):
+            (
+                candidate_point,
+                intersection_exists,
+            ) = get_other_intersection_point_if_present(
+                corridor1_rotated,
+                corridor2_rotated,
+            )
+
+            if intersection_exists:
+                if isinstance(candidate_point, Point):
+                    other_intersection_point = candidate_point
+                else:
+                    other_intersection_point = Point(
+                        *candidate_point
+                    )
+
+        else:
+            raise ValueError(
+                f"Unexpected intersecting edges after corridor "
+                f"reparametrization for corridors {i}, {i + 1}: "
+                f"{intersecting_edges}."
+            )
+
+        geometry_result = compute_intermediate_circle_geometry(
+            corridor1=corridor1_rotated,
+            corridor2=corridor2_rotated,
+            corner_point=Point(*corner_point),
+            turn_direction=tau,
+            vehicle=vehicle,
+            other_intersection_point=other_intersection_point,
+        )
+
+        if not geometry_result["feasible"]:
+            raise ValueError(
+                f"Unfeasible intermediate-circle geometry for "
+                f"corridors {i} and {i + 1}: "
+                f"{geometry_result}"
+            )
+
+        circle = build_intermediate_circle_from_geometry_result(
+            geometry_result=geometry_result,
+            index=i,
+            edge_pair=intersecting_edges_nominal,
+            merged=False,
+        )
+
+        # Original corridor-sequence correspondence.
+        circle.corridor_index_start = i
+        circle.corridor_index_end = i + 1
+
+        # Equivalent parametrization used during circle construction.
+        circle.corridor1_inversion = corridor1_inversion
+        circle.corridor2_inversion = corridor2_inversion
+
+        circle_slots[i] = circle
+
+    # ------------------------------------------------------------
+    # Convert the available slots into an ordered sequence
+    # ------------------------------------------------------------
+    intermediate_circles_sequence = (
+        IntermediateCirclesSequence()
+    )
+
+    for circle in circle_slots:
+        if circle is None:
+            continue
+
+        intermediate_circles_sequence.append(circle)
+
+    # ------------------------------------------------------------
+    # Optional debugging plot
+    # ------------------------------------------------------------
+    # figure = plot_corridors(
+    #     corridor_list,
+    #     plot_vectors=True,
+    # )
+    #
+    # ax = plt.gca()
+    #
+    # plot_intermediate_circles_sequence_debug(
+    #     ax=ax,
+    #     intermediate_circles_sequence=(
+    #         intermediate_circles_sequence
+    #     ),
+    #     footprint_radius=vehicle.width / 2.0,
+    #     plot_swept_circle=False,
+    #     plot_shifted_circle=False,
+    #     plot_corner_small_circles=True,
+    # )
+    #
+    # plt.show(block=True)
+
+    # ------------------------------------------------------------
+    # 6. Merge or shift overlapping circles
+    # ------------------------------------------------------------
+    overlap_blocks = detect_same_turn_nominal_overlap_blocks(
+        intermediate_circles_sequence,
+        vehicle,
+        max_block_size=3,
+    )
+
+    intermediate_circles_sequence = (
+        resolve_same_turn_nominal_overlap_blocks(
+            intermediate_circles_sequence=(
+                intermediate_circles_sequence
+            ),
+            corridor_list=corridor_list,
+            vehicle=vehicle,
+            overlap_blocks=overlap_blocks,
+        )
+    )
+
+    return intermediate_circles_sequence
 
 
 

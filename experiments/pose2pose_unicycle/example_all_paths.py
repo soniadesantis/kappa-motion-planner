@@ -25,6 +25,9 @@ from kappa_planner.helpers.ocp_pose_to_pose_unicycle import (
 # =============================================================================
 
 THETA0_DEG = 288.0
+=======
+THETA0_DEG = 252.0
+>>>>>>> 31dca341b94384b1b0f5e17fd9c79931f64aa35d
 THETAF_DEG = 252.0
 
 TRANSCRIPTION_RESOLUTION = 100

@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from math import cos, sin, pi
 
 from .plot_helpers import plot_corridors
+from .poses import absolute_to_relative_pose
 
 
 def compute_distance_between_parallel_centerlines(corridor1, corridor2, tol=1e-9):
@@ -470,3 +471,139 @@ def validate_corridor_sequence(
             )
 
     return True
+
+
+def check_bicycle_boundary_pose_separation(
+    start_pose,
+    end_pose,
+    effective_first_corridor,
+    effective_last_corridor,
+    first_circle,
+    last_circle,
+    tol=1e-6,
+):
+    """
+    Check whether the start and end positions have sufficient longitudinal
+    separation from the first and last intermediate circles.
+
+    The supplied corridors must be the effective corridor representations
+    associated with the relevant boundary source circles. They may therefore
+    be inverted versions of the original corridors.
+
+    The local positive longitudinal direction is assumed to point from the
+    initial boundary toward the corridor sequence. Consequently:
+
+        start_rel_y <= first_circle_rel_y - first_circle.radius
+
+    At the final boundary, the same sequence-oriented convention gives:
+
+        end_rel_y >= last_circle_rel_y + last_circle.radius
+
+    Returns
+    -------
+    tuple[bool, bool, float, float]
+        (
+            start_is_sufficiently_inside,
+            end_is_sufficiently_inside,
+            start_missing_distance,
+            end_missing_distance,
+        )
+    """
+    if tol < 0.0:
+        raise ValueError(
+            f"tol must be nonnegative, received {tol}."
+        )
+
+    if first_circle.radius <= 0.0:
+        raise ValueError(
+            "first_circle.radius must be positive."
+        )
+
+    if last_circle.radius <= 0.0:
+        raise ValueError(
+            "last_circle.radius must be positive."
+        )
+
+    # ---------------------------------------------------------------
+    # Initial boundary
+    # ---------------------------------------------------------------
+    _, start_rel_y, _ = absolute_to_relative_pose(
+        effective_first_corridor,
+        start_pose,
+    )
+
+    _, first_circle_rel_y, _ = absolute_to_relative_pose(
+        effective_first_corridor,
+        [
+            first_circle.xc,
+            first_circle.yc,
+            0.0,
+        ],
+    )
+
+    # The start position must lie at least one radius behind the first
+    # intermediate-circle center.
+    start_required_upper_bound = (
+        first_circle_rel_y
+        - first_circle.radius
+    )
+
+    start_longitudinal_margin = (
+        start_required_upper_bound
+        - start_rel_y
+    )
+
+    start_is_sufficiently_inside = (
+        start_longitudinal_margin >= -tol
+    )
+
+    start_missing_distance = max(
+        0.0,
+        -start_longitudinal_margin,
+    )
+
+    # ---------------------------------------------------------------
+    # Final boundary
+    # ---------------------------------------------------------------
+    _, end_rel_y, _ = absolute_to_relative_pose(
+        effective_last_corridor,
+        end_pose,
+    )
+
+    _, last_circle_rel_y, _ = absolute_to_relative_pose(
+        effective_last_corridor,
+        [
+            last_circle.xc,
+            last_circle.yc,
+            0.0,
+        ],
+    )
+
+    # The end position must lie at least one radius beyond the last
+    # intermediate-circle center.
+    end_required_lower_bound = (
+        last_circle_rel_y
+        + last_circle.radius
+    )
+
+    end_longitudinal_margin = (
+        end_rel_y
+        - end_required_lower_bound
+    )
+
+    end_is_sufficiently_inside = (
+        end_longitudinal_margin >= -tol
+    )
+
+    end_missing_distance = max(
+        0.0,
+        -end_longitudinal_margin,
+    )
+
+    return (
+        start_is_sufficiently_inside,
+        end_is_sufficiently_inside,
+        start_missing_distance,
+        end_missing_distance,
+    )
+    

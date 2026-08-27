@@ -1,15 +1,19 @@
 import sympy as sp
 from math import sin, cos, pi, sqrt, asin, atan2
 import numpy as np
-from arena import compute_traj_to_circle_free_space_bicycle, Point, Pose, Circle, IntermediateCircle, Bicycle, plot_analytical_trajectory, BackwardArc, CurvilinearArcUnicycle
+
 from math import sin, cos, pi, sqrt, asin, atan2
 # import matplotlib.pylab as plt
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-from arena.helpers.helper_functions import compute_angular_difference_with_turn_direction, wrapPositiveAngle
-
+from kappa_planner.helpers.geometry_operations import compute_angular_difference_with_turn_direction, wrapPositiveAngle
+from kappa_planner.helpers.pose_to_circle_bicycle import compute_traj_to_circle_free_space_bicycle
+from kappa_planner.helpers.plot_helpers import plot_corridors, plot_analytical_trajectory
+from kappa_planner.geometry import Circle, IntermediateCircle, Point, Pose
+from kappa_planner.trajectory import BackwardArc, CurvilinearArcUnicycle
+from kappa_planner.vehicle import Bicycle
 # mpl.rcParams['text.usetex'] = True  # Enable LaTeX
 # mpl.rcParams['font.family'] = 'serif'
 # mpl.rcParams['font.serif'] = ['Computer Modern Roman']  # Default LaTeX serif font
@@ -87,6 +91,11 @@ for angle in angle_array:
 # plt.plot(xc_ref + R * np.cos(angle_array), yc_ref + R * np.sin(angle_array), 'r--', label='Reflected Circle')
 plot_analytical_trajectory(intersection_trajectory_ll, figure=figure1)
 plot_analytical_trajectory(intersection_trajectory_rl, figure=figure1)
+
+angle_array = np.linspace(0, 2*pi, 100)
+plt.plot(x0 + 2*R *np.cos(angle_array), y0 + 2*R * np.sin(angle_array), 'r-', label='Max circle')
+rho = 2 * R * sin(pi/4)
+plt.plot(x0 + rho * np.cos(angle_array), y0 + rho * np.sin(angle_array), 'g-', label='Min circle')
 ax1.arrow(x=x0, y=y0, dx=0.3 * cos(intersection_angle), dy=0.3 * sin(intersection_angle), head_width=0.1, head_length=0.2, fc='blue', ec='blue')
 ax1.arrow(x=x0, y=y0, dx=0.3 * cos(intersection_angle), dy=0.3 * sin(intersection_angle), head_width=0.1, head_length=0.2, fc='orange', ec='orange')
 plt.legend()

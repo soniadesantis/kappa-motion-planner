@@ -654,3 +654,88 @@ def compute_line_corridor_intersections(corner_point, angle, corridor, tol=1e-9)
             intersections.append(point)
 
     return intersections
+
+
+from math import sqrt
+
+
+def intersect_circle_line(circle, line_start, line_end, segment=False, tol=1e-9):
+    """
+    Compute the intersection between a circle and a 2D line.
+
+    The line is defined by two points. Set ``segment=True`` to only return
+    intersections lying between line_start and line_end.
+
+    :param circle: Circle object with ``center.x``, ``center.y`` and ``radius``
+    :param line_start: first point defining the line
+    :param line_end: second point defining the line
+    :param segment: whether the line should be treated as a finite segment
+    :param tol: numerical tolerance
+
+    :return: tuple ``(intersects, points)``, where points contains 0, 1 or 2
+             intersection points
+    :rtype: tuple[bool, list]
+    """
+
+    # Support both Point objects and sequences such as [x, y].
+    def coordinates(point):
+        if hasattr(point, "x") and hasattr(point, "y"):
+            return float(point.x), float(point.y)
+        return float(point[0]), float(point[1])
+
+    x1, y1 = coordinates(line_start)
+    x2, y2 = coordinates(line_end)
+
+    cx = float(circle.xc)
+    cy = float(circle.yc)
+    radius = float(circle.radius)
+
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Squared length of the line direction vector.
+    a = dx * dx + dy * dy
+
+    if a <= tol * tol:
+        raise ValueError("line_start and line_end must be distinct points")
+
+    # Parametric line:
+    # p(t) = line_start + t * (line_end - line_start)
+    fx = x1 - cx
+    fy = y1 - cy
+
+    b = 2.0 * (fx * dx + fy * dy)
+    c = fx * fx + fy * fy - radius * radius
+
+    discriminant = b * b - 4.0 * a * c
+
+    if discriminant < -tol:
+        return False, []
+
+    # Tangency: one intersection.
+    if abs(discriminant) <= tol:
+        t_values = [-b / (2.0 * a)]
+    else:
+        sqrt_discriminant = sqrt(discriminant)
+        t_values = [
+            (-b - sqrt_discriminant) / (2.0 * a),
+            (-b + sqrt_discriminant) / (2.0 * a),
+        ]
+
+    points = []
+
+    for t in t_values:
+        # For a finite segment, t must lie in [0, 1].
+        if segment and not (-tol <= t <= 1.0 + tol):
+            continue
+
+        # Clamp values slightly outside the interval due to floating-point error.
+        if segment:
+            t = min(1.0, max(0.0, t))
+
+        x = x1 + t * dx
+        y = y1 + t * dy
+
+        points.append([x, y])
+
+    return bool(points), points

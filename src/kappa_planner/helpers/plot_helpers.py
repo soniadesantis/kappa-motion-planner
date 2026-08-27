@@ -206,11 +206,28 @@ def plot_planner_inputs(planner, figure=None, plot_intermediate_circles = False,
     plt.plot(x0 + r * np.cos(angle_array), y0 + r * np.sin(angle_array), 'r-', linewidth=0.5)
     plt.plot(xf + r * np.cos(angle_array), yf + r * np.sin(angle_array), 'r-', linewidth=0.5)
     if plot_intermediate_circles:
-        R = planner.vehicle.max_radius
-        centers = planner.intermediate_circle_centers
-        for center in centers:
-            plt.plot(center[0], center[1], 'ko', markersize = 0.7)
-            plt.plot(center[0] + R * np.cos(angle_array), center[1] + R * np.sin(angle_array), 'r--', linewidth=0.5)
+        angle_array = np.linspace(
+            0.0,
+            2.0 * np.pi,
+            100,
+        )
+
+        for circle in planner.intermediate_circles_sequence:
+            plt.plot(
+                circle.xc,
+                circle.yc,
+                "ko",
+                markersize=2.0,
+            )
+
+            plt.plot(
+                circle.xc
+                + circle.radius * np.cos(angle_array),
+                circle.yc
+                + circle.radius * np.sin(angle_array),
+                "r--",
+                linewidth=0.5,
+            )
 
     return figure
 
@@ -250,8 +267,8 @@ def plot_turn_on_spot_sector(
     primitive,
     ax,
     radius=0.45,
-    color="orange",
-    alpha=0.25,
+    color="b",
+    alpha=0.1,
     zorder=9,
 ):
     """
@@ -288,12 +305,15 @@ def plot_primitive_arrows_and_markers(
     ax,
     arrow_length=0.35,
     marker_size=35,
-    start_color="black",
-    end_color="black",
+    start_color="g",
+    end_color="r",
+    intermediate_color="k",
     zorder=10,
     plot_turn_sectors=True,
 ):
-    for primitive in trajectory:
+    number_of_primitives = len(trajectory)
+
+    for index, primitive in enumerate(trajectory):
 
         if primitive.label == "turn on-the-spot" and plot_turn_sectors:
             plot_turn_on_spot_sector(
@@ -309,16 +329,44 @@ def plot_primitive_arrows_and_markers(
         theta0 = primitive.theta0
         thetaf = primitive.thetaf
 
-        for x, y, theta, color in [
-            (x0, y0, theta0, start_color),
-            (xf, yf, thetaf, end_color),
+        # Only the global initial pose is green.
+        if index == 0:
+            primitive_start_color = start_color
+            start_zorder = zorder + 10
+        else:
+            primitive_start_color = intermediate_color
+            start_zorder = zorder
+
+        # Only the global final pose is red.
+        if index == number_of_primitives - 1:
+            primitive_end_color = end_color
+            end_zorder = zorder + 10
+        else:
+            primitive_end_color = intermediate_color
+            end_zorder = zorder
+
+        for x, y, theta, color, pose_zorder in [
+            (
+                x0,
+                y0,
+                theta0,
+                primitive_start_color,
+                start_zorder,
+            ),
+            (
+                xf,
+                yf,
+                thetaf,
+                primitive_end_color,
+                end_zorder,
+            ),
         ]:
             ax.scatter(
                 x,
                 y,
                 s=marker_size,
                 color=color,
-                zorder=zorder,
+                zorder=pose_zorder,
             )
 
             ax.arrow(
@@ -331,7 +379,7 @@ def plot_primitive_arrows_and_markers(
                 fc=color,
                 ec=color,
                 length_includes_head=True,
-                zorder=zorder + 1,
+                zorder=pose_zorder + 1,
             )
 
 
@@ -368,7 +416,7 @@ def plot_analytical_trajectory(
                 isinstance(trajectory_piece, CurvilinearArcUnicycle)
                 or isinstance(trajectory_piece, BackwardArc)
             ):
-                trajectory_piece.plot_circle(ax)
+                trajectory_piece.plot_circle(ax, color = 'k')
 
     if plot_primitive_arrows:
         plot_primitive_arrows_and_markers(
@@ -490,85 +538,251 @@ def plot_velocity_profiles_comparison(
     analytical_trajectory,
     ocp_result,
     vehicle=None,
-    analytical_label="Best analytical",
+    analytical_label="Analytical",
     ocp_label="OCP",
+    analytical_color="tab:blue",
+    analytical_linestyle="-",
+    analytical_linewidth=2.4,
+    ocp_color="black",
+    ocp_linestyle="--",
+    ocp_linewidth=2.2,
+    bounds_color="tab:red",
+    bounds_linestyle=":",
+    bounds_linewidth=1.0,
+    bounds_alpha=0.8,
+    grid_color="0.75",
+    grid_linestyle=":",
+    grid_linewidth=0.7,
+    grid_alpha=0.7,
+    figure_size=(8.0, 5.6),
+    show_legend=True,
 ):
-    time_analytical, v_analytical, omega_analytical = get_analytical_control_profiles(
+    """
+    Compare analytical and OCP control profiles.
+
+    Parameters
+    ----------
+    analytical_trajectory
+        Analytical trajectory represented as motion primitives.
+
+    ocp_result
+        Dictionary containing the numerical OCP control trajectories.
+
+    vehicle
+        Optional vehicle object. When supplied, the admissible control bounds
+        are shown as horizontal reference lines.
+
+    analytical_label, ocp_label
+        Legend labels.
+
+    analytical_color, analytical_linestyle, analytical_linewidth
+        Style of the analytical control profiles.
+
+    ocp_color, ocp_linestyle, ocp_linewidth
+        Style of the OCP control profiles.
+
+    bounds_color, bounds_linestyle, bounds_linewidth, bounds_alpha
+        Style of the admissible-control bounds.
+
+    grid_color, grid_linestyle, grid_linewidth, grid_alpha
+        Grid appearance.
+
+    figure_size
+        Matplotlib figure size.
+
+    show_legend
+        If True, show a common legend in the upper panel.
+    """
+
+    (
+        time_analytical,
+        v_analytical,
+        omega_analytical,
+    ) = get_analytical_control_profiles(
         analytical_trajectory
     )
 
-    time_ocp = ocp_result["ts_ctrl"]
-    v_ocp = ocp_result["vs"]
-    omega_ocp = ocp_result["omegas"]
+    time_ocp = np.asarray(
+        ocp_result["ts_ctrl"],
+        dtype=float,
+    )
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=False)
+    v_ocp = np.asarray(
+        ocp_result["vs"],
+        dtype=float,
+    )
 
-    ax1.set_ylabel("Forward velocity v(t) [m/s]")
-    ax1.grid(True)
+    omega_ocp = np.asarray(
+        ocp_result["omegas"],
+        dtype=float,
+    )
 
-    if vehicle is not None:
-        ax1.axhline(vehicle.v_max, color="gray", linestyle="--", linewidth=1)
-        ax1.axhline(vehicle.v_min, color="gray", linestyle="--", linewidth=1)
+    figure, axes = plt.subplots(
+        2,
+        1,
+        figsize=figure_size,
+        sharex=True,
+    )
 
-    ax1.step(
+    velocity_axis, angular_axis = axes
+
+    # ------------------------------------------------------------------
+    # Forward velocity
+    # ------------------------------------------------------------------
+
+    velocity_axis.step(
         time_analytical,
         v_analytical,
         where="post",
-        linewidth=2,
+        color=analytical_color,
+        linestyle=analytical_linestyle,
+        linewidth=analytical_linewidth,
         label=analytical_label,
+        zorder=4,
     )
 
-    ax1.step(
+    velocity_axis.step(
         time_ocp,
         v_ocp,
         where="post",
-        linewidth=2,
-        linestyle="--",
+        color=ocp_color,
+        linestyle=ocp_linestyle,
+        linewidth=ocp_linewidth,
         label=ocp_label,
+        zorder=5,
     )
 
-    ax1.legend()
-
-    ax2.set_ylabel("Angular velocity ω(t) [rad/s]")
-    ax2.set_xlabel("Time [s]")
-    ax2.grid(True)
-
     if vehicle is not None:
-        ax2.axhline(vehicle.omega_max, color="gray", linestyle="--", linewidth=1)
-        ax2.axhline(vehicle.omega_min, color="gray", linestyle="--", linewidth=1)
-        ax2.axhline(0.0, color="gray", linestyle=":", linewidth=1)
+        velocity_axis.axhline(
+            vehicle.v_max,
+            color=bounds_color,
+            linestyle=bounds_linestyle,
+            linewidth=bounds_linewidth,
+            alpha=bounds_alpha,
+            zorder=1,
+        )
 
-    ax2.step(
+        velocity_axis.axhline(
+            vehicle.v_min,
+            color=bounds_color,
+            linestyle=bounds_linestyle,
+            linewidth=bounds_linewidth,
+            alpha=bounds_alpha,
+            zorder=1,
+        )
+
+    velocity_axis.set_ylabel(
+        r"$v(t)$ [m/s]"
+    )
+
+    velocity_axis.grid(
+        True,
+        color=grid_color,
+        linestyle=grid_linestyle,
+        linewidth=grid_linewidth,
+        alpha=grid_alpha,
+        zorder=0,
+    )
+
+    # ------------------------------------------------------------------
+    # Angular velocity
+    # ------------------------------------------------------------------
+
+    angular_axis.step(
         time_analytical,
         omega_analytical,
         where="post",
-        linewidth=2,
+        color=analytical_color,
+        linestyle=analytical_linestyle,
+        linewidth=analytical_linewidth,
         label=analytical_label,
+        zorder=4,
     )
 
-    ax2.step(
+    angular_axis.step(
         time_ocp,
         omega_ocp,
         where="post",
-        linewidth=2,
-        linestyle="--",
+        color=ocp_color,
+        linestyle=ocp_linestyle,
+        linewidth=ocp_linewidth,
         label=ocp_label,
+        zorder=5,
     )
 
-    ax2.legend()
+    if vehicle is not None:
+        angular_axis.axhline(
+            vehicle.omega_max,
+            color=bounds_color,
+            linestyle=bounds_linestyle,
+            linewidth=bounds_linewidth,
+            alpha=bounds_alpha,
+            zorder=1,
+        )
 
-    analytical_time = time_analytical[-1]
-    ocp_time = ocp_result["time"]
+        angular_axis.axhline(
+            vehicle.omega_min,
+            color=bounds_color,
+            linestyle=bounds_linestyle,
+            linewidth=bounds_linewidth,
+            alpha=bounds_alpha,
+            zorder=1,
+        )
 
-    fig.suptitle(
-        f"Control comparison\n"
-        f"{analytical_label}: {analytical_time:.3f} s | "
-        f"{ocp_label}: {ocp_time:.3f} s"
+        angular_axis.axhline(
+            0.0,
+            color="0.45",
+            linestyle=":",
+            linewidth=0.9,
+            alpha=0.8,
+            zorder=1,
+        )
+
+    angular_axis.set_ylabel(
+        r"$\omega(t)$ [rad/s]"
     )
 
-    plt.tight_layout()
+    angular_axis.set_xlabel(
+        r"$t$ [s]"
+    )
 
-    return fig
+    angular_axis.grid(
+        True,
+        color=grid_color,
+        linestyle=grid_linestyle,
+        linewidth=grid_linewidth,
+        alpha=grid_alpha,
+        zorder=0,
+    )
+
+    # ------------------------------------------------------------------
+    # Common formatting
+    # ------------------------------------------------------------------
+
+    final_time = max(
+        float(time_analytical[-1]),
+        float(ocp_result["time"]),
+    )
+
+    for axis in axes:
+        axis.set_xlim(
+            0.0,
+            final_time,
+        )
+
+        axis.tick_params(
+            direction="out"
+        )
+
+    if show_legend:
+        velocity_axis.legend(
+            loc="best",
+            frameon=True,
+        )
+
+    figure.tight_layout()
+
+    return figure
 
 
 def plot_circular_footprint(
