@@ -1397,7 +1397,8 @@ if __name__ == "__main__":
     # Sweep 4
     # RESULTS_FILENAME = "sweep4/sobol_sweep_N30_M4.json"
     # RESULTS_FILENAME = "sweep4/sobol_sweep_N100_M4.json"
-    RESULTS_FILENAME = "sweep4/sobol_sweep_N200_M4.json"
+    # RESULTS_FILENAME = "sweep4/sobol_sweep_N200_M4.json"
+    RESULTS_FILENAME = "sweep4/sobol_sweep_N300_M4.json"
 
 
     current_dir = Path(__file__).resolve().parent

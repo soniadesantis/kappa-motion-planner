@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Arc, Ellipse, FancyArrowPatch
+from matplotlib.patches import Arc, FancyArrowPatch
 from pathlib import Path
 
 
@@ -10,232 +10,397 @@ from pathlib import Path
 plt.rcParams.update({
     "font.family": "serif",
     "mathtext.fontset": "cm",
-    "font.size": 12,
+    "font.size": 16,
     "axes.linewidth": 0.8,
 })
 
 
 # ---------------------------------------------------------------------
+# Colours and common dimensions
+# ---------------------------------------------------------------------
+geometry_color = "0.45"
+wheel_fill_color = "0.94"
+
+X_LIMITS = (-1.72, 2.62)
+Y_LIMITS = (-1.35, 2.65)
+
+AXIS_ORIGIN = np.array([-1.55, -1.05])
+X_AXIS_END = AXIS_ORIGIN + np.array([3.85, 0.0])
+Y_AXIS_END = AXIS_ORIGIN + np.array([0.0, 3.30])
+
+
+# ---------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------
-def arrow(ax, start, end, **kwargs):
-    """Draw an arrow from start to end."""
-    arr = FancyArrowPatch(
+def arrow(
+    ax,
+    start,
+    end,
+    *,
+    arrowstyle="->",
+    linewidth=1.2,
+    mutation_scale=11,
+    color="black",
+    linestyle="-",
+    zorder=6,
+):
+    """Draw a straight arrow."""
+    patch = FancyArrowPatch(
         start,
         end,
-        arrowstyle="-|>",
-        mutation_scale=12,
-        linewidth=1.2,
+        arrowstyle=arrowstyle,
+        mutation_scale=mutation_scale,
+        linewidth=linewidth,
+        color=color,
+        linestyle=linestyle,
         shrinkA=0,
         shrinkB=0,
-        **kwargs,
+        zorder=zorder,
     )
-    ax.add_patch(arr)
-    return arr
+
+    ax.add_patch(patch)
+    return patch
 
 
-def angle_arc(ax, center, radius, theta1, theta2, label=None, label_radius=None):
-    """Draw an angle arc from theta1 to theta2, with angles in radians."""
-    arc = Arc(
+def angle_arc(
+    ax,
+    center,
+    radius,
+    theta1,
+    theta2,
+    *,
+    label=None,
+    label_radius=None,
+    label_offset=(0.0, 0.0),
+    color="black",
+    zorder=7,
+):
+    """Draw an angular arc and, optionally, its label."""
+    patch = Arc(
         center,
         2 * radius,
         2 * radius,
-        angle=0,
         theta1=np.degrees(theta1),
         theta2=np.degrees(theta2),
         linewidth=1.0,
+        color=color,
+        zorder=zorder,
     )
-    ax.add_patch(arc)
 
-    if label is not None:
-        if label_radius is None:
-            label_radius = 1.25 * radius
+    ax.add_patch(patch)
 
-        theta_mid = 0.5 * (theta1 + theta2)
-        label_position = np.array([
-            center[0] + label_radius * np.cos(theta_mid),
-            center[1] + label_radius * np.sin(theta_mid),
+    if label is None:
+        return
+
+    if label_radius is None:
+        label_radius = 1.20 * radius
+
+    theta_mid = 0.5 * (theta1 + theta2)
+
+    label_position = (
+        center
+        + label_radius
+        * np.array([
+            np.cos(theta_mid),
+            np.sin(theta_mid),
         ])
+        + np.asarray(label_offset)
+    )
 
-        ax.text(
-            label_position[0],
-            label_position[1],
-            label,
-            ha="center",
-            va="center",
-        )
+    ax.text(
+        label_position[0],
+        label_position[1],
+        label,
+        ha="center",
+        va="center",
+        color=color,
+        zorder=zorder + 1,
+    )
+
+
+def draw_coordinate_system(ax, p):
+    """Draw the world axes and the coordinate projections of p."""
+    arrow(
+        ax,
+        AXIS_ORIGIN,
+        X_AXIS_END,
+        arrowstyle="-|>",
+        linewidth=1.0,
+        mutation_scale=10,
+        zorder=9,
+    )
+
+    arrow(
+        ax,
+        AXIS_ORIGIN,
+        Y_AXIS_END,
+        arrowstyle="-|>",
+        linewidth=1.0,
+        mutation_scale=10,
+        zorder=9,
+    )
+
+    ax.text(
+        X_AXIS_END[0] + 0.07,
+        X_AXIS_END[1] - 0.02,
+        r"$x$",
+        ha="left",
+        va="top",
+        zorder=10,
+    )
+
+    ax.text(
+        Y_AXIS_END[0] - 0.04,
+        Y_AXIS_END[1] + 0.07,
+        r"$y$",
+        ha="right",
+        va="bottom",
+        zorder=10,
+    )
+
+    # Coordinate projections of p
+    ax.plot(
+        [p[0], p[0]],
+        [AXIS_ORIGIN[1], p[1]],
+        color="black",
+        linewidth=0.75,
+        linestyle="--",
+        zorder=2,
+    )
+
+    ax.plot(
+        [AXIS_ORIGIN[0], p[0]],
+        [p[1], p[1]],
+        color="black",
+        linewidth=0.75,
+        linestyle="--",
+        zorder=2,
+    )
+
+    ax.text(
+        p[0],
+        AXIS_ORIGIN[1] - 0.09,
+        r"$x$",
+        ha="center",
+        va="top",
+        zorder=10,
+    )
+
+    ax.text(
+        AXIS_ORIGIN[0] - 0.09,
+        p[1],
+        r"$y$",
+        ha="right",
+        va="center",
+        zorder=10,
+    )
 
 
 # ---------------------------------------------------------------------
 # Geometry
 # ---------------------------------------------------------------------
-theta = np.deg2rad(32)
+theta = np.deg2rad(35)
 
-# Contact point between wheel and plane
-contact = np.array([0.0, 0.0])
+# Reference point
+p = np.array([0.0, 0.0])
 
-# Unit vectors
-e_parallel = np.array([np.cos(theta), np.sin(theta)])
-e_lateral = np.array([-np.sin(theta), np.cos(theta)])
+# Longitudinal and perpendicular wheel directions
+e_parallel = np.array([
+    np.cos(theta),
+    np.sin(theta),
+])
 
-# Disk visual geometry.
-# The long axis of the ellipse is aligned with the global y-axis.
-disk_width = 1.15
-disk_height = 2.05
-disk_center = contact + np.array([0.0, disk_height / 2.0])
+e_perp = np.array([
+    -np.sin(theta),
+    np.cos(theta),
+])
 
 
 # ---------------------------------------------------------------------
 # Figure
 # ---------------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(6.2, 4.2))
+fig, ax = plt.subplots(figsize=(5.3, 4.8))
+
+draw_coordinate_system(ax, p)
 
 
 # ---------------------------------------------------------------------
-# Global x-y axes
+# Horizontal reference and heading angle
 # ---------------------------------------------------------------------
-axis_origin = np.array([-2.3, -1.25])
-
-arrow(ax, axis_origin, axis_origin + np.array([5.2, 0.0]))
-arrow(ax, axis_origin, axis_origin + np.array([0.0, 3.8]))
-
-ax.text(
-    axis_origin[0] + 5.35,
-    axis_origin[1] - 0.03,
-    r"$x$",
-    ha="left",
-    va="top",
-)
-
-ax.text(
-    axis_origin[0] - 0.05,
-    axis_origin[1] + 3.95,
-    r"$y$",
-    ha="right",
-    va="bottom",
-)
-
-
-# ---------------------------------------------------------------------
-# Wheel disk
-# ---------------------------------------------------------------------
-disk = Ellipse(
-    disk_center,
-    width=disk_width,
-    height=disk_height,
-    angle=0.0,
-    fill=False,
-    linewidth=1.7,
-)
-ax.add_patch(disk)
-
-# Offset ellipse to suggest wheel thickness
-disk_offset = Ellipse(
-    disk_center + np.array([-0.10, 0.03]),
-    width=disk_width,
-    height=disk_height,
-    angle=0.0,
-    fill=False,
-    linewidth=1.0,
-    alpha=0.85,
-)
-ax.add_patch(disk_offset)
-
-# Contact point
-ax.plot(contact[0], contact[1], "o", markersize=3)
-
-ax.text(
-    contact[0] - 0.08,
-    contact[1] - 0.12,
-    r"$(x,y)$",
-    ha="right",
-    va="top",
-)
-
-# Radius-like visual line from contact point to disk center
 ax.plot(
-    [contact[0], disk_center[0]],
-    [contact[1], disk_center[1]],
-    linewidth=0.8,
-    alpha=0.8,
-)
-
-
-# ---------------------------------------------------------------------
-# Wheel direction and lateral direction
-# ---------------------------------------------------------------------
-# Wheel rolling direction
-arrow(ax, contact, contact + 1.35 * e_parallel)
-
-ax.text(
-    *(contact + 1.55 * e_parallel),
-    r"$[\cos\theta,\sin\theta]^\top$",
-    ha="center",
-    va="center",
-)
-
-# Lateral direction
-arrow(ax, contact, contact + 1.15 * e_lateral)
-
-ax.text(
-    *(contact + 1.40 * e_lateral),
-    r"$[-\sin\theta,\cos\theta]^\top$",
-    ha="center",
-    va="center",
-)
-
-
-# ---------------------------------------------------------------------
-# Velocity vector aligned with wheel direction
-# ---------------------------------------------------------------------
-arrow(
-    ax,
-    contact,
-    contact + 1.05 * e_parallel,
+    [p[0], p[0] + 0.95],
+    [p[1], p[1]],
+    color="black",
+    linewidth=0.75,
     linestyle="--",
+    zorder=5,
 )
 
-ax.text(
-    *(contact + 0.82 * e_parallel + np.array([0.05, -0.18])),
-    r"$\dot{\mathbf{p}}$",
-    ha="center",
-    va="center",
-)
-
-
-# ---------------------------------------------------------------------
-# World velocity components
-# ---------------------------------------------------------------------
-arrow(ax, contact, contact + np.array([1.0, 0.0]))
-arrow(ax, contact, contact + np.array([0.0, 0.95]))
-
-ax.text(1.07, -0.07, r"$\dot{x}$", ha="left", va="top")
-ax.text(0.08, 1.00, r"$\dot{y}$", ha="left", va="bottom")
-
-
-# ---------------------------------------------------------------------
-# Angle annotation
-# ---------------------------------------------------------------------
 angle_arc(
     ax,
-    contact,
-    radius=0.55,
+    p,
+    radius=0.48,
     theta1=0.0,
     theta2=theta,
     label=r"$\theta$",
-    label_radius=0.78,
+    label_radius=0.70,
+    label_offset=(0.02, -0.06),
 )
 
 
 # ---------------------------------------------------------------------
-# No-side-slip constraint label
+# Allowed longitudinal velocity
 # ---------------------------------------------------------------------
+velocity_end = p + 1.48 * e_parallel
+
+arrow(
+    ax,
+    p,
+    velocity_end,
+    arrowstyle="-|>",
+    linewidth=1.2,
+    mutation_scale=10,
+    zorder=8,
+)
+
 ax.text(
-    0.75,
-    -0.72,
-    r"$-\dot{x}\sin\theta+\dot{y}\cos\theta=0$",
-    ha="center",
+    *(
+        velocity_end
+        + 0.10 * e_parallel
+        + 0.10 * e_perp
+    ),
+    r"$\dot{\mathbf{p}}"
+    r"=v\,\mathbf{e}_{\parallel}(\theta)$",
+    ha="left",
     va="center",
+    zorder=10,
+)
+
+
+# ---------------------------------------------------------------------
+# Forbidden perpendicular direction
+# ---------------------------------------------------------------------
+lateral_end = p + 1.05 * e_perp
+
+arrow(
+    ax,
+    p,
+    lateral_end,
+    arrowstyle="->",
+    linewidth=1.0,
+    mutation_scale=10,
+    color=geometry_color,
+    linestyle="--",
+    zorder=7,
+)
+
+
+# ---------------------------------------------------------------------
+# Cross indicating that lateral velocity is forbidden
+# ---------------------------------------------------------------------
+cross_center = p + 0.68 * e_perp
+cross_size = 0.075
+
+d1 = (
+    cross_size
+    * (e_parallel + e_perp)
+    / np.sqrt(2.0)
+)
+
+d2 = (
+    cross_size
+    * (e_parallel - e_perp)
+    / np.sqrt(2.0)
+)
+
+ax.plot(
+    [
+        cross_center[0] - d1[0],
+        cross_center[0] + d1[0],
+    ],
+    [
+        cross_center[1] - d1[1],
+        cross_center[1] + d1[1],
+    ],
+    color="black",
+    linewidth=1.2,
+    zorder=9,
+)
+
+ax.plot(
+    [
+        cross_center[0] - d2[0],
+        cross_center[0] + d2[0],
+    ],
+    [
+        cross_center[1] - d2[1],
+        cross_center[1] + d2[1],
+    ],
+    color="black",
+    linewidth=1.2,
+    zorder=9,
+)
+
+
+# ---------------------------------------------------------------------
+# Perpendicular-direction label
+# ---------------------------------------------------------------------
+e_perp_label_position = (
+    lateral_end
+    + 0.07 * e_perp
+    + 0.10 * e_parallel
+)
+
+ax.text(
+    e_perp_label_position[0],
+    e_perp_label_position[1],
+    r"$\mathbf{e}_{\perp}(\theta)$",
+    ha="center",
+    va="bottom",
+    color=geometry_color,
+    zorder=10,
+)
+
+
+# ---------------------------------------------------------------------
+# No-lateral-slip constraint
+# ---------------------------------------------------------------------
+constraint_position = (
+    lateral_end
+    + 0.38 * e_perp
+    + 0.12 * e_parallel
+)
+
+ax.text(
+    constraint_position[0],
+    constraint_position[1],
+    r"$\mathbf{e}_{\perp}^{\top}(\theta)"
+    r"\,\dot{\mathbf{p}}=0$",
+    ha="center",
+    va="bottom",
+    zorder=10,
+)
+
+
+# ---------------------------------------------------------------------
+# Reference point
+# ---------------------------------------------------------------------
+ax.plot(
+    p[0],
+    p[1],
+    marker="o",
+    markersize=3.8,
+    color="black",
+    zorder=11,
+)
+
+ax.text(
+    p[0] - 0.09,
+    p[1] - 0.12,
+    r"$\mathbf{p}=(x,y)$",
+    ha="right",
+    va="top",
+    zorder=10,
 )
 
 
@@ -243,18 +408,40 @@ ax.text(
 # Formatting
 # ---------------------------------------------------------------------
 ax.set_aspect("equal", adjustable="box")
-ax.set_xlim(-2.6, 3.3)
-ax.set_ylim(-1.55, 3.05)
+ax.set_xlim(*X_LIMITS)
+ax.set_ylim(*Y_LIMITS)
 ax.axis("off")
+
+fig.subplots_adjust(
+    left=0.02,
+    right=0.98,
+    bottom=0.02,
+    top=0.98,
+)
 
 
 # ---------------------------------------------------------------------
 # Save figure
 # ---------------------------------------------------------------------
-fig_dir = Path(__file__).resolve().parent / "saved_figures"
-fig_dir.mkdir(parents=True, exist_ok=True)
+fig_dir = (
+    Path(__file__).resolve().parent
+    / "saved_figures"
+)
 
-plt.savefig(fig_dir / "rolling_disk_no_lateral_slip.pdf", bbox_inches="tight")
-plt.savefig(fig_dir / "rolling_disk_no_lateral_slip.png", dpi=300, bbox_inches="tight")
+fig_dir.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+fig.savefig(
+    fig_dir / "rolling_wheel_no_lateral_slip.pdf",
+    bbox_inches="tight",
+)
+
+fig.savefig(
+    fig_dir / "rolling_wheel_no_lateral_slip.png",
+    dpi=300,
+    bbox_inches="tight",
+)
 
 plt.show()

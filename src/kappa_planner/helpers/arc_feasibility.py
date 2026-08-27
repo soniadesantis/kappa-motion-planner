@@ -43,7 +43,7 @@ def world_to_transition_local_point(
     return np.linalg.solve(A, v)
 
 
-def generate_forbidden_tangent_candidate(
+def generate_forbidden_clearance_candidate(
     corner_point,
     other_intersection_point,
     ex,
@@ -55,41 +55,61 @@ def generate_forbidden_tangent_candidate(
     tol=1e-9,
 ):
     """
-    Generate a fallback center tangent to the forbidden intersection point.
+    Generate an exact analytical fallback center in the presence of an
+    additional forbidden intersection point.
 
-    The candidate lies on the ray from the corner point to the forbidden
-    intersection point and satisfies distance(center, forbidden_point) = S.
+    The basic feasible-center set is
 
-    :param corner_point: Transition corner point.
-    :type corner_point: Point
+        x >= a,
+        y >= b,
+        x^2 + y^2 <= D^2.
 
-    :param other_intersection_point: Forbidden intersection point.
-    :type other_intersection_point: Point
+    The forbidden point is assumed to lie in the nonpositive quadrant
+    of the local transition frame:
 
-    :param ex: Local x-axis in world coordinates.
-    :type ex: np.ndarray
+        p_fx <= 0,
+        p_fy <= 0.
 
-    :param ey: Local y-axis in world coordinates.
-    :type ey: np.ndarray
+    Among all points in the basic feasible set, this function constructs
+    the point with maximum distance from the forbidden point.
 
-    :param a: Clamped lower bound for local x.
-    :type a: float
+    Therefore, under the stated geometric assumptions:
 
-    :param b: Clamped lower bound for local y.
-    :type b: float
+        - if the returned candidate clears the forbidden point by at
+          least S, a feasible center exists;
+        - if it does not, no feasible center exists.
 
-    :param D: Admissible radius.
-    :type D: float
+    Parameters
+    ----------
+    corner_point:
+        Transition corner point.
 
-    :param S: Swept radius.
-    :type S: float
+    other_intersection_point:
+        Additional wall-intersection point defining the forbidden
+        radius-S disk.
 
-    :param tol: Numerical tolerance.
-    :type tol: float
+    ex, ey:
+        Local transition-frame unit axes.
 
-    :return: Candidate tuple or None.
-    :rtype: tuple[str, np.ndarray] or None
+    a, b:
+        Clamped lower bounds on the local center coordinates.
+
+    D:
+        Radius of the basic admissible corner disk, D = R - r.
+
+    S:
+        Required clearance from the forbidden point, S = R + r.
+
+    tol:
+        Numerical tolerance.
+
+    Returns
+    -------
+    tuple[str, np.ndarray] or None
+        ("forbidden_max_clearance", center_local) if a feasible center
+        exists, otherwise None.
     """
+
     forbidden_local = world_to_transition_local_point(
         corner_point=corner_point,
         ex=ex,
@@ -97,26 +117,113 @@ def generate_forbidden_tangent_candidate(
         point=other_intersection_point,
     )
 
-    distance = np.linalg.norm(forbidden_local)
+    px, py = forbidden_local
 
-    if distance <= S + tol:
+    # ------------------------------------------------------------
+    # 1. Verify the geometric assumption used by the analytical result.
+    # ------------------------------------------------------------
+    if px > tol or py > tol:
+        raise ValueError(
+            "The forbidden intersection point must lie in the "
+            "nonpositive quadrant of the local transition frame."
+        )
+
+    # Remove insignificant numerical sign violations.
+    px = min(px, 0.0)
+    py = min(py, 0.0)
+
+    # ------------------------------------------------------------
+    # 2. Verify that the basic feasible set is nonempty.
+    # ------------------------------------------------------------
+    if a < -tol or b < -tol:
+        raise ValueError("Bounds a and b must be nonnegative.")
+
+    if D <= 0.0:
+        raise ValueError("D must be strictly positive.")
+
+    if a * a + b * b > D * D + tol:
         return None
 
-    scale = 1.0 - S / distance
-    center_local = scale * forbidden_local
+    # Clamp very small numerical overshoots before inverse trig.
+    a_over_D = np.clip(a / D, 0.0, 1.0)
+    b_over_D = np.clip(b / D, 0.0, 1.0)
+
+    theta_min = np.arcsin(b_over_D)
+    theta_max = np.arccos(a_over_D)
+
+    # ------------------------------------------------------------
+    # 3. Direction directly away from the forbidden point.
+    #
+    # forbidden_local = (-A, -B), so -forbidden_local = (A, B)
+    # belongs to the nonnegative quadrant.
+    # ------------------------------------------------------------
+    distance = np.linalg.norm(forbidden_local)
+
+    if distance <= tol:
+        # In the present application S = R + r and D = R - r,
+        # hence S > D and a forbidden point at the corner makes the
+        # complete basic feasible set infeasible.
+        if D < S - tol:
+            return None
+
+        # Generic fallback for completeness if this function is ever
+        # used with S <= D.
+        theta_star = 0.5 * (theta_min + theta_max)
+
+    else:
+        A = -px
+        B = -py
+
+        phi = np.arctan2(B, A)
+
+        # Projection of the ideal away-from-forbidden direction onto
+        # the admissible angular interval.
+        theta_star = np.clip(
+            phi,
+            theta_min,
+            theta_max,
+        )
+
+    # ------------------------------------------------------------
+    # 4. Maximum-clearance point on the admissible outer arc.
+    # ------------------------------------------------------------
+    center_local = D * np.array(
+        [
+            np.cos(theta_star),
+            np.sin(theta_star),
+        ],
+        dtype=float,
+    )
 
     x, y = center_local
 
-    if x < a - tol:
-        return None
-
-    if y < b - tol:
-        return None
+    # Numerical consistency checks.
+    if x < a - tol or y < b - tol:
+        raise RuntimeError(
+            "Analytical maximum-clearance candidate violates the "
+            "basic lower-bound constraints."
+        )
 
     if x * x + y * y > D * D + tol:
+        raise RuntimeError(
+            "Analytical maximum-clearance candidate lies outside "
+            "the admissible radius-D disk."
+        )
+
+    # ------------------------------------------------------------
+    # 5. Necessary-and-sufficient forbidden-point feasibility test.
+    # ------------------------------------------------------------
+    clearance = np.linalg.norm(
+        center_local - forbidden_local
+    )
+
+    if clearance < S - tol:
         return None
 
-    return "forbidden_tangent_ray", center_local
+    return (
+        "forbidden_max_clearance",
+        center_local,
+    )
 
 
 def compute_nominal_same_turn_merged_center(
@@ -812,7 +919,7 @@ def compute_intermediate_circle_geometry(
             other_intersection_point,
         )
 
-        if distance_corner_forbidden < 2.0 * r - tol:
+        if distance_corner_forbidden < S - D - tol:
             return {
                 "feasible": False,
                 "reason": "Forbidden point too close to corner point. No arc maneuver can safely fit.",
@@ -947,7 +1054,7 @@ def compute_intermediate_circle_geometry(
         and len(candidates) > 0
         and len(blocked_candidates) == len(candidates)
     ):
-        fallback_candidate = generate_forbidden_tangent_candidate(
+        fallback_candidate = generate_forbidden_clearance_candidate(
             corner_point=corner_point,
             other_intersection_point=other_intersection_point,
             ex=ex,
