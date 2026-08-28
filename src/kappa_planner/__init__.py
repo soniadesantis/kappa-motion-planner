@@ -28,7 +28,23 @@ from .helpers.corridor_geometry import(
     shrink_corridor_list,
     get_corridor_from_vector,
     get_corner_point,
+    compute_turn_direction_vector,
+    compute_corner_point_vector,
 )
+
+from .helpers.geometry_operations import(
+    check_point_inside_segment,
+    compute_turn_direction,
+    compute_angular_difference,
+)
+
+from .helpers.helper_functions import(
+    Timer,
+    measure_elapsed_time,
+    get_vehicle_vertices,
+)
+
+from .helpers.inputs_check import check_inputs_analytical_planner
 
 from .helpers.plot_helpers import(
     plot_corridors,
@@ -41,10 +57,10 @@ __all__ = [
     "Point",
     "Circle",           
     "Pose",
-    "motion_planner",
+    "MotionPlanner",
     "Unicycle",
     "Bicycle",
-    "trajectory",
+    "Trajectory",
     "UnicycleTrajectory",
     "UnicycleTrajectoryOptimal",
     "BicycleTrajectory",
@@ -60,6 +76,15 @@ __all__ = [
     "shrink_corridor_list",
     "get_corridor_from_vector",
     "get_corner_point",
+    "compute_turn_direction_vector",
+    "compute_corner_point_vector",
+    "check_point_inside_segment",
+    "compute_turn_direction",
+    "compute_angular_difference",
+    "Timer",
+    "measure_elapsed_time",
+    "get_vehicle_vertices",
+    "check_inputs_analytical_planner",
     "plot_corridors",
     "plot_analytical_trajectory",
     "plot_velocity_profiles",
