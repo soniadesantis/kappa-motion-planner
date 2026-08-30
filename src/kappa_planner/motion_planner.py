@@ -366,6 +366,7 @@ class MotionPlanner:
                 wrn_msgs_standing_assumptions,   
                 self.intermediate_circles
             ) = check_standing_assumptions(self)
+            self.intermediate_circles_sequence = self.intermediate_circles
 
             self.intermediate_circles_choice_sequence = not_ambiguous_circle_choices(
                 self.intermediate_circles

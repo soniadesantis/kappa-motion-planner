@@ -5,7 +5,6 @@ This module contains functions to construct basic motion primitives
 corridor-based motion planning.
 """
 from math import asin, atan2, cos, pi, sin, sqrt
-from turtle import distance
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -774,5 +773,4 @@ def build_segment_with_reversal(
         )
 
     return maneuvers
-
 
