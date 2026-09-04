@@ -4,6 +4,13 @@ from time import perf_counter
 import contextlib, time
 import sympy as sp
 
+from .geometry_operations import (
+    compute_angular_difference,
+    efficient_sign,
+    wrapPositiveAngle,
+)
+from .intersections import circle_intersection
+
 class Timer: 
     def __enter__(self):
         self.start = perf_counter()
