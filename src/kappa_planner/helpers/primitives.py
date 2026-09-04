@@ -62,6 +62,20 @@ def compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, R, overlap 
             x1, y1, _, _ = circle_intersection(xc1, yc1, R, xc2, yc2, R)
             theta1 = wrapPositiveAngle(atan2(yc2 - yc1, xc2 - xc1) + turn1 * 0.5 * pi)
             x2, y2 = x1, y1
+            return x1, y1, theta1, x2, y2, theta1
+
+        distance = np.hypot(xc2 - xc1, yc2 - yc1)
+        if turn1 != turn2 and abs(distance - 2.0 * R) <= 1e-9:
+            # The internal tangent degenerates to the circles' contact point.
+            # Its heading cannot be obtained with atan2(y2-y1, x2-x1), since
+            # both differences are zero.
+            x1 = 0.5 * (xc1 + xc2)
+            y1 = 0.5 * (yc1 + yc2)
+            theta1 = wrapPositiveAngle(
+                atan2(yc2 - yc1, xc2 - xc1) + turn1 * 0.5 * pi
+            )
+            return x1, y1, theta1, x1, y1, theta1
+
         # If the distance between the two circles is > 2R or turn1 = turn2
         else:
             zeta = - (turn1 + turn2) * pi * 0.25
