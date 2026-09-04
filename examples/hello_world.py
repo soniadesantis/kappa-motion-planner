@@ -1,9 +1,12 @@
 import matplotlib.pylab as plt
 
-from kappa_planner.corridor import CorridorWorld
-from kappa_planner.motion_planner import MotionPlanner
-from kappa_planner.vehicle import Unicycle
-from kappa_planner.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
+from kappa_planner import (
+    CorridorWorld,
+    MotionPlanner,
+    Unicycle,
+    plot_analytical_trajectory,
+    plot_velocity_profiles,
+)
 
 """ Hello World Example: Motion Planning for a Unicycle Robot Within 2 Corridors"""
 

@@ -367,6 +367,7 @@ class MotionPlanner:
             self.warn_msgs_core_assumptions,
         ) = check_core_assumptions(self)
         core_inputs_check = self.inputs_check
+        self.warn_msgs = list(self.warn_msgs_core_assumptions)
 
         # Journal paper version
         if self.assumptions == "standing":
@@ -390,7 +391,7 @@ class MotionPlanner:
             else:
                 self.intermediate_circles_choice_sequence = None
 
-            self.warn_msgs = self.warn_msgs_core_assumptions + wrn_msgs_standing_assumptions
+            self.warn_msgs += wrn_msgs_standing_assumptions
 
         # Extension version
         elif self.assumptions == "core":

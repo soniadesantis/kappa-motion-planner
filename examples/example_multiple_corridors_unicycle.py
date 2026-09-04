@@ -1,13 +1,17 @@
-from math import sin, cos, pi
+from math import cos, pi, sin
 
 import matplotlib.pylab as plt
 
-from kappa_planner.corridor import CorridorWorld
-from kappa_planner.motion_planner import MotionPlanner
-from kappa_planner.vehicle import Unicycle
-from kappa_planner.helpers.corridor_geometry import get_corridor_from_vector
-from kappa_planner.helpers.poses import compute_end_pose, compute_start_pose
-from kappa_planner.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
+from kappa_planner import (
+    CorridorWorld,
+    MotionPlanner,
+    Unicycle,
+    compute_end_pose,
+    compute_start_pose,
+    get_corridor_from_vector,
+    plot_analytical_trajectory,
+    plot_velocity_profiles,
+)
 
 """
 Example: Analytical motion planning for a unicycle model in a multi-corridor environment.
@@ -80,13 +84,6 @@ unicycle.update(omega_max = 1)
 ### Define initial pose and final pose ###
 initial_pose = compute_start_pose(corridor1, unicycle, 0.5)
 final_pose = compute_end_pose(corridor5, unicycle, 0.5)
-
-### Define Bicycle vehicle ###
-vehicle_width = 0.430 
-vehicle_length = 0.508
-vehicle_wheelbase = 0.4
-vehicle_vmax = 1
-vehicle_deltamax = 0.5
 
 ### Define Motion Planner ###
 mp = MotionPlanner(unicycle, corridor_list, start_pose=initial_pose, end_pose=final_pose)
