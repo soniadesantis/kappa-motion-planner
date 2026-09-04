@@ -28,7 +28,7 @@ def extract_family(best_name):
 
 if __name__ == "__main__":
 
-    RESULTS_FILENAME = "orientation_sweep_analytical.json"
+    RESULTS_FILENAME = "sweep1/orientation_sweep_analytical.json"
 
     current_dir = Path(__file__).resolve().parent
     results_path = current_dir / "results" / RESULTS_FILENAME

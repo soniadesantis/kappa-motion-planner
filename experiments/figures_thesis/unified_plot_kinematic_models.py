@@ -9,10 +9,19 @@ from pathlib import Path
 # ---------------------------------------------------------------------
 # Matplotlib style
 # ---------------------------------------------------------------------
+SYMBOL_FONT_SIZE = 20
+PANEL_LABEL_FONT_SIZE = 20
+AXIS_ARROWHEAD_SIZE = 18
+VELOCITY_ARROW_LINEWIDTH = 1.5
+VELOCITY_ARROWHEAD_SIZE = 15
+OMEGA_ARROW_LINEWIDTH = 1.5
+OMEGA_ARROWHEAD_SIZE = 15
+OMEGA_ARROW_HEAD_BACKOFF = 10
+
 plt.rcParams.update({
     "font.family": "serif",
     "mathtext.fontset": "cm",
-    "font.size": 16,
+    "font.size": SYMBOL_FONT_SIZE,
     "axes.linewidth": 0.8,
 })
 
@@ -80,10 +89,11 @@ def curved_arrow(
 
     x = center[0] + radius * np.cos(angles)
     y = center[1] + radius * np.sin(angles)
+    head_start_idx = -OMEGA_ARROW_HEAD_BACKOFF
 
     ax.plot(
-        x,
-        y,
+        x[:head_start_idx + 1],
+        y[:head_start_idx + 1],
         color=color,
         linewidth=linewidth,
         zorder=zorder,
@@ -91,9 +101,9 @@ def curved_arrow(
 
     arrow(
         ax,
-        np.array([x[-5], y[-5]]),
+        np.array([x[head_start_idx], y[head_start_idx]]),
         np.array([x[-1], y[-1]]),
-        arrowstyle="->",
+        arrowstyle="-|>",
         linewidth=linewidth,
         mutation_scale=mutation_scale,
         color=color,
@@ -278,7 +288,7 @@ def draw_coordinate_system(ax, p):
         X_AXIS_END,
         arrowstyle="-|>",
         linewidth=1.0,
-        mutation_scale=10,
+        mutation_scale=AXIS_ARROWHEAD_SIZE,
         zorder=9,
     )
 
@@ -288,7 +298,7 @@ def draw_coordinate_system(ax, p):
         Y_AXIS_END,
         arrowstyle="-|>",
         linewidth=1.0,
-        mutation_scale=10,
+        mutation_scale=AXIS_ARROWHEAD_SIZE,
         zorder=9,
     )
 
@@ -364,7 +374,7 @@ def format_panel(ax, panel_label):
         transform=ax.transAxes,
         ha="center",
         va="top",
-        fontsize=17,
+        fontsize=PANEL_LABEL_FONT_SIZE,
     )
 
 
@@ -425,9 +435,9 @@ def draw_unicycle(ax):
         ax,
         p,
         p + 1.55 * e_heading,
-        arrowstyle="->",
-        linewidth=1.2,
-        mutation_scale=11,
+        arrowstyle="-|>",
+        linewidth=VELOCITY_ARROW_LINEWIDTH,
+        mutation_scale=VELOCITY_ARROWHEAD_SIZE,
         zorder=8,
     )
 
@@ -448,6 +458,8 @@ def draw_unicycle(ax):
         radius=0.30,
         theta1=theta + 0.30,
         theta2=theta + 1.55,
+        linewidth=OMEGA_ARROW_LINEWIDTH,
+        mutation_scale=OMEGA_ARROWHEAD_SIZE,
     )
 
     omega_label_position = (
@@ -618,8 +630,8 @@ def draw_bicycle(ax):
         p_rear,
         p_rear + 1.05 * e_heading,
         arrowstyle="-|>",
-        linewidth=1.15,
-        mutation_scale=10,
+        linewidth=VELOCITY_ARROW_LINEWIDTH,
+        mutation_scale=VELOCITY_ARROWHEAD_SIZE,
         zorder=8,
     )
 
@@ -680,14 +692,14 @@ def draw_bicycle(ax):
         radius=0.28,
         theta1=np.deg2rad(255),
         theta2=np.deg2rad(355),
-        linewidth=1.1,
-        mutation_scale=9,
+        linewidth=OMEGA_ARROW_LINEWIDTH,
+        mutation_scale=OMEGA_ARROWHEAD_SIZE,
         zorder=8,
     )
 
     ax.text(
-        omega_center[0] + 0.38,
-        omega_center[1] - 0.02,
+        omega_center[0] + 0.24,
+        omega_center[1] - 0.34,
         r"$\omega$",
         ha="center",
         va="center",
@@ -749,10 +761,10 @@ def draw_bicycle(ax):
     )
 
     ax.text(
-        p_icr[0] - 0.07,
-        p_icr[1] + 0.09,
+        p_icr[0],
+        p_icr[1] + 0.12,
         r"$\mathrm{ICR}$",
-        ha="right",
+        ha="center",
         va="bottom",
         zorder=12,
     )
@@ -850,8 +862,8 @@ def draw_differential_drive(ax):
         p,
         p + 1.40 * e_heading,
         arrowstyle="-|>",
-        linewidth=1.15,
-        mutation_scale=10,
+        linewidth=VELOCITY_ARROW_LINEWIDTH,
+        mutation_scale=VELOCITY_ARROWHEAD_SIZE,
         zorder=8,
     )
 
@@ -872,6 +884,8 @@ def draw_differential_drive(ax):
         radius=0.34,
         theta1=theta + 0.30,
         theta2=theta + 1.55,
+        linewidth=OMEGA_ARROW_LINEWIDTH,
+        mutation_scale=OMEGA_ARROWHEAD_SIZE,
     )
 
     omega_label_position = (

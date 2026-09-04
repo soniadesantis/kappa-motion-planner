@@ -1,9 +1,9 @@
 import sympy as sp
-from math import sin, cos, pi, sqrt, asin, atan2
-import numpy as np
-from arena import compute_three_maneuvers_no_collision_avoidance, CurvilinearArcUnicycle, wrapPositiveAngle, CorridorWorld, Unicycle, get_corridor_from_vector, plot_corridors, compute_turn_direction, get_intersection, compute_two_maneuvers
-from math import sin, cos, pi, sqrt, asin, atan2
 import matplotlib.pylab as plt
+import numpy as np
+from math import atan2, asin, cos, pi, sin, sqrt
+
+from kappa_planner.helpers.geometry_operations import wrapPositiveAngle
 '''
 In this script we compute the derivative of the total time of executing arc-segment-arc (right-left case) maneuvers wrt to theta0. 
 It can be improved by adding the left-left case, the indication of the slope 1/omega, and a plot of the path.

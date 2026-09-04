@@ -26,8 +26,12 @@ def compute_ocp_pose_to_pose_trajectory(
     omega_min = unicycle.omega_min
     omega_max = unicycle.omega_max
 
+    distance = np.hypot(
+        xf - x0,
+        yf - y0,
+    )
+
     if T_guess is None:
-        distance = np.hypot(xf - x0, yf - y0)
         T_guess = 1.5 * distance / v_max
 
     ocp = Ocp(t0=0, T=FreeTime(T_guess))
@@ -107,7 +111,7 @@ def compute_ocp_pose_to_pose_trajectory(
         "print_time": False,
         "error_on_fail": False,
         "ipopt": {
-            "linear_solver": "ma27", #"mumps",
+            "linear_solver": "mumps",#"ma27", #"mumps",
             "print_level": 0,
             "tol": 1e-6,
             "sb": "yes",
@@ -131,12 +135,24 @@ def compute_ocp_pose_to_pose_trajectory(
     ocp.solver("ipopt", options)
  
     success = True
+    solver_error = None
+
     with Timer() as timer:
         try:
             sol = ocp.solve()
-        except Exception:
+
+        except Exception as error:
+            print("\n" + "=" * 80)
+            print("OCP SOLVER FAILED")
+            print("=" * 80)
+            print(f"Exception type: {type(error).__name__}")
+            print(f"Message       : {error}")
+            print("=" * 80)
+
+            solver_error = str(error)
             sol = ocp.non_converged_solution
             success = False
+
     comp_time = timer()
 
     ts_int, xs = sol.sample(x, grid="integrator")
@@ -170,6 +186,7 @@ def compute_ocp_pose_to_pose_trajectory(
         "sequence": sequence,
         "primitives_with_info": primitives_with_info,
         "initial_guess": initial_guess,
+        "solver_error": solver_error,
     }
 
 

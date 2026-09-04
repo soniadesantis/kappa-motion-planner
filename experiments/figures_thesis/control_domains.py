@@ -7,17 +7,29 @@ from matplotlib.patches import Polygon, Rectangle
 # ---------------------------------------------------------------------
 # Matplotlib style
 # ---------------------------------------------------------------------
+SYMBOL_FONT_SIZE = 20
+PANEL_LABEL_FONT_SIZE = 20
+TICK_LABEL_FONT_SIZE = 14
+LEGEND_FONT_SIZE = 18
+PANEL_LABEL_PAD = 12
+AXES_LINEWIDTH = 0.8
+AXIS_CROSS_LINEWIDTH = 0.85
+GRID_LINEWIDTH = 0.45
+PATCH_BOUNDARY_LINEWIDTH = 1.2
+SPECIAL_LINEWIDTH = 3.0
+TICK_LENGTH = 3
+
 plt.rcParams.update(
     {
         "font.family": "serif",
         "mathtext.fontset": "cm",
-        "font.size": 14,
-        "axes.titlesize": 14,
-        "axes.labelsize": 14,
-        "legend.fontsize": 10,
-        "xtick.labelsize": 11,
-        "ytick.labelsize": 11,
-        "axes.linewidth": 0.8,
+        "font.size": SYMBOL_FONT_SIZE,
+        "axes.titlesize": PANEL_LABEL_FONT_SIZE,
+        "axes.labelsize": SYMBOL_FONT_SIZE,
+        "legend.fontsize": SYMBOL_FONT_SIZE,
+        "xtick.labelsize": TICK_LABEL_FONT_SIZE,
+        "ytick.labelsize": TICK_LABEL_FONT_SIZE,
+        "axes.linewidth": AXES_LINEWIDTH,
     }
 )
 
@@ -37,7 +49,7 @@ def setup_axis(ax, title: str) -> None:
     """Apply common formatting to a control-domain axis."""
     ax.set_title(
         title,
-        pad=5,
+        pad=PANEL_LABEL_PAD,
     )
 
     # Individual labels with limited separation from the axes
@@ -50,9 +62,10 @@ def setup_axis(ax, title: str) -> None:
         r"$\omega$",
         labelpad=1,
     )
+    ax.yaxis.set_label_coords(-0.07, 0.5)
 
-    ax.set_xlim(-1.15, 1.15)
-    ax.set_ylim(-1.15, 1.15)
+    ax.set_xlim(-1.22, 1.22)
+    ax.set_ylim(-1.22, 1.22)
 
     ax.set_xticks([-1, 0, 1])
     ax.set_yticks([-1, 0, 1])
@@ -61,7 +74,7 @@ def setup_axis(ax, title: str) -> None:
         axis="both",
         which="major",
         pad=2,
-        length=3,
+        length=TICK_LENGTH,
     )
 
     ax.set_aspect(
@@ -73,7 +86,7 @@ def setup_axis(ax, title: str) -> None:
     ax.grid(
         True,
         color="0.75",
-        linewidth=0.45,
+        linewidth=GRID_LINEWIDTH,
         alpha=0.40,
         zorder=0,
     )
@@ -82,14 +95,14 @@ def setup_axis(ax, title: str) -> None:
     ax.axhline(
         0,
         color="black",
-        linewidth=0.85,
+        linewidth=AXIS_CROSS_LINEWIDTH,
         zorder=6,
     )
 
     ax.axvline(
         0,
         color="black",
-        linewidth=0.85,
+        linewidth=AXIS_CROSS_LINEWIDTH,
         zorder=6,
     )
 
@@ -100,18 +113,21 @@ def setup_axis(ax, title: str) -> None:
 fig, axs = plt.subplots(
     1,
     4,
-    figsize=(13.2, 3.65),
+    figsize=(15.6, 4.8),
     sharex=True,
     sharey=True,
 )
 
 fig.subplots_adjust(
-    left=0.040,
+    left=0.050,
     right=0.995,
-    bottom=0.19,
-    top=0.84,
-    wspace=0.035,
+    bottom=0.16,
+    top=0.88,
+    wspace=0.16,
 )
+
+for ax in axs:
+    ax.tick_params(labelleft=True)
 
 
 # ---------------------------------------------------------------------
@@ -131,7 +147,7 @@ ax.add_patch(
         height=2,
         facecolor=fill_color,
         edgecolor=boundary_color,
-        linewidth=1.2,
+        linewidth=PATCH_BOUNDARY_LINEWIDTH,
         zorder=2,
     )
 )
@@ -144,7 +160,7 @@ ax = axs[1]
 
 setup_axis(
     ax,
-    "(b) Bicycle and Dubins",
+    "(b) Forward-only bicycle",
 )
 
 ax.add_patch(
@@ -157,7 +173,7 @@ ax.add_patch(
         closed=True,
         facecolor=fill_color,
         edgecolor=boundary_color,
-        linewidth=1.2,
+        linewidth=PATCH_BOUNDARY_LINEWIDTH,
         zorder=2,
     )
 )
@@ -167,7 +183,7 @@ ax.plot(
     [1, 1],
     [-1, 1],
     color=special_line_color,
-    linewidth=3.0,
+    linewidth=SPECIAL_LINEWIDTH,
     label="Dubins",
     zorder=4,
 )
@@ -178,6 +194,7 @@ ax.legend(
     borderaxespad=0.0,
     frameon=True,
     framealpha=0.90,
+    fontsize=LEGEND_FONT_SIZE,
     borderpad=0.25,
     labelspacing=0.25,
     handlelength=1.45,
@@ -192,7 +209,7 @@ ax = axs[2]
 
 setup_axis(
     ax,
-    "(c) Bicycle and Reeds--Shepp",
+    "(c) Reversible bicycle",
 )
 
 ax.add_patch(
@@ -205,7 +222,7 @@ ax.add_patch(
         closed=True,
         facecolor=fill_color,
         edgecolor=boundary_color,
-        linewidth=1.2,
+        linewidth=PATCH_BOUNDARY_LINEWIDTH,
         zorder=2,
     )
 )
@@ -220,7 +237,7 @@ ax.add_patch(
         closed=True,
         facecolor=fill_color,
         edgecolor=boundary_color,
-        linewidth=1.2,
+        linewidth=PATCH_BOUNDARY_LINEWIDTH,
         zorder=2,
     )
 )
@@ -230,8 +247,8 @@ rs_line, = ax.plot(
     [-1, -1],
     [-1, 1],
     color=special_line_color,
-    linewidth=3.0,
-    label="Reeds--Shepp",
+    linewidth=SPECIAL_LINEWIDTH,
+    label="Reeds-Shepp",
     zorder=4,
 )
 
@@ -239,7 +256,7 @@ ax.plot(
     [1, 1],
     [-1, 1],
     color=rs_line.get_color(),
-    linewidth=3.0,
+    linewidth=SPECIAL_LINEWIDTH,
     zorder=4,
 )
 
@@ -249,6 +266,7 @@ ax.legend(
     borderaxespad=0.0,
     frameon=True,
     framealpha=0.90,
+    fontsize=LEGEND_FONT_SIZE,
     borderpad=0.25,
     labelspacing=0.25,
     handlelength=1.45,
@@ -263,7 +281,7 @@ ax = axs[3]
 
 setup_axis(
     ax,
-    r"(d) Differential drive, $b=2$",
+    "(d) Differential drive",
 )
 
 # With |v_R| <= 1, |v_L| <= 1, and b = 2,
@@ -286,30 +304,46 @@ ax.add_patch(
         closed=True,
         facecolor=fill_color,
         edgecolor=boundary_color,
-        linewidth=1.2,
+        linewidth=PATCH_BOUNDARY_LINEWIDTH,
         zorder=2,
     )
 )
 
 # Differential-drive angular-velocity extrema
 ax.text(
-    0.05,
-    omega_max - 0.04,
-    r"$2/b$",
+    0.24,
+    1.0,
+    r"$(0,\,2/b)$",
     ha="left",
-    va="top",
-    fontsize=11,
+    va="center",
+    fontsize=SYMBOL_FONT_SIZE,
     zorder=7,
 )
 
+ax.plot(
+    [0.0, 0.16],
+    [omega_max, 1.0],
+    color="black",
+    linewidth=1.0,
+    zorder=6,
+)
+
 ax.text(
-    0.05,
-    -omega_max + 0.04,
-    r"$-2/b$",
+    0.24,
+    -1.0,
+    r"$(0,\,-2/b)$",
     ha="left",
-    va="bottom",
-    fontsize=11,
+    va="center",
+    fontsize=SYMBOL_FONT_SIZE,
     zorder=7,
+)
+
+ax.plot(
+    [0.0, 0.16],
+    [-omega_max, -1.0],
+    color="black",
+    linewidth=1.0,
+    zorder=6,
 )
 
 
