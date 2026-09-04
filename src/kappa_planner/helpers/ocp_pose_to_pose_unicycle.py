@@ -111,7 +111,7 @@ def compute_ocp_pose_to_pose_trajectory(
         "print_time": False,
         "error_on_fail": False,
         "ipopt": {
-            "linear_solver": "mumps",#"ma27", #"mumps",
+            "linear_solver": "ma27", #"mumps",
             "print_level": 0,
             "tol": 1e-6,
             "sb": "yes",

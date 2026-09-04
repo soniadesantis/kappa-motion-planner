@@ -1,25 +1,22 @@
-from math import sin, cos, pi, atan2
-import numpy as np
-from arena import (
+from math import cos, pi, sin
+
+import matplotlib.pyplot as plt
+
+from kappa_planner import (
     MotionPlanner,
     CorridorWorld,
     Unicycle,
     get_corner_point,
-    compute_center_coordinates_second_circle,
-    get_bisector_direction,
-
-) 
-import arena
-from math import sin, cos, pi, sqrt, asin, atan2
-import matplotlib.pylab as plt
+    get_corridor_from_vector,
+    plot_corridors,
+)
+from kappa_planner.helpers.geometry_operations import compute_angular_difference
 
 # Define vehicle
-vehicle = Unicycle(model = 'Rosbot circular')
-vehicle.width = 0.4
-r = vehicle.width*0.5
-v_max = 0.8
-vehicle.update(v_max = v_max )
-vehicle.update(omega_max = 1)
+vehicle = Unicycle(
+    model="Rosbot circular",
+)
+vehicle.update(width=0.4, v_max=0.8, omega_max=1.0)
 
 # Define corridors parameters
 width1 = 1.1
@@ -42,26 +39,37 @@ corridor1 = CorridorWorld(width = width1, height = height1, center = [0, 0], til
 # Define corridor2
 tail_vector2 = corridor1.head
 head_vector2 = [corridor1.head[0] + height2 * cos(phi2), corridor1.head[1] + height2 * sin(phi2)]
-corridor2 = arena.get_corridor_from_vector(tail_vector2, head_vector2, width2, add_height = add_height2)
+corridor2 = get_corridor_from_vector(
+    tail_vector2,
+    head_vector2,
+    width2,
+    add_height=add_height2,
+)
 
 # Define corridor3 
 tail_vector3 = corridor2.head
 head_vector3 = [corridor2.head[0] + height3 * cos(phi3), corridor2.head[1] + height3 * sin(phi3)]
-corridor3 = arena.get_corridor_from_vector(tail_vector3, head_vector3, width3, add_height = add_height3)
+corridor3 = get_corridor_from_vector(
+    tail_vector3,
+    head_vector3,
+    width3,
+    add_height=add_height3,
+)
 
 corridor_list = [corridor1, corridor2, corridor3]
 
-mp = MotionPlanner(vehicle, corridor_list)
+mp = MotionPlanner(vehicle, corridor_list, assumptions="standing")
 
 turn1 = corridor1.compute_relative_turn_direction(corridor2)
 corner_point1 = get_corner_point(corridor1, corridor2, turn1)
-xc2, yc2 = compute_center_coordinates_second_circle(corner_point1, turn1, vehicle.max_radius, vehicle.width, 2, phi1, phi2, corridor1 = None, corridor2 = None)
-angle_bisector = get_bisector_direction(corridor1, corridor2)
+angle_bisector = phi2 + turn1 * 0.5 * (
+    pi - abs(compute_angular_difference(phi2, phi1))
+)
 # Extract tilt angles
 phis = [c.tilt for c in corridor_list]
 
 # Compute betas
-betas = [0.5 * abs(arena.compute_angular_difference(phis[i], phis[i+1]))
+betas = [0.5 * abs(compute_angular_difference(phis[i], phis[i+1]))
         for i in range(len(phis)-1)]
     
 s = (width2 - mp.min_corridor_widths[0])/cos(betas[0])
@@ -71,7 +79,7 @@ yc2_max = corner_point1[1] + (vehicle.max_radius - s - 0.5 * vehicle.width) * si
 for c in mp.intermediate_circles:
     c.update_s(s = c.s_max)
     
-figure = arena.plot_corridors(corridor_list, linestyle= 'solid')
+figure = plot_corridors(corridor_list, linestyle="solid")
 for c in mp.intermediate_circles:
     circle_artist1 = plt.Circle((c.canonical_center[0], c.canonical_center[1]), vehicle.max_radius, color='grey', fill= False, linestyle= 'dashed')
     circle_artist2 = plt.Circle((c.canonical_center[0], c.canonical_center[1]), vehicle.max_radius + vehicle.width/2, color='grey', fill= False, linestyle= 'dashed')
@@ -99,4 +107,3 @@ ax.axis('off')
 #     transparent=True
 # )
 plt.show(block = True)
-

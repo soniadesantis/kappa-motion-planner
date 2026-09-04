@@ -40,7 +40,7 @@ from kappa_planner.helpers.plot_helpers import (
 SWEEP_ID = 4
 
 # OCP transcription settings
-N = 30
+N = 50
 M = 4
 
 
@@ -69,7 +69,7 @@ HAUSDORFF_N_SAMPLES = 2001
 # QUICK TEST
 # -----------------------------------------------------------------------------
 
-QUICK_TEST = True
+QUICK_TEST = False
 QUICK_TEST_N_CASES = 10
 
 
