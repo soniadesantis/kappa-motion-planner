@@ -1,11 +1,10 @@
 import warnings
 
-from .geometry import IntermediateCircle, IntermediateCirclesSequence
+from .geometry import IntermediateCirclesSequence
 from .helpers.corridor_geometry import shrink_corridor_list
 from .helpers.helper_functions import Timer
 from .helpers.inputs_check import (
     check_core_assumptions,
-    check_inputs_analytical_planner,
     check_position_out_of_circles_assumption,
     check_standing_assumptions,
     compute_minimum_widths,

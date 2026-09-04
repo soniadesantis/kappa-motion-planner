@@ -1,8 +1,7 @@
-from math import asin, atan2, cos, pi, sin, sqrt
+from math import asin, atan2, cos, pi, sin
 
-from ..geometry import Circle, Point, Pose
+from ..geometry import Circle, Point
 from ..trajectory import CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpot
-from ..vehicle import Unicycle
 from .geometry_operations import (
     compute_angular_difference_with_turn_direction,
     compute_distance_two_points,

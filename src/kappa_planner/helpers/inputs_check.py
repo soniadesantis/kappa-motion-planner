@@ -1,8 +1,5 @@
 import warnings
-from math import atan2, cos, pi, sin, sqrt
-from pyexpat.errors import messages
-
-import matplotlib.pyplot as plt
+from math import atan2, cos
 
 from .corridor_geometry import (
     check_point_inside_corridor,
@@ -23,7 +20,6 @@ from .intermediate_circles_geometry import (
     compute_center_coordinates_vector_according_to_edges,
     create_intermediate_circles_sequence,
 )
-from .plot_helpers import plot_analytical_trajectory, plot_corridors
 
 # def check_inputs_analytical_planner_bicycle(planner):
 #     '''

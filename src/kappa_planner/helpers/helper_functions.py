@@ -1,10 +1,9 @@
 import contextlib
 import time
-from math import acos, asin, atan2, ceil, cos, floor, inf, pi, sin, sqrt
+from math import asin, atan2, cos, pi, sin, sqrt
 from time import perf_counter
 
 import numpy as np
-import sympy as sp
 
 from .geometry_operations import (
     compute_angular_difference,

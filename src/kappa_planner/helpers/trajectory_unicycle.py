@@ -11,17 +11,6 @@ It includes:
   by shifting intermediate circles,
 """
 
-from ..geometry import IntermediateCircle, Point
-from .corridor_geometry import (
-    compute_corner_point_vector,
-    compute_turn_direction_vector,
-    get_corner_point,
-)
-from .intermediate_circles_geometry import (
-    compute_center_coordinates_vector,
-    create_intermediate_circles_sequence,
-    second_circle,
-)
 from .intersections import check_intersection_case
 from .invert_inputs import invert_inputs
 from .pose_to_circle_unicycle import compute_three_maneuvers_compact

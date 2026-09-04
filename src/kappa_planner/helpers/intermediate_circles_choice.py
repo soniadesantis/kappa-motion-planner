@@ -1,4 +1,4 @@
-from math import asin, atan2, cos, sin, sqrt, tau
+from math import atan2, cos, sin
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,20 +13,15 @@ from ..geometry import (
     IntermediateCirclesSequence,
     Point,
 )
-from ..vehicle import Bicycle, Unicycle
 from .corridor_geometry import get_corner_point_and_intersecting_edges
 from .geometry_operations import (
     compute_distance_two_points,
-    compute_turn_direction,
     compute_turn_direction_from_three_points,
-    efficient_sign,
     select_tangency_point_from_point_circle,
 )
 from .inputs_check import compute_min_width_s_max_corridor_pair
 from .intermediate_circle_solve_overlap import (
     build_merged_intermediate_circle,
-    compute_circle_through_two_points_with_radius,
-    intermediate_circle_center_at_s,
     overlap_status_for_intermediate_circles,
     select_preferred_circle,
 )

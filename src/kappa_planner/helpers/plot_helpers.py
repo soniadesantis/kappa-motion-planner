@@ -1,4 +1,4 @@
-from math import acos, asin, atan2, ceil, cos, degrees, floor, pi, sin, sqrt
+from math import cos, degrees, sin
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -7,7 +7,6 @@ from matplotlib.patches import Wedge
 
 from ..vehicle import Bicycle, Unicycle
 from .helper_functions import (
-    compute_path_coordinates_curvilinear_arc,
     get_vehicle_vertices_no_casadi,
 )
 

@@ -1,6 +1,5 @@
 from math import asin, atan2, cos, pi, sin, sqrt
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from ..geometry import Circle, Point, Pose
@@ -20,7 +19,6 @@ from .intersections import (
     circle_intersection,
 )
 from .invert_inputs import invert_inputs_all
-from .plot_helpers import plot_analytical_trajectory, plot_corridors
 from .poses import (
     absolute_to_relative_pose,
     relative_to_absolute_pose,

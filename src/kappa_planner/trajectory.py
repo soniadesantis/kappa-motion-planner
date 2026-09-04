@@ -1,4 +1,3 @@
-import warnings
 from math import asin, atan2, cos, pi, sin, sqrt
 
 import numpy as np
