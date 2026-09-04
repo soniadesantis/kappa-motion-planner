@@ -165,7 +165,7 @@ def get_theta_collision_avoidance(pose, xc2, yc2, corridor, R, turn, margin = 0,
         # Compute the x,y and theta coordinates in the rotated corridor
         x_tilted, y_tilted, theta_tilted = absolute_to_relative_pose(corridor, pose)
         # Compute x,y coordinate of the transformed corridor center: reminder that we consider a vertical corridor with center in (0, 0)
-        cx = cy = 0 
+        cx = 0
 
         # Initialize the two possible theta 
 

@@ -779,7 +779,7 @@ def compute_min_width_s_max_corridor_pair(corridor1, corridor2, vehicle):
 
     if abs(denom) < 1e-12:
         raise ValueError(
-            f"Invalid corridor configuration: "
+            "Invalid corridor configuration: "
             "angle difference is pi (180 degrees), making cos(beta)=0."
         )
     s_max = (min(corridor1.width, corridor2.width) - min(min_width, min_width))/denom

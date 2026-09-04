@@ -1,6 +1,5 @@
 from math import atan2, cos, sin
 
-import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -65,8 +64,6 @@ def solve_circles_overlap(
             circle2,
         )
 
-        nominal_overlap = status["nominal_overlap"]
-        max_shift_overlap = status["max_shift_overlap"] 
         can_overlap = status["can_overlap"]
 
         if not can_overlap:
@@ -1735,5 +1732,4 @@ def selected_sequence_from_preferences(circle_choices_sequence):
         selected_circles.append(selected_circle)
 
     return IntermediateCirclesSequence(selected_circles)
-
 

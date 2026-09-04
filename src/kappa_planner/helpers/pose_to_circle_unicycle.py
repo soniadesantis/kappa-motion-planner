@@ -49,13 +49,9 @@ def fit_new_circle(x0, y0, xc2, yc2, R, turn1, alpha0):
     xint1, yint1, xint2, yint2 = circle_intersection(x0, y0, R, xc2, yc2, 2 * R)
     vector_alpha0 = [cos(alpha0), sin(alpha0)]
     angle1 = wrapPositiveAngle(atan2((yint1 - y0), (xint1 - x0)))
-    angle2 = wrapPositiveAngle(atan2((yint2 - y0), (xint2 - x0)))
-
     vector1 = [cos(angle1), sin(angle1)]
-    vector2 = [cos(angle2), sin(angle2)]
 
     turn_point1 = compute_turn_direction(vector_alpha0, vector1)
-    turn_point2 = compute_turn_direction(vector_alpha0, vector2)
 
     if turn_point1 == turn1: 
         return xint1, yint1
@@ -398,8 +394,6 @@ def compute_three_maneuvers_no_collision_avoidance(start_pose, unicycle, xc2, yc
     theta0_p1 = theta0
     thetaf_p1 = theta0_p1 + delta_angle
     theta0_p2 = thetaf_p1
-    if theta0_p2 == None or theta1 == None:
-        problema = True
     angular_diff = compute_angular_difference(wrapPositiveAngle(theta0_p2), wrapPositiveAngle(theta1))
     if turn1 != efficient_sign(angular_diff):
         delta_angle2 = 2*pi - angular_diff 

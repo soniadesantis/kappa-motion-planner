@@ -27,7 +27,6 @@ def measure_elapsed_time(identifier, total_time = 0):
     yield
     elapsed = (time.time_ns() - start_time)/1000
     print(f"{identifier}: {elapsed} us")
-    total_time = elapsed
 
 
 def get_vehicle_vertices_no_casadi(x, y, theta, w_left, w_right, l_front, l_back):

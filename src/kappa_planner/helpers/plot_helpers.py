@@ -30,7 +30,7 @@ def plot_corridors(corridor_list,
         ax = figure.axes[0]
 
     # Color of the rectangles is fixed
-    if colormap == False:
+    if not colormap:
         ind = 0
         for corridor in corridor_list:
             corners = corridor.corners
@@ -85,7 +85,8 @@ def vehic_to_plot(figure, x, y, theta, w_left, w_right, l_front, l_back, color='
     import matplotlib as mlt
     import matplotlib.pylab as plt
 
-    if figure is None: figure = plt.figure()
+    if figure is None:
+        figure = plt.figure()
     ax = figure if isinstance(figure, mlt.axes._axes.Axes) else figure.axes[0]
 
     vertices_veh = get_vehicle_vertices_no_casadi(x, y, theta, w_left, w_right, l_front, l_back)
@@ -153,14 +154,14 @@ def plot_planner_inputs(planner, figure=None, plot_intermediate_circles = False,
         plot_corridors(planner.shrunken_corridor_list, figure)
 
     r = planner.vehicle.width * 0.5
-    l = r + 0.3
+    arrow_length = r + 0.3
     x0, y0, theta0 = planner.start_pose
     xf, yf, thetaf = planner.end_pose
 
     plt.plot(x0, y0, 'ro')
-    plt.arrow(x0, y0, l * cos(theta0), l * sin(theta0), head_width=0.1, color='r')
+    plt.arrow(x0, y0, arrow_length * cos(theta0), arrow_length * sin(theta0), head_width=0.1, color='r')
     plt.plot(xf, yf, 'ro')
-    plt.arrow(xf, yf, l * cos(thetaf), l * sin(thetaf), head_width=0.1, color='r')
+    plt.arrow(xf, yf, arrow_length * cos(thetaf), arrow_length * sin(thetaf), head_width=0.1, color='r')
 
     angle_array = np.linspace(0, 2 * np.pi, 10000)
     plt.plot(x0 + r * np.cos(angle_array), y0 + r * np.sin(angle_array), 'r-', linewidth=0.5)
@@ -184,7 +185,8 @@ def plot_path_all_trajectories(trajectory, figure = None, color = 'k', linestyle
         else:
             figure.plot(trajectory.path_coordinates[:,0], trajectory.path_coordinates[:,1], color = color, linestyle = linestyle, linewidth = linewidth)
     else:
-        if figure is None: figure = plt.figure()
+        if figure is None:
+            figure = plt.figure()
         plt.plot(trajectory.path_coordinates[:,0], trajectory.path_coordinates[:,1], color = color, linestyle = linestyle, linewidth = linewidth, label = label)
     return figure
 

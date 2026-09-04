@@ -1,6 +1,4 @@
-from math import atan2, pi
-
-import numpy as np
+from math import atan2
 
 from ..geometry import IntermediateCirclesSequence, Point
 from ..trajectory import (
@@ -99,7 +97,6 @@ def shift_circles_unicycle(
     initial_step = 0.1
     step = 0.05
     i = 0
-    tried_other_side = [False] * len(intermediate_circles)
 
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure=figure)
@@ -418,7 +415,6 @@ def compute_trajectory_unicycle_multiple_corridors_core(
     # plt.show(block = True)
     # Compute the arcs
     arcs = []
-    angle_array = np.linspace(0, 2*pi, 100)
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # # plt.plot(circle.xc, circle.yc, 'ro')
@@ -655,9 +651,6 @@ def compute_circle_exit_trajectory_start(
 ):
     x0, y0, theta0 = start_pose
 
-    R = vehicle.max_radius
-    r = vehicle.width / 2
-
     if intermediate_circles_choice_sequence.first.corridor_index_end == 1:
 
         second_shrunken_corridor = corridor_list[1].shrink(vehicle.width / 2)
@@ -731,9 +724,6 @@ def compute_circle_exit_trajectory_end(
     intermediate_circles_choice_sequence,
 ): 
     xf, yf, thetaf = end_pose
-    R = vehicle.max_radius
-    r = vehicle.width / 2
-
     n_penultimate = len(corridor_list) - 2
 
     if intermediate_circles_choice_sequence.first.corridor_index_end == n_penultimate:

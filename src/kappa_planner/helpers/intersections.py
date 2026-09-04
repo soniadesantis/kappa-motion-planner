@@ -68,8 +68,6 @@ def circle_intersection(xc1, yc1, r1, xc2, yc2, r2):
         y4 = y3 - h * (xc2 - xc1) / dist
         x5 = x3 - h * (yc2 - yc1) / dist
         y5 = y3 + h * (xc2 - xc1) / dist
-        if x3 is None:
-            problema = True
         return x4, y4, x5, y5
     
     

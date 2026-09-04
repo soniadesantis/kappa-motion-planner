@@ -402,7 +402,7 @@ def backward_maneuver(corridor, pose, tau, R, wall, corner_point):
     :rtype: Pose object
     '''
     # The corner point is used to select one of two possible circumferences
-    x_corner, y_corner = corner_point.x, corner_point.y
+    y_corner = corner_point.y
     # Compute the rotation angle to obtain a vertical corridor (with tilt pi/2)
     # rot_angle = pi/2 - corridor.tilt
     # Compute the x,y and theta coordinates in the rotated corridor
@@ -549,7 +549,6 @@ def shift_circles_bicycle(
     initial_step = 0.1
     step = 0.05
     i = 0
-    tried_other_side = [False] * len(intermediate_circles)
 
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure=figure)
@@ -759,12 +758,10 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     segments.insert(0,start_maneuvers[-1])
     segments.append(end_maneuvers[0])
 
-    angle_array = np.linspace(0, 2*pi, 100)
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments + start_maneuvers + end_maneuvers, figure)
     # # plt.plot(intermediate_circles[i].xc + intermediate_circles[i].radius * np.cos(angle_array), intermediate_circles[i].yc + intermediate_circles[i].radius * np.sin(angle_array), 'r--')
     # plt.show(block = True)
-    ok = 1
 
     ## Switch circles in case needed
     # (
@@ -809,7 +806,6 @@ def compute_trajectory_bicycle_multiple_corridors_optimal(
     # plt.show(block = True)
     # Compute the arcs
     arcs = []
-    angle_array = np.linspace(0, 2*pi, 100)
     # figure = plot_corridors(corridor_list)
     # plot_analytical_trajectory(segments, figure)
     # # plt.plot(circle.xc, circle.yc, 'ro')

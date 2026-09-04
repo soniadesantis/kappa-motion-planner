@@ -83,8 +83,6 @@ def compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, R, overlap 
             a1 = sqrt((yc1 - yc2)**2 + (xc1 - xc2)**2)
             c1 = sqrt((a1)**2 - (R - turn1 * turn2 * R)**2)
             alfa1 = wrapPositiveAngle(atan2((yc2 - yc1), (xc2 - xc1)))
-            if (c1/a1) > 1:
-                stop = 1
             gamma1 = asin((R - R)/a1) if turn1 * turn2 > 0 else asin(c1/a1)
             beta1 = alfa1 - turn1 * gamma1
             x1 = xc1 + R * cos(beta1 + zeta)

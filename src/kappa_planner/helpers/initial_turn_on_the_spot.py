@@ -18,7 +18,6 @@ def compute_initial_turn_direction_exact_rule(start_pose, unicycle, xc2, yc2, ta
     slope = 1/unicycle.omega_max
     alpha0 = wrapPositiveAngle(atan2((yc2 - y0), (xc2 - x0)))
     xt, yt = xc2 + R * cos(alpha0 - tau2 * pi*0.5), yc2 + R * sin(alpha0 - tau2 * pi*0.5)
-    thetaf_val = pi*0.5
     a = sqrt((xc2 - x0)**2 + (yc2 - y0)**2)
     if abs(R/a) > 1: 
         return tau2
