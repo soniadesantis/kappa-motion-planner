@@ -740,20 +740,10 @@ def compute_minimum_widths(planner):
             - local_min_width
         ) / denom
 
-        # Under the standing assumptions this should be
-        # non-negative. Keep this check because a negative
-        # value indicates that at least one adjacent corridor
-        # violates the local minimum-width requirement.
-        if s_max < -1e-12:
-            raise ValueError(
-                f"Invalid corridor configuration at junction {i}: "
-                f"available width is smaller than the local "
-                f"minimum-width requirement. "
-                f"s_max = {s_max:.6e}."
-            )
-
-        # Remove tiny negative values due only to floating-
-        # point roundoff.
+        # A negative value means that the adjacent corridors do not
+        # satisfy the local width requirement. The standing-assumption
+        # check reports that invalid input; keep the geometric shift bound
+        # usable during planner refresh by clamping it to zero here.
         s_max = max(
             0.0,
             s_max,

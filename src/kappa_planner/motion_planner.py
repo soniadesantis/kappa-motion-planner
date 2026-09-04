@@ -348,8 +348,9 @@ class MotionPlanner:
 
         (
             self.inputs_check,
-            self.warn_msgs_core_assumptions,   
+            self.warn_msgs_core_assumptions,
         ) = check_core_assumptions(self)
+        core_inputs_check = self.inputs_check
 
         # Journal paper version
         if self.assumptions == "standing":
@@ -359,14 +360,19 @@ class MotionPlanner:
             ) = compute_minimum_widths(self)
 
             (
-                self.inputs_check,
-                wrn_msgs_standing_assumptions,   
+                standing_inputs_check,
+                wrn_msgs_standing_assumptions,
                 self.intermediate_circles
             ) = check_standing_assumptions(self)
 
-            self.intermediate_circles_choice_sequence = not_ambiguous_circle_choices(
-                self.intermediate_circles
-            )
+            self.inputs_check = core_inputs_check and standing_inputs_check
+
+            if self.intermediate_circles is not None:
+                self.intermediate_circles_choice_sequence = not_ambiguous_circle_choices(
+                    self.intermediate_circles
+                )
+            else:
+                self.intermediate_circles_choice_sequence = None
 
             self.warn_msgs = self.warn_msgs_core_assumptions + wrn_msgs_standing_assumptions
 
@@ -379,12 +385,18 @@ class MotionPlanner:
             self.end_pose,
                 )
             
-        (
-            self.position_out_of_circles_assumption_check,
-            warn_msgs_position_out_of_circles_assumption,   
-            self.inside_first_circle,
-            self.inside_last_circle
-        ) = check_position_out_of_circles_assumption(self)
+        if self.inputs_check:
+            (
+                self.position_out_of_circles_assumption_check,
+                warn_msgs_position_out_of_circles_assumption,
+                self.inside_first_circle,
+                self.inside_last_circle
+            ) = check_position_out_of_circles_assumption(self)
+        else:
+            self.position_out_of_circles_assumption_check = False
+            warn_msgs_position_out_of_circles_assumption = []
+            self.inside_first_circle = False
+            self.inside_last_circle = False
 
         self.exit_trajectory_start = []
         self.exit_trajectory_end = []
@@ -419,7 +431,7 @@ class MotionPlanner:
         if isinstance(self.vehicle, Bicycle):
             self.inputs_check = self.inputs_check and self.position_out_of_circles_assumption_check
 
-        self.warn_msgs = self.warn_msgs_core_assumptions + warn_msgs_position_out_of_circles_assumption
+        self.warn_msgs += warn_msgs_position_out_of_circles_assumption
 
         if not self.inputs_check:
             warnings.warn(
