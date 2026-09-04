@@ -9,7 +9,8 @@
 
 ## Description
 
-Kappa Motion Planner is a Python package for motion planning and navigation of autonomous guided vehicles (AGVs), developed within the Arena research project.
+Kappa Motion Planner is a Python package for analytical motion planning and
+navigation of autonomous guided vehicles (AGVs) in sequences of corridors.
 
 The package provides tools and algorithms for agile and reliable robot navigation experiments.
 
@@ -19,22 +20,32 @@ The package provides tools and algorithms for agile and reliable robot navigatio
 
 ---
 
-> [!WARNING]
-> This package is part of ongoing research work and is currently under active development.
-> The code is provided primarily for research and experimental purposes.
+> [!NOTE]
+> The `paper-version` branch contains the implementation prepared for the
+> revised paper and its reproducibility experiments. Use the matching frozen
+> release tag for published results; development work may continue on other
+> branches.
 
-# Installation
+## Paper experiments
+
+The parameter sweeps and analysis scripts live in the companion
+[`kappa-planner-benchmark`](https://github.com/soniadesantis/kappa-planner-benchmark)
+repository. For reproducible runs, install the planner revision recorded by
+the benchmark metadata and run experiments from the benchmark environment.
+
+## Installation
 
 The recommended installation method is using a Python virtual environment together with an editable installation.
 
-## 1. Clone the repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/soniadesantis/kappa-motion-planner.git
 cd kappa-motion-planner
+git switch paper-version
 ```
 
-## 2. Create a virtual environment
+### 2. Create a virtual environment
 Linux/macOS
 ```bash
 python3 -m venv kappa-planner-env
@@ -53,13 +64,13 @@ After activation, your terminal should display the environment name:
 (kappa-planner-env)
 ```
 
-## 3. Upgrade pip
+### 3. Upgrade pip
 
 ```bash
 pip install --upgrade pip
 ```
 
-## 4. Install the package in editable mode
+### 4. Install the package in editable mode
 ```bash
 pip install -e .
 ```

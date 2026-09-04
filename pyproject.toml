@@ -1,10 +1,14 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "kappa_planner"
 version = "0.1.0"
 description = "Kappa Motion Planner for Corridor Navigation"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.7"
-license = { text = "GNU LGPLv3" }
+requires-python = ">=3.8"
+license = "LGPL-3.0-only"
 
 authors = [
     { name = "Sonia De Santis" },
@@ -23,9 +27,16 @@ dependencies = [
     "sympy>=1.12",
 ]
 
+[project.urls]
+Repository = "https://github.com/soniadesantis/kappa-motion-planner"
+Issues = "https://github.com/soniadesantis/kappa-motion-planner/issues"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 include-package-data = true
+
+[tool.setuptools.package-data]
+kappa_planner = ["vehicle_library/*.yaml"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,4 +44,4 @@ where = ["src"]
 line-length = 88
 
 [tool.ruff.lint]
-select = ["ALL"]
+select = ["E4", "E7", "E9", "F", "I"]
