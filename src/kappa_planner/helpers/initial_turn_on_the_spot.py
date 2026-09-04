@@ -1,11 +1,15 @@
-from .helper_functions import compute_center_coordinates_first_circle
-from .geometry_operations import wrapPositiveAngle, compute_angular_difference_with_turn_direction
-from .pose_to_circle_dubins import compute_two_maneuvers
-from math import atan2, asin, sqrt, pi, cos, sin
+from math import asin, atan2, cos, pi, sin, sqrt
 
-from matplotlib import pyplot as plt
 import numpy as np
+from matplotlib import pyplot as plt
+
 from ..trajectory import CurvilinearArcUnicycle
+from .geometry_operations import (
+    compute_angular_difference_with_turn_direction,
+    wrapPositiveAngle,
+)
+from .helper_functions import compute_center_coordinates_first_circle
+from .pose_to_circle_dubins import compute_two_maneuvers
 
 
 def compute_initial_turn_direction_exact_rule(start_pose, unicycle, xc2, yc2, tau2):

@@ -1,16 +1,18 @@
-import numpy as np
 import warnings
-from math import atan2, sqrt, asin, cos, sin, pi
+from math import asin, atan2, cos, pi, sin, sqrt
+
+import numpy as np
+
 from .helpers.geometry_operations import (
-    wrapPositiveAngle,
-    efficient_sign,
     compute_angular_difference_with_turn_direction,
     compute_distance_two_points,
+    efficient_sign,
+    wrapPositiveAngle,
 )
 from .helpers.plot_helpers import (
+    plot_circle,
     #plot_vehicle, # TO-DO
     plot_path_all_trajectories,
-    plot_circle,
 )
 
 

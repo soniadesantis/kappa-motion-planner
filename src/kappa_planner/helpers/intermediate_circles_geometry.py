@@ -1,7 +1,13 @@
-from math import atan2, pi, cos, sin, sqrt
-from ..geometry import Point, Circle, IntermediateCircle, IntermediateCirclesSequence
+from math import atan2, cos, pi, sin, sqrt
+
+from ..geometry import Circle, IntermediateCircle, IntermediateCirclesSequence, Point
 from .corridor_geometry import check_point_inside_corridor, get_corner_point
-from .geometry_operations import compute_angular_difference, check_point_inside_segment, compute_distance_two_points
+from .geometry_operations import (
+    check_point_inside_segment,
+    compute_angular_difference,
+    compute_distance_two_points,
+)
+
 
 def compute_center_coordinates_vector(corridor_list, turn_direction_vector, corner_point_vector, unicycle, margin = 0):
     center_coordinates_vector = [0] * (len(corner_point_vector))

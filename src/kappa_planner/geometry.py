@@ -1,6 +1,7 @@
 ## Geometry.py
 ## Geometrical entities for the Arena package
-from math import cos, sin, pi, sqrt, atan2
+from math import atan2, cos, pi, sin, sqrt
+
 
 class Point:
     def __init__(self, x, y):

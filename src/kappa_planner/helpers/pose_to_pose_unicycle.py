@@ -1,8 +1,13 @@
-from math import cos, sin, pi, atan2, sqrt, asin
-from ..geometry import Point, Pose, Circle
+from math import asin, atan2, cos, pi, sin, sqrt
+
+from ..geometry import Circle, Point, Pose
+from ..trajectory import CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpot
 from ..vehicle import Unicycle
-from ..trajectory import TurnOnTheSpot, LinearSegmentUnicycle, CurvilinearArcUnicycle
-from .geometry_operations import compute_angular_difference_with_turn_direction, compute_distance_two_points, select_tangency_point_from_point_circle
+from .geometry_operations import (
+    compute_angular_difference_with_turn_direction,
+    compute_distance_two_points,
+    select_tangency_point_from_point_circle,
+)
 from .primitives import compute_extreme_poses_arc_line, invert_maneuvers
 
 # compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, R, overlap = False)

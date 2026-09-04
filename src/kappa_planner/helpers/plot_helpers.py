@@ -1,10 +1,15 @@
-import numpy as np
-from math import atan2, floor, ceil, cos, sin, pi, sqrt, asin, acos, degrees
-from .helper_functions import compute_path_coordinates_curvilinear_arc, get_vehicle_vertices_no_casadi
+from math import acos, asin, atan2, ceil, cos, degrees, floor, pi, sin, sqrt
+
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.patches import Wedge
-from ..vehicle import Unicycle, Bicycle
+
+from ..vehicle import Bicycle, Unicycle
+from .helper_functions import (
+    compute_path_coordinates_curvilinear_arc,
+    get_vehicle_vertices_no_casadi,
+)
 
 
 def plot_corridors(corridor_list,
@@ -78,8 +83,8 @@ def plot_corridors(corridor_list,
     return figure
 
 def vehic_to_plot(figure, x, y, theta, w_left, w_right, l_front, l_back, color='b'):
-    import matplotlib.pylab as plt
     import matplotlib as mlt
+    import matplotlib.pylab as plt
 
     if figure is None: figure = plt.figure()
     ax = figure if isinstance(figure, mlt.axes._axes.Axes) else figure.axes[0]
@@ -171,8 +176,8 @@ def plot_planner_inputs(planner, figure=None, plot_intermediate_circles = False,
     return figure
 
 def plot_path_all_trajectories(trajectory, figure = None, color = 'k', linestyle = 'solid', linewidth = 2.5, label = None):
-    import matplotlib.pyplot as plt
     import matplotlib as mlt
+    import matplotlib.pyplot as plt
 
     if isinstance(figure, mlt.axes._axes.Axes): # If figure is an axis instead of an actual figure object
         if label is not None:
@@ -185,8 +190,8 @@ def plot_path_all_trajectories(trajectory, figure = None, color = 'k', linestyle
     return figure
 
 def plot_circle(Arc, figure = None, color = 'b', linestyle = 'dashed', linewidth = 0.5):
-    import matplotlib.pyplot as plt
     import matplotlib as mlt
+    import matplotlib.pyplot as plt
     
     if figure is not None:
         if isinstance(figure, mlt.axes._axes.Axes): # If figure is an axis instead of an actual figure object
@@ -303,7 +308,7 @@ def plot_analytical_trajectory(
     """
     Plot an analytical trajectory composed of multiple trajectory segments.
     """
-    from ..trajectory import CurvilinearArcUnicycle, BackwardArc
+    from ..trajectory import BackwardArc, CurvilinearArcUnicycle
 
     if figure is None:
         fig, ax = plt.subplots()

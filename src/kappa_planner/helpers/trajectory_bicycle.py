@@ -1,36 +1,36 @@
-from .plot_helpers import plot_corridors, plot_analytical_trajectory
-from .intermediate_circles_choice import selected_sequence_from_preferences
-from .invert_inputs import invert_inputs_all
-from .helper_functions import (
-    compute_center_coordinates_first_circle,
+from math import asin, atan2, cos, pi, sin, sqrt
 
-)
-from .geometry_operations import (
-    compute_angular_difference,
-    wrapPositiveAngle,
-    compute_angular_difference_with_turn_direction,
-)
-from .poses import (
-    relative_to_absolute_pose,
-    absolute_to_relative_pose,
-)
-from .intersections import (
-    circle_intersection,
-    check_intersection_case,
-)
-from .collision_avoidance import collision_avoidance_check_bicycle
-from .primitives import (
-    correct_angles,
-    invert_maneuvers,
-    compute_segment_between_two_circles_objects,
-    compute_arc_from_two_tangents_objects,
-)
-
-from ..geometry import Point, Pose, Circle
-from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle
 import matplotlib.pyplot as plt
 import numpy as np
-from math import sin, cos, pi, sqrt, atan2, asin
+
+from ..geometry import Circle, Point, Pose
+from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle
+from .collision_avoidance import collision_avoidance_check_bicycle
+from .geometry_operations import (
+    compute_angular_difference,
+    compute_angular_difference_with_turn_direction,
+    wrapPositiveAngle,
+)
+from .helper_functions import (
+    compute_center_coordinates_first_circle,
+)
+from .intermediate_circles_choice import selected_sequence_from_preferences
+from .intersections import (
+    check_intersection_case,
+    circle_intersection,
+)
+from .invert_inputs import invert_inputs_all
+from .plot_helpers import plot_analytical_trajectory, plot_corridors
+from .poses import (
+    absolute_to_relative_pose,
+    relative_to_absolute_pose,
+)
+from .primitives import (
+    compute_arc_from_two_tangents_objects,
+    compute_segment_between_two_circles_objects,
+    correct_angles,
+    invert_maneuvers,
+)
 
 
 def compute_P_mid(intermediate_circles, bicycle):

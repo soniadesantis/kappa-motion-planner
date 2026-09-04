@@ -10,7 +10,7 @@ from math import pi
 import numpy as np
 
 from ..corridor import CorridorWorld
-from ..geometry import Pose, Point, IntermediateCircle
+from ..geometry import IntermediateCircle, Point, Pose
 from .geometry_operations import wrapPositiveAngle
 
 

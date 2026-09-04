@@ -6,7 +6,7 @@ corridors, such as construction from vectors, point inclusion checks,
 and computation of corner points between corridors.
 """
 
-from math import sqrt, atan2, inf, pi
+from math import atan2, inf, pi, sqrt
 
 import numpy as np
 

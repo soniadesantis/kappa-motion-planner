@@ -2,12 +2,13 @@ from math import asin, atan2, cos, pi, sin
 
 import sympy as sp
 
+from .corridor_geometry import check_point_inside_corridor
+from .geometry_operations import (
+    compute_angular_difference_with_turn_direction,
+    wrapPositiveAngle,
+)
 from .helper_functions import (
     compute_center_coordinates_first_circle,
-)
-from .geometry_operations import (
-        compute_angular_difference_with_turn_direction,
-        wrapPositiveAngle
 )
 from .intersections import (
     circles_overlap,
@@ -15,12 +16,8 @@ from .intersections import (
     compute_intersection_points_circle_segment,
     select_closest_intersection,
 )
-from .primitives import (
-    compute_extreme_poses_arc_line,
-    compute_central_angle
-)
-from .corridor_geometry import check_point_inside_corridor
 from .poses import absolute_to_relative_pose
+from .primitives import compute_central_angle, compute_extreme_poses_arc_line
 
 
 def get_max_radius(corridor, pose, tau, wall = 'left'):

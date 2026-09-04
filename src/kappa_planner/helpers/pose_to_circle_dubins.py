@@ -1,9 +1,14 @@
 from ..trajectory import CurvilinearArcUnicycle, LinearSegmentUnicycle
-from .helper_functions import compute_initial_turn_direction, compute_center_coordinates_first_circle, compute_extreme_poses_arc_line_two_radii
-from .intersections import compute_intersection_points_between_line_circle
 from .collision_avoidance import get_max_radius
-from .primitives import compute_extreme_poses_arc_line
 from .geometry_operations import compute_distance_two_points
+from .helper_functions import (
+    compute_center_coordinates_first_circle,
+    compute_extreme_poses_arc_line_two_radii,
+    compute_initial_turn_direction,
+)
+from .intersections import compute_intersection_points_between_line_circle
+from .primitives import compute_extreme_poses_arc_line
+
 
 def compute_two_maneuvers(start_pose, unicycle, xc2, yc2, turn2, t0 = 0, turn1 = 0):
     '''

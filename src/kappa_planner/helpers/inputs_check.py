@@ -1,19 +1,29 @@
-from pyexpat.errors import messages
 import warnings
+from math import atan2, cos, pi, sin, sqrt
+from pyexpat.errors import messages
+
+import matplotlib.pyplot as plt
+
 from .corridor_geometry import (
     check_point_inside_corridor,
+    compute_corner_point_vector,
     compute_corner_point_vector_and_intersecting_edges,
     compute_turn_direction_vector,
     remove_zeros_from_turn_direction_vector,
-    compute_corner_point_vector,
+)
+from .geometry_operations import (
+    check_point_inside_segment,
+    compute_angular_difference,
+    compute_distance_two_points,
+    wrapPositiveAngle,
 )
 from .intermediate_circle_solve_overlap import select_preferred_circle
-from .intermediate_circles_geometry import compute_center_coordinates_vector, compute_center_coordinates_vector_according_to_edges, create_intermediate_circles_sequence
-import matplotlib.pyplot as plt
-from .plot_helpers import plot_corridors, plot_analytical_trajectory
-from .geometry_operations import compute_distance_two_points, check_point_inside_segment, compute_angular_difference, wrapPositiveAngle
-from math import sqrt, atan2, cos, sin, pi
-
+from .intermediate_circles_geometry import (
+    compute_center_coordinates_vector,
+    compute_center_coordinates_vector_according_to_edges,
+    create_intermediate_circles_sequence,
+)
+from .plot_helpers import plot_analytical_trajectory, plot_corridors
 
 # def check_inputs_analytical_planner_bicycle(planner):
 #     '''

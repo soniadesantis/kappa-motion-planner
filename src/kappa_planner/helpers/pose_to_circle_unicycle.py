@@ -1,10 +1,24 @@
-from .geometry_operations import compute_angular_difference_with_turn_direction, wrapPositiveAngle, efficient_sign, compute_angular_difference, compute_turn_direction
-from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpot
-from .collision_avoidance import collision_avoidance_check, collision_avoidance_check_tb, collision_avoidance_check_after_overlap
-from .initial_turn_on_the_spot import compute_initial_turn_on_the_spot_time_optimality, compute_initial_turn_direction_exact_rule
+from math import atan2, cos, pi, sin
+
+from ..trajectory import CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpot
+from .collision_avoidance import (
+    collision_avoidance_check,
+    collision_avoidance_check_after_overlap,
+    collision_avoidance_check_tb,
+)
+from .geometry_operations import (
+    compute_angular_difference,
+    compute_angular_difference_with_turn_direction,
+    compute_turn_direction,
+    efficient_sign,
+    wrapPositiveAngle,
+)
+from .initial_turn_on_the_spot import (
+    compute_initial_turn_direction_exact_rule,
+    compute_initial_turn_on_the_spot_time_optimality,
+)
 from .intersections import circle_intersection
 from .primitives import compute_extreme_poses_arc_line
-from math import atan2, pi, cos, sin
 
 
 def fit_new_circle(x0, y0, xc2, yc2, R, turn1, alpha0):

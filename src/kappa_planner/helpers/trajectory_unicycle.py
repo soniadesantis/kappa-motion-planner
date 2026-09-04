@@ -12,16 +12,15 @@ It includes:
 """
 
 from ..geometry import IntermediateCircle, Point
-
 from .corridor_geometry import (
     compute_corner_point_vector,
     compute_turn_direction_vector,
     get_corner_point,
 )
 from .intermediate_circles_geometry import (
+    compute_center_coordinates_vector,
     create_intermediate_circles_sequence,
     second_circle,
-    compute_center_coordinates_vector,
 )
 from .intersections import check_intersection_case
 from .invert_inputs import invert_inputs
@@ -30,8 +29,8 @@ from .primitives import (
     compute_arc_from_two_tangents,
     compute_arc_from_two_tangents_objects,
     compute_segment_between_two_circles,
-    invert_maneuvers,
     correct_angles,
+    invert_maneuvers,
 )
 
 

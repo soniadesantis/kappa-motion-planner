@@ -1,7 +1,9 @@
-import numpy as np
-from math import atan2, floor, ceil, cos, sin, pi, sqrt, asin, acos, inf
+import contextlib
+import time
+from math import acos, asin, atan2, ceil, cos, floor, inf, pi, sin, sqrt
 from time import perf_counter
-import contextlib, time
+
+import numpy as np
 import sympy as sp
 
 from .geometry_operations import (
@@ -10,6 +12,7 @@ from .geometry_operations import (
     wrapPositiveAngle,
 )
 from .intersections import circle_intersection
+
 
 class Timer: 
     def __enter__(self):

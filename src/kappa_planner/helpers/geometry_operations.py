@@ -1,4 +1,5 @@
-from math import ceil, floor, pi, asin, atan2, sqrt, sin, cos
+from math import asin, atan2, ceil, cos, floor, pi, sin, sqrt
+
 from ..geometry import Point
 
 

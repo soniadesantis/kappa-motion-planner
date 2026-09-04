@@ -1,31 +1,39 @@
-from ..geometry import Point, IntermediateCircle, IntermediateCirclesSequence, IntermediateCircleChoice, IntermediateCircleChoicesSequence, Circle
+from math import asin, atan2, cos, sin, sqrt, tau
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import pyplot as plt
+
 from ..corridor import CorridorWorld
-from ..vehicle import Unicycle, Bicycle
-from .intersections import compute_intersection_two_segments, compute_line_corridor_intersections
+from ..geometry import (
+    Circle,
+    IntermediateCircle,
+    IntermediateCircleChoice,
+    IntermediateCircleChoicesSequence,
+    IntermediateCirclesSequence,
+    Point,
+)
+from ..vehicle import Bicycle, Unicycle
 from .corridor_geometry import get_corner_point_and_intersecting_edges
-from .intermediate_circles_geometry import compute_center_coordinates_second_circle_according_to_edges, compute_center_coordinates_second_circle_given_two_points
-from .plot_helpers import plot_corridors
 from .geometry_operations import (
-    select_tangency_point_from_point_circle,
+    check_point_inside_segment,
+    compute_distance_two_points,
     compute_turn_direction,
     compute_turn_direction_from_three_points,
     efficient_sign,
-    compute_distance_two_points,
-    project_point_onto_segment,
-    check_point_inside_segment,
     minimum_distance_between_segments,
+    project_point_onto_segment,
+    select_tangency_point_from_point_circle,
 )
-from math import sqrt, atan2, cos, sin, asin, tau
-from matplotlib import pyplot as plt
-import numpy as np
-
-
-import numpy as np
-
-import numpy as np
-import matplotlib.pyplot as plt
-
-
+from .intermediate_circles_geometry import (
+    compute_center_coordinates_second_circle_according_to_edges,
+    compute_center_coordinates_second_circle_given_two_points,
+)
+from .intersections import (
+    compute_intersection_two_segments,
+    compute_line_corridor_intersections,
+)
+from .plot_helpers import plot_corridors
 
 
 def select_preferred_circle(choice: IntermediateCircleChoice) -> IntermediateCircle:

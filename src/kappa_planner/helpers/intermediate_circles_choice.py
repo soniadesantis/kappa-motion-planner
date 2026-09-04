@@ -1,34 +1,45 @@
-from ..geometry import Point, Circle, IntermediateCircle, IntermediateCirclesSequence, IntermediateCircleChoice, IntermediateCircleChoicesSequence
+from math import asin, atan2, cos, sin, sqrt, tau
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import pyplot as plt
+
 from ..corridor import CorridorWorld
-from ..vehicle import Unicycle, Bicycle
-from .intersections import compute_intersection_two_segments, compute_line_corridor_intersections
-from .corridor_geometry import get_corner_point_and_intersecting_edges
-from .intermediate_circles_geometry import compute_center_coordinates_second_circle_according_to_edges, compute_center_coordinates_second_circle_given_two_points, compute_circle_internally_tangent_to_two_circles
-from .intermediate_circle_solve_overlap import (
-    select_preferred_circle,
-    overlap_status_for_intermediate_circles,
-    compute_circle_through_two_points_with_radius,
-    build_merged_intermediate_circle,
-    intermediate_circle_center_at_s,
+from ..geometry import (
+    Circle,
+    IntermediateCircle,
+    IntermediateCircleChoice,
+    IntermediateCircleChoicesSequence,
+    IntermediateCirclesSequence,
+    Point,
 )
-from .inputs_check import compute_min_width_s_max_corridor_pair
-from .plot_helpers import plot_corridors
+from ..vehicle import Bicycle, Unicycle
+from .corridor_geometry import get_corner_point_and_intersecting_edges
 from .geometry_operations import (
-    select_tangency_point_from_point_circle,
+    compute_distance_two_points,
     compute_turn_direction,
     compute_turn_direction_from_three_points,
     efficient_sign,
-    compute_distance_two_points
+    select_tangency_point_from_point_circle,
 )
-from math import sqrt, atan2, cos, sin, asin, tau
-from matplotlib import pyplot as plt
-import numpy as np
-
-
-import numpy as np
-
-import numpy as np
-import matplotlib.pyplot as plt
+from .inputs_check import compute_min_width_s_max_corridor_pair
+from .intermediate_circle_solve_overlap import (
+    build_merged_intermediate_circle,
+    compute_circle_through_two_points_with_radius,
+    intermediate_circle_center_at_s,
+    overlap_status_for_intermediate_circles,
+    select_preferred_circle,
+)
+from .intermediate_circles_geometry import (
+    compute_center_coordinates_second_circle_according_to_edges,
+    compute_center_coordinates_second_circle_given_two_points,
+    compute_circle_internally_tangent_to_two_circles,
+)
+from .intersections import (
+    compute_intersection_two_segments,
+    compute_line_corridor_intersections,
+)
+from .plot_helpers import plot_corridors
 
 
 def solve_circles_overlap(

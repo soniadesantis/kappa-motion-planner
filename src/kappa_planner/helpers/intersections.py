@@ -5,7 +5,7 @@ This module provides functions to compute intersections between
 geometric primitives such as lines, segments, and circles.
 """
 
-from math import sqrt, cos, sin, inf
+from math import cos, inf, sin, sqrt
 
 from ..corridor import CorridorWorld
 

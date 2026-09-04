@@ -1,9 +1,10 @@
-import numpy as np 
 import math as m
-from copy import copy
-import yaml 
 import os
 import warnings
+from copy import copy
+
+import numpy as np
+import yaml
 
 
 class Vehicle:
