@@ -91,12 +91,12 @@ def main():
         axis.set_anchor("N")
         axis.set_title(
             f"{chr(97 + index)}) Case {case['case_id']}\n{role.capitalize()}\n"
-            + rf"$\Delta\mathcal{{T}}_{{\mathrm{{{args.linear_solver.upper()}}}}}="
+            + rf"$\Delta\mathcal{{T}}="
               rf"{summary['recomputed_signed_time_difference']:.4f}\,\mathrm{{s}}$",
             fontsize=21, pad=20,
         )
         for label in axis.texts:
-            if label.get_text() in (r"$\boldsymbol{p}_0$", r"$\boldsymbol{p}_f$"):
+            if label.get_text() in (r"$\mathbf{p}_0$", r"$\mathbf{p}_f$"):
                 label.remove()
             else:
                 label.set_fontsize(17)
@@ -108,13 +108,13 @@ def main():
                label="OCP initial guess (TST)"),
         Line2D([], [], color=base.COLORS["ocp"], linestyle="--", linewidth=2.5,
                label="OCP solution"),
-        Line2D([], [], color="g", marker="o", linestyle="None", markersize=9,
-               label="Start pose"),
-        Line2D([], [], color="r", marker="o", linestyle="None", markersize=9,
-               label="End pose"),
+        Line2D([], [], color="g", marker="o", linestyle="None", markersize=9),
+        Line2D([], [], color="r", marker="o", linestyle="None", markersize=9),
         Line2D([], [], color="0.5", linestyle="-.", linewidth=1,
                label="Control bounds"),
-    ], loc="outside lower center", ncol=3, frameon=False, fontsize=18)
+    ], labels=["Analytical", "OCP initial guess (TST)", "OCP solution",
+               "Start pose", "End pose", "Control bounds"],
+       loc="outside lower center", ncol=3, frameon=False, fontsize=18)
     control_figure = base.create_control_figure(runs, cases)
     for axis in control_figure.axes[:3]:
         axis.set_title(axis.get_title(), fontsize=21)
