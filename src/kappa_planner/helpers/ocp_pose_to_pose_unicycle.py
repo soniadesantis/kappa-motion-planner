@@ -12,7 +12,7 @@ def compute_ocp_pose_to_pose_trajectory(
     T_guess=None,
     N=100,
     M=4,
-    linear_solver="mumps",
+    linear_solver="ma27",
 ):
     x0 = start_pose.x
     y0 = start_pose.y
