@@ -2,7 +2,8 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Arc, Circle, FancyArrowPatch
+from matplotlib.patches import Arc, Circle, FancyArrowPatch, Wedge
+from matplotlib.lines import Line2D
 
 
 # =============================================================================
@@ -42,9 +43,9 @@ POINT = np.array([-2.55, -0.15])
 POINT_CIRCLE_CENTER = np.array([1.15, 0.35])
 
 CIRCLE_1_CENTER = np.array([-2.1, -0.35])
-CIRCLE_2_CENTER = np.array([2.15, 0.50])
+CIRCLE_2_CENTER = np.array([2.15, 1.25])
 
-FIGURE_SIZE = (15.5, 6.4)
+FIGURE_SIZE = (15.5, 11.0)
 
 
 plt.rcParams.update({
@@ -260,6 +261,35 @@ def equal_circle_common_tangents(
 # PLOTTING HELPERS
 # =============================================================================
 
+def draw_circle_label(axis, center, radius, label, angle_degrees):
+    """Place a circle symbol outside its boundary with a short leader."""
+    angle = np.radians(angle_degrees)
+    direction = np.array([np.cos(angle), np.sin(angle)])
+    axis.annotate(
+        label, xy=center + radius * direction,
+        xytext=center + (radius + 0.55) * direction,
+        fontsize=SET_LABEL_FONT_SIZE, ha="center", va="center",
+        arrowprops=dict(arrowstyle="-", color="0.35", lw=1,
+                        shrinkA=2, shrinkB=0),
+        zorder=10,
+    )
+
+
+def draw_dimension(axis, start, end, label, color, offset, label_fraction=0.5):
+    """Show length directly on the segment, with arrowheads at both endpoints."""
+    direction = (end - start) / np.linalg.norm(end - start)
+    normal = perpendicular(direction)
+    axis.add_patch(FancyArrowPatch(
+        start, end, arrowstyle="<|-|>", mutation_scale=15,
+        linewidth=1.8, color=color, shrinkA=0, shrinkB=0, zorder=10,
+    ))
+    position = start + label_fraction * (end - start) + np.sign(offset) * 0.28 * normal
+    axis.text(*position, label, fontsize=SEGMENT_LABEL_FONT_SIZE,
+              color=color, ha="center", va="center", zorder=10,
+              rotation=np.degrees(np.arctan2(direction[1], direction[0])),
+              rotation_mode="anchor")
+
+
 def draw_oriented_reference_line(
     axis,
     start,
@@ -339,6 +369,27 @@ def draw_extended_line(
         color="0.60",
         zorder=0,
     )
+
+
+def draw_positive_tangent_angle(axis, vertex, direction, radius, color, show_reference=True):
+    """Shade the counterclockwise angle in [0, 2pi) from the local +x axis."""
+    radius *= 0.7
+    angle = np.arctan2(direction[1], direction[0]) % (2 * np.pi)
+    axis.add_patch(Wedge(vertex, radius, 0, np.degrees(angle),
+                         facecolor=color, edgecolor="none", alpha=0.17, zorder=1))
+    axis.add_patch(Arc(vertex, 2 * radius, 2 * radius,
+                       theta1=0, theta2=np.degrees(angle), color=color,
+                       linewidth=1.25, zorder=6))
+    # A short arrow at the arc end makes the positive rotation explicit.
+    arc_start = max(0, angle - min(0.18, angle / 3))
+    axis.add_patch(FancyArrowPatch(
+        vertex + radius * np.array([np.cos(arc_start), np.sin(arc_start)]),
+        vertex + radius * np.array([np.cos(angle), np.sin(angle)]),
+        arrowstyle="->", mutation_scale=9, color=color, lw=1.1,
+        shrinkA=0, shrinkB=0, zorder=7))
+    if show_reference:
+        axis.plot([vertex[0], vertex[0] + radius + 0.08],
+                  [vertex[1], vertex[1]], color="0.55", lw=0.85, zorder=4)
 
 
 def draw_angle_arc(
@@ -423,7 +474,7 @@ def setup_axis(axis):
 # PANEL 1: POINT-CIRCLE TANGENTS
 # =============================================================================
 
-def plot_point_circle_panel(axis):
+def plot_point_circle_panel(axis, distances=False):
     point = POINT
     center = POINT_CIRCLE_CENTER
     radius = RADIUS
@@ -445,13 +496,14 @@ def plot_point_circle_panel(axis):
         )
     )
 
-    draw_oriented_reference_line(
-        axis,
-        point,
-        center,
-        label=r"$h$",
-        label_offset=np.array([0.05, -0.16]),
-    )
+    if distances:
+        draw_oriented_reference_line(
+            axis,
+            point,
+            center,
+            label=r"$h$",
+            label_offset=np.array([0.05, -0.16]),
+        )
 
     axis.plot(
         point[0],
@@ -473,7 +525,7 @@ def plot_point_circle_panel(axis):
 
     axis.text(
         point[0],
-        point[1] + 0.20,
+        point[1] + 0.38,
         r"$\mathbf{p}$",
         fontsize=POINT_LABEL_FONT_SIZE,
         ha="center",
@@ -482,19 +534,14 @@ def plot_point_circle_panel(axis):
 
     axis.text(
         center[0],
-        center[1] + 0.14,
+        center[1] + 0.28,
         r"$\mathbf{o}$",
         fontsize=POINT_LABEL_FONT_SIZE,
         ha="center",
         va="center",
     )
 
-    axis.text(
-        center[0] + 0.24,
-        center[1] + 0.52,
-        r"$\mathcal{O}$",
-        fontsize=SET_LABEL_FONT_SIZE,
-    )
+    draw_circle_label(axis, center, radius, r"$\mathcal{O}$", 40)
 
     tangent_colors = {
         "+": "tab:green",
@@ -527,74 +574,68 @@ def plot_point_circle_panel(axis):
             tangent_direction
         )
 
-        draw_extended_line(
-            axis,
-            point,
-            q,
-        )
+        if not distances:
+            draw_extended_line(
+                axis,
+                point,
+                q,
+            )
 
-        draw_tangent(
-            axis,
-            point,
-            q,
-            color=color,
-        )
 
         axis.plot(
             q[0],
             q[1],
             marker="o",
-            markersize=TANGENCY_MARKER_SIZE,
+            markersize=TANGENCY_MARKER_SIZE if distances else 9,
+            markeredgecolor=color if distances else "white",
+            markeredgewidth=0 if distances else 1.1,
             color=color,
             zorder=9,
         )
 
-        midpoint = 0.5 * (point + q)
+        if distances:
+            draw_dimension(axis, point, q, rf"$d^{{{symbol}}}$", color,
+                           0.22 if symbol == "-" else -0.22)
 
-        axis.text(
-            midpoint[0] + label_offsets[symbol][0],
-            midpoint[1] + label_offsets[symbol][1],
-            rf"$d^{{{symbol}}}$",
-            fontsize=SEGMENT_LABEL_FONT_SIZE,
-            color=color,
-            ha="center",
-            va="center",
-        )
-
-        axis.text(
-            q[0] + q_offsets[symbol][0],
-            q[1] + q_offsets[symbol][1],
-            rf"$\mathbf{{q}}^{{{symbol}}}$",
-            fontsize=TANGENCY_LABEL_FONT_SIZE,
-            color=color,
-            ha="center",
-            va="center",
-        )
-
-        if symbol == "-":
-            t_label_position = (
-                q
-                + 0.58 * tangent_direction
-                + 0.16 * tangent_normal
+        if not distances:
+            angle_fraction = 0.34 if symbol == "-" else 0.65
+            angle_vertex = point + angle_fraction * (q - point)
+            draw_positive_tangent_angle(axis, angle_vertex, tangent_direction,
+                                        0.46 if symbol == "-" else 0.34, color)
+            axis.text(
+                q[0] + q_offsets[symbol][0],
+                q[1] + q_offsets[symbol][1],
+                rf"$\mathbf{{q}}^{{{symbol}}}$",
+                fontsize=TANGENCY_LABEL_FONT_SIZE,
+                color=color,
+                ha="center",
+                va="center",
             )
-            t_label_color = REFERENCE_ARROW_COLOR
-        else:
-            t_label_position = (
-                q
-                + 0.58 * tangent_direction
-                - 0.16 * tangent_normal
-            )
-            t_label_color = REFERENCE_ARROW_COLOR
 
-        axis.text(
-            t_label_position[0],
-            t_label_position[1],
-            rf"$t^{{{symbol}}}$",
-            fontsize=TANGENT_LABEL_FONT_SIZE,
-            color=t_label_color,
-            ha="center",
-            va="center",
-        )
+            if symbol == "-":
+                t_label_position = (
+                    q
+                    + 0.58 * tangent_direction
+                    + 0.16 * tangent_normal
+                )
+                t_label_color = REFERENCE_ARROW_COLOR
+            else:
+                t_label_position = (
+                    q
+                    + 0.58 * tangent_direction
+                    - 0.16 * tangent_normal
+                )
+                t_label_color = REFERENCE_ARROW_COLOR
+
+            axis.text(
+                t_label_position[0],
+                t_label_position[1],
+                rf"$t^{{{symbol}}}$",
+                fontsize=TANGENT_LABEL_FONT_SIZE,
+                color=t_label_color,
+                ha="center",
+                va="center",
+            )
 
     axis.set_xlim(-3.45, 2.95)
     axis.set_ylim(-2.30, 2.35)
@@ -605,7 +646,7 @@ def plot_point_circle_panel(axis):
 # PANEL 2: TWO-CIRCLE COMMON TANGENTS
 # =============================================================================
 
-def plot_circle_circle_panel(axis):
+def plot_circle_circle_panel(axis, distances=False):
     center_1 = CIRCLE_1_CENTER
     center_2 = CIRCLE_2_CENTER
     radius = RADIUS
@@ -640,17 +681,19 @@ def plot_circle_circle_panel(axis):
             zorder=8,
         )
 
-    draw_oriented_reference_line(
-        axis,
-        center_1,
-        center_2,
-        label=r"$c$",
-        label_offset=np.array([0.0, -0.20]),
-    )
+    if distances:
+        axis.add_patch(FancyArrowPatch(
+            center_1, center_2, arrowstyle="<|-|>", mutation_scale=15,
+            linewidth=1.6, color="0.3", zorder=3))
+        reference_direction = (center_2 - center_1) / np.linalg.norm(center_2 - center_1)
+        reference_label = center_1 + 0.16 * (center_2 - center_1) - 0.25 * perpendicular(reference_direction)
+        axis.text(*reference_label, r"$c$",
+                  fontsize=SEGMENT_LABEL_FONT_SIZE, color="0.25",
+                  ha="center", va="center", zorder=10)
 
     axis.text(
         center_1[0],
-        center_1[1] + 0.28,
+        center_1[1] + 0.40,
         r"$\mathbf{o}_1$",
         fontsize=POINT_LABEL_FONT_SIZE,
         ha="center",
@@ -659,26 +702,15 @@ def plot_circle_circle_panel(axis):
 
     axis.text(
         center_2[0],
-        center_2[1] + 0.28,
+        center_2[1] + 0.40,
         r"$\mathbf{o}_2$",
         fontsize=POINT_LABEL_FONT_SIZE,
         ha="center",
         va="center",
     )
 
-    axis.text(
-        center_1[0] - 0.68,
-        center_1[1] + 0.46,
-        r"$\mathcal{O}_1$",
-        fontsize=SET_LABEL_FONT_SIZE,
-    )
-
-    axis.text(
-        center_2[0] + 0.20,
-        center_2[1] + 0.50,
-        r"$\mathcal{O}_2$",
-        fontsize=SET_LABEL_FONT_SIZE,
-    )
+    draw_circle_label(axis, center_1, radius, r"$\mathcal{O}_1$", 200)
+    draw_circle_label(axis, center_2, radius, r"$\mathcal{O}_2$", 25)
 
     tangent_colors = {
         ("+", "+"): "#0072B2",
@@ -687,14 +719,14 @@ def plot_circle_circle_panel(axis):
         ("-", "+"): "#CC79A7",
     }
 
-    text_offsets = {
-        ("+", "+"): np.array([0.00, -0.20]),
-        ("-", "-"): np.array([0.00, 0.20]),
-        ("+", "-"): np.array([0.64, -0.28]),
-        ("-", "+"): np.array([-0.52, 0.28]),
+    dimension_offsets = {
+        ("+", "+"): -0.24, ("-", "-"): 0.24,
+        ("+", "-"): -0.18, ("-", "+"): 0.18,
     }
-
-
+    label_fractions = {
+        ("+", "+"): 0.5, ("-", "-"): 0.5,
+        ("+", "-"): 0.30, ("-", "+"): 0.30,
+    }
 
     for key in (
         ("-", "-"),
@@ -707,69 +739,62 @@ def plot_circle_circle_panel(axis):
         q_2 = tangent["q2"]
         color = tangent_colors[key]
 
-        draw_extended_line(
-            axis,
-            q_1,
-            q_2,
-            extension_start=1.10,
-            extension_end=1.30,
-        )
+        if not distances:
+            draw_extended_line(
+                axis,
+                q_1,
+                q_2,
+                extension_start=1.10,
+                extension_end=1.30,
+            )
 
-        draw_tangent(
-            axis,
-            q_1,
-            q_2,
-            color=color,
-            linewidth=1.9,
-        )
 
         axis.plot(
             [q_1[0], q_2[0]],
             [q_1[1], q_2[1]],
             linestyle="None",
             marker="o",
-            markersize=TANGENCY_MARKER_SIZE,
+            markersize=TANGENCY_MARKER_SIZE if distances else 9,
+            markeredgecolor=color if distances else "white",
+            markeredgewidth=0 if distances else 1.1,
             color=color,
             zorder=9,
         )
 
-        midpoint = 0.5 * (q_1 + q_2)
         sigma_1, sigma_2 = key
+        if distances:
+            draw_dimension(axis, q_1, q_2, rf"$d^{{{sigma_1},{sigma_2}}}$",
+                           color, dimension_offsets[key], label_fractions[key])
 
-        axis.text(
-            midpoint[0] + text_offsets[key][0],
-            midpoint[1] + text_offsets[key][1],
-            rf"$d^{{{sigma_1},{sigma_2}}}$",
-            fontsize=REFERENCE_LABEL_FONT_SIZE,
-            color=color,
-            ha="center",
-            va="center",
-        )
-
-        # Tangency points are indicated by black markers. Their full
-        # labels are omitted here to keep the four-tangent panel readable.
-
-        label_position = (
-            q_2
-            + 0.92
-            * (
-                q_2 - q_1
+        if not distances:
+            angle_fractions = {
+                ("-", "-"): 0.48, ("+", "+"): 0.58,
+                ("-", "+"): 0.26, ("+", "-"): 0.70,
+            }
+            angle_vertex = q_1 + angle_fractions[key] * (q_2 - q_1)
+            draw_positive_tangent_angle(axis, angle_vertex, q_2 - q_1,
+                                        0.34 if key[0] != key[1] else 0.40, color)
+            label_position = (
+                q_2
+                + 0.92
+                * (
+                    q_2 - q_1
+                )
+                / np.linalg.norm(q_2 - q_1)
             )
-            / np.linalg.norm(q_2 - q_1)
-        )
 
-        axis.text(
-            label_position[0],
-            label_position[1],
-            rf"$t^{{{sigma_1},{sigma_2}}}$",
-            fontsize=REFERENCE_LABEL_FONT_SIZE,
-            color=REFERENCE_ARROW_COLOR,
-            ha="center",
-            va="center",
-        )
+            axis.text(
+                label_position[0],
+                label_position[1],
+                rf"$t^{{{sigma_1},{sigma_2}}}$",
+                fontsize=REFERENCE_LABEL_FONT_SIZE,
+                color=REFERENCE_ARROW_COLOR,
+                ha="center",
+                va="center",
+            )
 
     axis.set_xlim(-3.90, 4.00)
-    axis.set_ylim(-2.45, 2.60)
+    axis.set_ylim(-2.05, 3.00)
     setup_axis(axis)
 
 
@@ -778,23 +803,29 @@ def plot_circle_circle_panel(axis):
 # =============================================================================
 
 if __name__ == "__main__":
-    figure, axes = plt.subplots(
-        1,
-        2,
-        figsize=FIGURE_SIZE,
+    figure, axes = plt.subplots(2, 2, figsize=FIGURE_SIZE)
+    plot_point_circle_panel(axes[0, 0])
+    plot_circle_circle_panel(axes[0, 1])
+    plot_point_circle_panel(axes[1, 0], distances=True)
+    plot_circle_circle_panel(axes[1, 1], distances=True)
+    for axis, title in zip(axes.flat, (
+        "a) Point–circle: tangency points", "b) Circle–circle: tangency points",
+        "c) Point–circle: distances", "d) Circle–circle: distances",
+    )):
+        axis.set_title(title, fontsize=20, pad=4)
+    figure.legend(
+        handles=[
+            Line2D([], [], marker="o", linestyle="None", color="0.3", markersize=7,
+                   label=r"$\mathbf{q}_i^{\sigma_1,\sigma_2}$" + "\nTangency point on circle " + r"$i$"),
+            Line2D([], [], linestyle="--", color="0.55", linewidth=1,
+                   label=r"$t^{\sigma_1,\sigma_2}$" + "\nCommon tangent"),
+            Line2D([], [], color="0.3", linewidth=1.5,
+                   label=r"$d^{\sigma_1,\sigma_2}$" + "\nDistance between tangency points"),
+        ],
+        loc="lower center", bbox_to_anchor=(0.5, 0.01), ncol=3,
+        frameon=False, fontsize=15, columnspacing=2.5, handletextpad=0.8,
     )
-
-    plot_point_circle_panel(
-        axes[0]
-    )
-
-    plot_circle_circle_panel(
-        axes[1]
-    )
-
-    figure.tight_layout(
-        w_pad=1.5,
-    )
+    figure.tight_layout(w_pad=1.5, h_pad=1.0, rect=(0, 0.10, 1, 1))
 
     current_directory = (
         Path(__file__).resolve().parent

@@ -1,27 +1,43 @@
 import sympy as sp
+from pathlib import Path
 from math import sin, cos, pi, sqrt, asin, atan2
 import numpy as np
-from arena import compute_angular_difference, compute_three_maneuvers_no_collision_avoidance, CurvilinearArcUnicycle, wrapPositiveAngle, Unicycle, compute_two_maneuvers
+from kappa_planner.trajectory import CurvilinearArcUnicycle
+from kappa_planner.vehicle import Unicycle
+from kappa_planner.helpers.geometry_operations import compute_angular_difference, wrapPositiveAngle
+from kappa_planner.helpers.pose_to_circle_dubins import compute_two_maneuvers
+from kappa_planner.helpers.pose_to_circle_unicycle import compute_three_maneuvers_no_collision_avoidance
 from math import sin, cos, pi, sqrt, asin, atan2
 # import matplotlib.pylab as plt
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
-# mpl.rcParams['text.usetex'] = True  # Enable LaTeX
-# mpl.rcParams['font.family'] = 'serif'
-# mpl.rcParams['font.serif'] = ['Computer Modern Roman']  # Default LaTeX serif font
-# Set global font to serif (LaTeX-style)
-plt.rcParams['font.family'] = 'serif'
-plt.rcParams.update({
-    'font.size': 10,          # base font size
-    'axes.labelsize': 14,     # x- and y-labels
-    'axes.titlesize': 18,     # axes titles
-    'xtick.labelsize': 14,
-    'ytick.labelsize': 14,
-    'legend.fontsize': 14
+mpl.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["DejaVu Serif"],
+    "font.size": 22,
+    "axes.labelsize": 16,
+    "axes.titlesize": 24,
+    "xtick.labelsize": 20,
+    "ytick.labelsize": 20,
+    "legend.fontsize": 16,
 })
 
+mpl.rcParams["text.latex.preamble"] = r"""
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage[notext]{stix}
+\usepackage{DejaVuSerif}
+% Restore the original serif prose while keeping Computer Modern in math text.
+\let\mathtextoriginal\text
+\renewcommand{\text}[1]{\mathtextoriginal{\fontfamily{cmr}\selectfont #1}}
+\newcommand{\Time}{\boldsymbol{T}}
+"""
+
+SHOW_DIAGNOSTIC_FIGURES = False
+OUTPUT_DIRECTORY = Path(__file__).resolve().parent / "figures"
 
 find_exact_solution = True
 use_sympy = False # Set to False to make the code faster
@@ -386,7 +402,7 @@ if use_sympy:
 
 
 ## Figure 3: plot the derivative wrt theta0 and the slope
-fig, subplot31 = plt.subplots(figsize=(8, 3.2))
+fig, subplot31 = plt.subplots(figsize=(10, 4))
 linewidth = 0.8
 color_ll = '#008080'   # teal
 color_rl = '#8E44AD'   # muted magenta
@@ -400,15 +416,15 @@ subplot31.axvline(x = theta0_val+ 2*pi, color = 'k', linewidth = 0.5, linestyle 
 
 x_main = theta0_val + theta0_array  # exclude the last point to avoid overlap
 
-subplot31.plot(x_main[:-1], total_time_planner_4_ll_array[:-1], color = color_ll, label = r'$\boldsymbol{T}^{\mathrm{eq}}$')
-subplot31.plot(x_main[:-1], total_time_planner_4_rl_array[:-1], color = color_rl, label = r'$\boldsymbol{T}^{\mathrm{neq}}$')
+subplot31.plot(x_main[:-1], total_time_planner_4_ll_array[:-1], color = color_ll, label = r'$\Time^{\text{eq}}$')
+subplot31.plot(x_main[:-1], total_time_planner_4_rl_array[:-1], color = color_rl, label = r'$\Time^{\text{neq}}$')
 
 ## Plot the important points
 subplot31.plot(theta0_start_planner_ll, y_start_planner_ll, color = color_ll, marker = 'o', linestyle='None', markersize = 6,
-               label = r'Switch from $\boldsymbol{T}^{\mathrm{eq}}_{\text{no-turn}}$ to $\boldsymbol{T}^{\mathrm{eq}}_{\text{turn}}$')
+               label = r'Switch from $\Time^{\text{eq}}_{\text{no-turn}}$ to $\Time^{\text{eq}}_{\text{turn}}$')
 
 subplot31.plot(theta0_start_planner_rl, y_start_planner_rl, color = color_rl, marker = 'o', linestyle='None', markersize = 6, 
-               label = r'Switch from $\boldsymbol{T}^{\mathrm{neq}}_{\text{no-turn}}$ to $\boldsymbol{T}^{\mathrm{neq}}_{\text{turn}}$')
+               label = r'Switch from $\Time^{\text{neq}}_{\text{no-turn}}$ to $\Time^{\text{neq}}_{\text{turn}}$')
 
 subplot31.plot(
     theta0_val,
@@ -422,7 +438,7 @@ subplot31.plot(
     label=r'Intersection at $\theta_0 = \alpha_0 - \tau_1 \beta$'
 )
 subplot31.plot(x_int_planner, y_int_planner,  color = 'k', marker = 'o', linestyle='None', markersize = 6, 
-                label = r'Linear branches intersection')
+                label = 'Linear branches intersection')
 
 xticks = [
     theta0_val,
@@ -445,15 +461,21 @@ subplot31.set_xticks(xticks)
 subplot31.set_xticklabels(xtick_labels)
 
 subplot31.set_xlabel(r'Initial orientation $\theta_0$')
-subplot31.set_ylabel(r'Motion time $\boldsymbol{T}$ when $\tau_1 = 1$')
+subplot31.set_ylabel(r'Motion time when $\tau_1 = 1$')
 
+legend_handles, legend_labels = subplot31.get_legend_handles_labels()
+legend_order = [0, 1, 2, 3, 4, 5]
 subplot31.legend(
+    [legend_handles[i] for i in legend_order],
+    [legend_labels[i] for i in legend_order],
     loc='lower center',
-    bbox_to_anchor=(0.5, 1.02),
+    bbox_to_anchor=(0.5, 1.04),
+    borderaxespad=0,
     ncol=3,
     frameon=False,
-    columnspacing=1.2,
-    handletextpad=0.6
+    columnspacing=1.5,
+    handlelength=1.0,
+    handletextpad=0.4
 )
 
 # fig.savefig(
@@ -535,10 +557,10 @@ x2 = x1 + range_axis
 ####### Figure for paper
 ## Figure 6: plot the derivative wrt theta0
 subplot61.title.set_text(r'Total time $\tau_1 = \tau_2 = 1$')
-subplot61.plot(theta0_val + theta0_array, total_time_planner_ll_array, color = 'r', label = r'Total time without turn on-the-spot $\boldsymbol{T}_{\text{no-turn}}$')
-subplot61.plot(theta0_val + theta0_array, total_time_planner_4_ll_array, color = 'r', linestyle = 'dashed', label = r'Total time with turn on-the-spot $\boldsymbol{T}_{\text{turn}}$')
+subplot61.plot(theta0_val + theta0_array, total_time_planner_ll_array, color = 'r', label = r'Total time without turn on-the-spot $\Time_{\text{no-turn}}$')
+subplot61.plot(theta0_val + theta0_array, total_time_planner_4_ll_array, color = 'r', linestyle = 'dashed', label = r'Total time with turn on-the-spot $\Time_{\text{turn}}$')
 
-subplot62.title.set_text(r'Derivative of $\boldsymbol{T}_{\text{no-turn}}$ wrt $\theta_0$, $\tau_1 = \tau_2 = 1$')
+subplot62.title.set_text(r'Derivative of $\Time_{\text{no-turn}}$ wrt $\theta_0$, $\tau_1 = \tau_2 = 1$')
 if use_sympy:
     subplot62.plot(theta0_val + theta0_array, der_ll_sympy_array, color = 'r', label = r'Derivative of total time without turn on-the-spot wrt $\theta_0$')
 
@@ -561,10 +583,10 @@ subplot62.set_yticks([])
 
 ## Figure 7: plot the derivative wrt theta0
 subplot71.title.set_text(r'Total time $\tau_1 = -1, \tau_2 = 1$')
-subplot71.plot(theta0_val + theta0_array, total_time_planner_rl_array, color = 'b', label = r'Total time without turn on-the-spot $\boldsymbol{T}_{\text{no-turn}}$')
-subplot71.plot(theta0_val + theta0_array, total_time_planner_4_rl_array, color = 'b', linestyle = 'dashed', label = r'Total time with turn on-the-spot $\boldsymbol{T}_{\text{turn}}$')
+subplot71.plot(theta0_val + theta0_array, total_time_planner_rl_array, color = 'b', label = r'Total time without turn on-the-spot $\Time_{\text{no-turn}}$')
+subplot71.plot(theta0_val + theta0_array, total_time_planner_4_rl_array, color = 'b', linestyle = 'dashed', label = r'Total time with turn on-the-spot $\Time_{\text{turn}}$')
 
-subplot72.title.set_text(r'Derivative of $\boldsymbol{T}_{\text{no-turn}}$ wrt $\theta_0$, $\tau_1 = -1, \tau_2 = 1$')
+subplot72.title.set_text(r'Derivative of $\Time_{\text{no-turn}}$ wrt $\theta_0$, $\tau_1 = -1, \tau_2 = 1$')
 if use_sympy:
     subplot72.plot(theta0_val + theta0_array, der_rl_sympy_array, color = 'b', label = r'Derivative of total time without turn on-the-spot wrt $\theta_0$')
 
@@ -592,6 +614,21 @@ subplot72.set_yticks([])
 # subplot24.axvline(x = theta0_val + 2*pi, color = 'k', linewidth = 0.5, label = r'$\theta_0 = \alpha_0 - \tau_2 \beta + 2\pi$')
 # subplot24.axvline(x = x_rl, color = 'b')
 
-plt.show(block = True)
+# Render the journal figure before opening the GUI, so LaTeX errors are visible
+# in the terminal and exported copies are available with noninteractive backends.
+if not SHOW_DIAGNOSTIC_FIGURES:
+    for figure_number in plt.get_fignums():
+        if figure_number != fig.number:
+            plt.close(figure_number)
+
+OUTPUT_DIRECTORY.mkdir(exist_ok=True)
+print("Rendering journal figure with LaTeX...", flush=True)
+for extension in ("pdf", "png"):
+    output_path = OUTPUT_DIRECTORY / f"motion_time_journal.{extension}"
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"Saved {output_path}", flush=True)
+
+plt.figure(fig.number)
+plt.show(block=True)
 
 

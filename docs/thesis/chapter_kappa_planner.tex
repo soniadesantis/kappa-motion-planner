@@ -1,0 +1,184 @@
+% Short chapter draft based on the local implementation, September 2026.
+% Requires amsmath, booktabs, listings, and hyperref in the thesis preamble.
+% Compile preview.tex from this directory for a standalone preview.
+\chapter{Kappa Motion Planner Software Framework}
+\label{ch:kappa-software}
+
+\section{Overview}
+
+The planning methods presented in the preceding chapters are implemented in
+\emph{Kappa Motion Planner}, a Python package developed within the ARENA research
+project. The package brings together the geometric constructions, vehicle models,
+and motion primitives used by the analytical planners. Its purpose is to make
+these components available through a common software interface, allowing the
+same implementation to be used for numerical experiments, visualization, and
+integration into a larger navigation system.
+
+The package is imported under the name \texttt{kappa\_planner}. Its source code
+is organized around five main modules: \texttt{geometry}, \texttt{corridor},
+\texttt{vehicle}, \texttt{trajectory}, and \texttt{motion\_planner}. Supporting
+functions are collected in the \texttt{helpers} subpackage, while executable
+examples and research experiments are maintained separately. This organization
+reflects the recurring structure of the analytical methods: geometric objects
+describe the planning problem, vehicle parameters determine the admissible
+motions, and planning routines assemble elementary primitives into a trajectory.
+
+The main corridor-planning interface receives an ordered corridor sequence and
+the boundary poses. The selection of this sequence, for example from a map or a
+corridor graph, belongs to the surrounding application. Similarly, the package
+provides a trajectory that an external tracking controller can use, but the
+analytical planning interface does not itself implement a complete navigation
+system. The core library does not require ROS, so it can also be used directly
+in Python scripts.
+
+This chapter explains how the software connects the analytical methods developed
+in this thesis, introduces its principal components, and illustrates their use
+in a planning example. Installation instructions are provided in
+Appendix~\ref{app:kappa-installation}. The mathematical derivations and the
+conditions under which the methods apply are given in the preceding chapters.
+
+\section{From Analytical Methods to Software}
+
+The methods developed in this thesis repeatedly use the same geometric
+constructions: supporting circles, tangent connections, and straight and curved
+motion primitives. Collecting these constructions in a common implementation
+allows the boundary-connection routines and the corridor planners to share the
+same representations. A change to a geometric construction can therefore be
+applied at its source, rather than independently in each experimental script.
+The unicycle and bicycle planners retain their model-specific planning rules
+while using common corridor and geometric objects.
+
+Retaining an explicit sequence of primitives also provides a direct connection
+between the mathematical solution and its numerical evaluation. The structure
+of a trajectory can be inspected, its traversal time evaluated from the
+individual motions, and its path and controls sampled for comparison with
+numerical optimal-control solutions. The experiments and plotting scripts use
+these objects to study candidate families and illustrate corridor transitions.
+This makes the package a shared implementation basis for the methods and their
+evaluation throughout the thesis.
+
+The software contribution is thus the organization of these analytical
+constructions into reusable components and planning interfaces. Its scope
+remains tied to the assumptions of the implemented methods. Those assumptions
+are reflected in input checks and in the choice of planning routine; the
+software does not extend the mathematical guarantees to arbitrary corridor
+sequences or vehicle models.
+
+\section{Software Organization and Main Components}
+\label{sec:kappa-classes}
+
+\subsection{Geometry and corridors}
+
+The \texttt{Point}, \texttt{Pose}, and \texttt{Circle} classes in
+\texttt{geometry.py} represent the basic planar objects. A \texttt{Pose}
+combines a \texttt{Point} with a heading angle. Some interfaces also accept
+poses as three-element lists or arrays containing $(x,y,\theta)$, as in the
+example below.
+
+A rectangular corridor is represented by \texttt{CorridorWorld}. Its defining
+parameters are its width, length, center, and orientation. In the constructor,
+the longitudinal dimension is called \texttt{height}, and \texttt{tilt} is the
+angle of the forward corridor direction measured from the global $x$-axis.
+From these parameters, the object computes its corners, boundary representation,
+and the midpoints of its front and rear edges, stored as \texttt{head} and
+\texttt{tail}. The \texttt{shrink} method constructs an inset corridor, while
+\texttt{update} changes the defining parameters and recomputes the derived
+geometry. These methods allow the planner and the visualization routines to use
+the same geometric representation.
+
+The corridor planners also use \texttt{IntermediateCircle} and
+\texttt{IntermediateCirclesSequence}. An intermediate circle stores not only a
+center and radius, but also information about its associated corridor corner,
+turn direction, and admissible displacement. The sequence object maintains the
+order of these circles along the route. These structures make the intermediate
+constructions used by the analytical planner available for inspection and
+plotting.
+
+\subsection{Vehicle models}
+
+The \texttt{vehicle.py} module provides \texttt{Unicycle} and \texttt{Bicycle},
+derived from the base class \texttt{Vehicle}. These classes store the vehicle
+dimensions, state, and input bounds, and provide the corresponding kinematic
+dynamics. Parameters may be supplied explicitly or loaded from the YAML vehicle
+libraries. They can subsequently be modified through the \texttt{update} method.
+
+For the unicycle, the radius associated with simultaneous maximum translational
+and angular speed is
+\begin{equation}
+  R=\left|\frac{v_{\max}}{\omega_{\max}}\right|.
+\end{equation}
+For the bicycle, the steering bound and wheelbase $L$ define
+\begin{equation}
+  R=\left|\frac{L}{\tan\delta_{\max}}\right|.
+\end{equation}
+Both quantities are stored under the implementation name \texttt{max\_radius}.
+Their physical interpretation follows the corresponding vehicle model; in
+particular, the unicycle also permits turns on the spot.
+
+\subsection{Motion primitives and planning interface}
+
+The \texttt{trajectory.py} module contains the motion-primitive classes.
+Straight unicycle motions are represented by \texttt{LinearSegmentUnicycle}.
+The classes \texttt{CurvilinearArcUnicycle} and \texttt{TurnOnTheSpot}
+represent circular arcs and turns on the spot, respectively. Together, they
+implement the primitives $S$, $C$, and $T$. Each stores its boundary
+configurations and traversal time, together with sampled coordinates and
+control profiles. Thus, the trajectory retains its primitive structure while
+also providing data suitable for numerical evaluation and plotting. The module
+also contains classes for backward arcs and sampled bicycle trajectories.
+
+The principal corridor-planning interface is \texttt{MotionPlanner}. It takes
+a vehicle, an ordered list of corridors, and initial and final poses. It
+constructs the inset corridors, resolves the boundary poses, checks the relevant
+input conditions, and prepares the intermediate geometry. Calling
+\texttt{compute\_trajectory\_analytical()} returns an ordered collection of
+motion primitives. The traversal time is obtained by summing their
+\texttt{maneuver\_time} attributes; the computation time of the trajectory
+generation call is recorded separately as \texttt{comp\_time\_analytical\_sol}.
+The latter does not include the earlier planner construction.
+
+The current implementation distinguishes two modes through the
+\texttt{assumptions} argument: \texttt{standing} and \texttt{core}. These select
+different geometric preparation and planning routines. The example below
+explicitly selects \texttt{standing}, which is used for the journal corridor
+construction, rather than relying on the default \texttt{core} mode.
+
+The interface should be distinguished from the lower-level planning functions.
+For example, \texttt{compute\_all\_pose\_to\_pose\_trajectories}, in
+\texttt{helpers.pose\_to\_pose\_unicycle}, generates the $CSC$, $TCSC$, $CSCT$,
+and $TCSCT$ candidates for the four combinations of turn directions. This
+function currently requires the distance between the boundary positions to
+exceed $4R$. Likewise, the existence of a geometric or vehicle class does not
+imply support for every corresponding planning problem: single-corridor and
+waypoint trajectory generation are not implemented through the current
+\texttt{MotionPlanner} entry point.
+
+\section{Example: Planning Through Two Corridors}
+\label{sec:kappa-example}
+
+The following example defines two overlapping corridors and computes a
+trajectory for a circular unicycle. The first corridor is aligned with the
+global $x$-axis. The second is constructed from the first corridor's head to a
+point above it, giving a left-turn transition. The helper
+\texttt{get\_corridor\_from\_vector} determines the corridor center and
+orientation from these endpoints; \texttt{add\_height} adds longitudinal overlap.
+The boundary poses are supplied explicitly in global coordinates, with headings
+in radians.
+
+\lstinputlisting[language=Python,float=htbp,caption={Analytical planning through two
+corridors using Kappa Motion Planner.},label={lst:kappa-example}]{kappa_example.py}
+
+The vehicle is loaded from the supplied model library, after which its speed
+bounds are updated. With $v_{\max}=0.6\,\mathrm{m/s}$ and
+$\omega_{\max}=1\,\mathrm{rad/s}$, the supporting turning-circle radius is
+$R=0.6\,\mathrm{m}$. The planner then constructs the analytical trajectory
+through the prescribed corridor sequence. The example prints both its traversal
+time and the measured trajectory-generation time, and displays the resulting
+path over the corridor geometry.
+
+The returned primitive collection can also be used without plotting. Its timing,
+position, heading, and control data are available for analysis or conversion to
+an application-specific trajectory message. This small example illustrates the
+role of the package within the thesis: it provides reusable implementations of
+the analytical constructions, while allowing experiments and external
+applications to define their own planning inputs and use the resulting motion.

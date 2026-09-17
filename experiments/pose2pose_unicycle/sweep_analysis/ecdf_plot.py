@@ -1,3 +1,6 @@
+"""Compare ECDFs from one to three sweep JSON files. Run --help for options."""
+
+import argparse
 import json
 from pathlib import Path
 
@@ -13,16 +16,15 @@ from scipy.spatial import cKDTree
 plt.rcParams.update({
     "mathtext.fontset": "cm",
     "font.family": "serif",
-    "font.serif": [
-        "Computer Modern Roman",
-        "CMU Serif",
-        "DejaVu Serif",
-    ],
-    "axes.labelsize": 12,
-    "axes.titlesize": 12,
-    "legend.fontsize": 10,
-    "xtick.labelsize": 10,
-    "ytick.labelsize": 10,
+    "font.serif": ["cmr10"],
+    "font.size": 18,
+    "axes.formatter.use_mathtext": True,
+    "axes.labelsize": 19,
+    "axes.titlesize": 22,
+    "axes.titlepad": 14,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
     "axes.unicode_minus": True,
 })
 
@@ -31,34 +33,26 @@ plt.rcParams.update({
 # USER CONFIGURATION
 # =============================================================================
 
-RESULTS_FILES = {
-    30: Path(
-        "experiments/pose2pose_unicycle/results/"
-        "sweep4/sobol_sweep_N30_M4.json"
-    ),
-    100: Path(
-        "experiments/pose2pose_unicycle/results/"
-        "sweep4/sobol_sweep_N100_M4.json"
-    ),
-}
-
+DIRECTORY = Path(__file__).resolve().parent.parent
+RESULTS_FILES = [
+    DIRECTORY / "results/sweep4/sobol_sweep_OCP_TST_initial_guess_N50_M4.json",
+    DIRECTORY / "results/sweep4/sobol_sweep_OCP_TST_initial_guess_N100_M4.json",
+    DIRECTORY / "results/sweep4/sobol_sweep_OCP_TST_initial_guess_N300_M4.json",
+]
 N_COMPARISON_POINTS = 1001
-
 SAVE_FIGURE = True
 SHOW_FIGURE = True
-
-FIGURES_DIRECTORY = Path(
-    "experiments/pose2pose_unicycle/figures"
-)
-
-OUTPUT_BASENAME = (
-    "sweep4_validation_ecdf_N30_N100"
-)
+FIGURES_DIRECTORY = DIRECTORY / "figures"
+OUTPUT_BASENAME = "sweep_ecdf_comparison"
+CURVE_COLORS = ("#D55E00", "#0072B2", "#009E73")
+CURVE_LINESTYLES = ("-", "--", "-.")
 
 GRID_COLOR = "0.75"
 GRID_LINESTYLE = ":"
 GRID_LINEWIDTH = 0.7
 GRID_ALPHA = 0.7
+
+ZOOM_PERCENTILE = 95
 
 LINEWIDTH = 2.2
 
@@ -634,128 +628,39 @@ def compare_case(
     }
 
 
-def load_and_process_results(
-    results_file,
-    n_comparison_points,
-):
-    """Load all valid cases and compute the ECDF metrics."""
-
-    if not results_file.exists():
-        raise FileNotFoundError(
-            f"Results file not found:\n"
-            f"{results_file.resolve()}"
-        )
-
-    with open(
-        results_file,
-        "r",
-        encoding="utf-8",
-    ) as file:
-        data = json.load(
-            file
-        )
-
-    metadata = data[
-        "metadata"
-    ]
-
-    cases = data[
-        "results"
-    ]
-
-    required_fields = (
-        "best_analytical_time",
-        "best_analytical_primitives",
-        "ocp_time",
-        "ocp_time_grid",
-        "ocp_x",
-        "ocp_y",
-        "ocp_theta",
-    )
-
-    comparison_results = []
-    skipped_case_ids = []
-
-    for case in cases:
-        if not case.get(
-            "success",
-            False,
-        ):
-            skipped_case_ids.append(
-                case.get(
-                    "case_id"
-                )
-            )
+def load_and_process_results(results_file, n_comparison_points=N_COMPARISON_POINTS):
+    """Prefer saved Hausdorff measurements; reconstruct only for older files."""
+    with Path(results_file).open(encoding="utf-8") as source:
+        data = json.load(source)
+    metrics = []
+    saved_count = 0
+    for case in data["results"]:
+        if not (case.get("success") and case.get("ocp_success")):
             continue
-
-        if not case.get(
-            "ocp_success",
-            False,
-        ):
-            skipped_case_ids.append(
-                case.get(
-                    "case_id"
-                )
-            )
+        analytical_time = case.get("best_analytical_time")
+        ocp_time = case.get("ocp_time")
+        if analytical_time is None or ocp_time is None or analytical_time <= 0:
             continue
-
-        if any(
-            case.get(
-                field
-            ) is None
-            for field in required_fields
-        ):
-            skipped_case_ids.append(
-                case.get(
-                    "case_id"
-                )
-            )
-            continue
-
-        comparison_results.append(
-            compare_case(
-                case=case,
-                n_comparison_points=(
-                    n_comparison_points
-                ),
-            )
-        )
-
-    print("\n" + "=" * 80)
-    print("LOADED SOBOL SWEEP FILE")
-    print("=" * 80)
-
-    print(
-        f"Results file  : "
-        f"{results_file}"
-    )
-
-    print(
-        f"N             : "
-        f"{metadata.get('N')}"
-    )
-
-    print(
-        f"M             : "
-        f"{metadata.get('M')}"
-    )
-
-    print(
-        f"Cases loaded  : "
-        f"{len(cases)}"
-    )
-
-    print(
-        f"Cases compared: "
-        f"{len(comparison_results)}"
-    )
-
-    print(
-        f"Cases skipped : "
-        f"{len(skipped_case_ids)}"
-    )
-
-    return comparison_results
+        distance = case.get("hausdorff_distance")
+        if distance is not None:
+            result = {
+                "relative_time_error_percent": 100 * abs(ocp_time - analytical_time) / analytical_time,
+                "hausdorff_distance": float(distance),
+            }
+            saved_count += 1
+        else:
+            required = ("best_analytical_primitives", "ocp_time_grid", "ocp_x", "ocp_y", "ocp_theta")
+            if any(case.get(field) is None for field in required):
+                continue
+            result = compare_case(case, n_comparison_points)
+        if all(np.isfinite(value) and value >= 0 for value in result.values()):
+            metrics.append(result)
+    if not metrics:
+        raise ValueError(f"No valid comparisons in {results_file}")
+    print(f"\nInput: {results_file}")
+    print(f"Compared: {len(metrics):,}; skipped: {len(data['results']) - len(metrics):,}")
+    print(f"Hausdorff distances: {saved_count:,} saved, {len(metrics) - saved_count:,} reconstructed")
+    return data.get("metadata", {}), metrics
 
 
 # =============================================================================
@@ -852,256 +757,90 @@ def print_metric_statistics(
 # PLOTTING
 # =============================================================================
 
-def plot_sobol_ecdfs(
-    all_metrics,
-):
-    """
-    Plot ECDFs of the relative time discrepancy and Hausdorff distance.
-    """
-
-    figure, axes = plt.subplots(
-        1,
-        2,
-        figsize=(
-            10.8,
-            4.4,
-        ),
-        sharey=True,
+def plot_sobol_ecdfs(sweeps):
+    """Show full and percentile-zoomed ECDFs without renormalizing the zoom."""
+    if not 1 <= len(sweeps) <= 3:
+        raise ValueError("Provide between one and three sweeps.")
+    figure, axes = plt.subplots(2, 2, figsize=(11, 8.5), sharey=True, layout="constrained")
+    metric_specs = (
+        ("relative_time_error_percent", "Relative traversal-time discrepancy\n"
+         + r"$e_{\mathcal{T}}^{\mathrm{rel}}\,[\%]$"),
+        ("hausdorff_distance", "Symmetric Hausdorff distance\n"
+         + r"$d_{\mathrm{H}}\,[\mathrm{m}]$"),
     )
-
-    time_axis = axes[
-        0
-    ]
-
-    hausdorff_axis = axes[
-        1
-    ]
-
-    for transcription_resolution in (
-        30,
-        100,
-    ):
-        relative_errors = all_metrics[
-            transcription_resolution
-        ][
-            "relative_time_error_percent"
-        ]
-
-        hausdorff_distances = all_metrics[
-            transcription_resolution
-        ][
-            "hausdorff_distance"
-        ]
-
-        (
-            sorted_relative_errors,
-            relative_probabilities,
-        ) = compute_ecdf(
-            relative_errors
-        )
-
-        (
-            sorted_hausdorff_distances,
-            hausdorff_probabilities,
-        ) = compute_ecdf(
-            hausdorff_distances
-        )
-
-        curve_label = (
-            rf"$N={transcription_resolution}$"
-        )
-
-        time_axis.step(
-            sorted_relative_errors,
-            relative_probabilities,
-            where="post",
-            linewidth=LINEWIDTH,
-            label=curve_label,
-        )
-
-        hausdorff_axis.step(
-            sorted_hausdorff_distances,
-            hausdorff_probabilities,
-            where="post",
-            linewidth=LINEWIDTH,
-            label=curve_label,
-        )
-
-    # Mark the 95% cumulative probability.
-    for axis in axes:
-        axis.axhline(
-            0.95,
-            color="0.35",
-            linestyle=":",
-            linewidth=1.3,
-            zorder=0,
-        )
-
-        axis.text(
-            0.98,
-            0.955,
-            r"$95\%$",
-            transform=axis.get_yaxis_transform(),
-            ha="right",
-            va="bottom",
-            fontsize=10,
-        )
-
-        axis.set_ylim(
-            0.0,
-            1.01,
-        )
-
-    time_axis.set_xlabel(
-        r"Relative traversal-time discrepancy [\%]"
-    )
-
-    time_axis.set_ylabel(
-        "Fraction of cases"
-    )
-
-    hausdorff_axis.set_xlabel(
-        r"Symmetric Hausdorff distance [m]"
-    )
-
-    time_axis.text(
-        -0.14,
-        1.02,
-        "(a)",
-        transform=time_axis.transAxes,
-        fontweight="bold",
-        ha="left",
-        va="bottom",
-    )
-
-    hausdorff_axis.text(
-        -0.14,
-        1.02,
-        "(b)",
-        transform=hausdorff_axis.transAxes,
-        fontweight="bold",
-        ha="left",
-        va="bottom",
-    )
-
-    figure.tight_layout(
-        w_pad=2.5
-    )
-
-    if SAVE_FIGURE:
-        FIGURES_DIRECTORY.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-        pdf_path = (
-            FIGURES_DIRECTORY
-            / f"{OUTPUT_BASENAME}.pdf"
-        )
-
-        png_path = (
-            FIGURES_DIRECTORY
-            / f"{OUTPUT_BASENAME}.png"
-        )
-
-        figure.savefig(
-            pdf_path,
-            bbox_inches="tight",
-        )
-
-        figure.savefig(
-            png_path,
-            dpi=300,
-            bbox_inches="tight",
-        )
-
-        print(
-            f"\nSaved: {pdf_path}"
-        )
-
-        print(
-            f"Saved: {png_path}"
-        )
-
+    for row, (key, xlabel) in enumerate(metric_specs):
+        samples = [np.asarray([result[key] for result in metrics]) for _, metrics in sweeps]
+        full_limit = max(float(np.max(values)) for values in samples) * 1.03 or 1e-6
+        zoom_cutoff = max(float(np.percentile(values, ZOOM_PERCENTILE)) for values in samples)
+        zoom_limit = zoom_cutoff * 1.05 or min(full_limit, 1e-6)
+        print(f"{key}: zoom cutoff = {zoom_cutoff:.6e} "
+              f"(largest {ZOOM_PERCENTILE}th percentile across sweeps)")
+        for (label, _), values, color, linestyle in zip(
+            sweeps, samples, CURVE_COLORS, CURVE_LINESTYLES
+        ):
+            unique_x, counts = np.unique(values, return_counts=True)
+            probabilities = np.cumsum(counts) / len(values)
+            for axis in axes[row]:
+                axis.step(np.r_[0, unique_x, full_limit], np.r_[0, probabilities, 1],
+                          where="post", color=color, linestyle=linestyle,
+                          linewidth=LINEWIDTH, label=label)
+        for column, limit in enumerate((full_limit, zoom_limit)):
+            axis = axes[row, column]
+            axis.set(xlim=(0, limit), ylim=(0, 1.01), xlabel=xlabel)
+            axis.axhline(0.95, color="0.15", linestyle="--", linewidth=2, zorder=2)
+            axis.annotate(r"$95\%$", xy=(0.98, 0.95),
+                          xycoords=axis.get_yaxis_transform(), xytext=(0, -5),
+                          textcoords="offset points", ha="right", va="top",
+                          fontsize=18, color="0.15")
+            axis.grid(color=GRID_COLOR, linestyle=GRID_LINESTYLE,
+                      linewidth=GRID_LINEWIDTH, alpha=GRID_ALPHA)
+            axis.legend(loc="lower right", frameon=True)
+        axes[row, 0].set_ylabel("Fraction of cases")
+    # Column headings distinguish the ranges; axis labels identify the metrics.
+    axes[0, 0].set_title("Full range", fontsize=20)
+    axes[0, 1].set_title(f"Zoom to the {ZOOM_PERCENTILE}th percentile", fontsize=20)
     return figure
 
 
-# =============================================================================
-# MAIN
-# =============================================================================
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("files", nargs="*", type=Path, help="One to three sweep JSON paths.")
+    parser.add_argument("--labels", nargs="+", help="Optional legend labels, one per input file.")
+    parser.add_argument("--no-show", action="store_true")
+    parser.add_argument("--output-name", default=OUTPUT_BASENAME)
+    args = parser.parse_args()
+    files = args.files or RESULTS_FILES
+    if not 1 <= len(files) <= 3:
+        parser.error("Provide one to three input files.")
+    if args.labels and len(args.labels) != len(files):
+        parser.error("Provide exactly one label per input file.")
+    sweeps = []
+    for index, path in enumerate(files):
+        path = path.expanduser()
+        if not path.is_absolute() and not path.is_file():
+            path = DIRECTORY / "results" / path
+        metadata, metrics = load_and_process_results(path)
+        label = (args.labels[index] if args.labels else
+                 rf"$N={metadata['N']}$"
+                 if "N" in metadata else path.stem)
+        if not args.labels and any(previous_label == label for previous_label, _ in sweeps):
+            label = path.stem
+        sweeps.append((label, metrics))
+        print_metric_statistics(metadata.get("N", "unknown"),
+                                [m["relative_time_error_percent"] for m in metrics],
+                                [m["hausdorff_distance"] for m in metrics])
+    figure = plot_sobol_ecdfs(sweeps)
+    if SAVE_FIGURE:
+        FIGURES_DIRECTORY.mkdir(parents=True, exist_ok=True)
+        for extension in ("pdf", "png"):
+            output = FIGURES_DIRECTORY / f"{args.output_name}.{extension}"
+            figure.savefig(output, dpi=300, bbox_inches="tight")
+            print(f"Saved {output}")
+    if SHOW_FIGURE and not args.no_show:
+        plt.show(block=True)
+    else:
+        plt.close(figure)
+
 
 if __name__ == "__main__":
-
-    all_metrics = {}
-
-    for transcription_resolution in (
-        30,
-        100,
-    ):
-        comparison_results = (
-            load_and_process_results(
-                results_file=RESULTS_FILES[
-                    transcription_resolution
-                ],
-                n_comparison_points=(
-                    N_COMPARISON_POINTS
-                ),
-            )
-        )
-
-        relative_errors = np.asarray(
-            [
-                result[
-                    "relative_time_error_percent"
-                ]
-                for result in comparison_results
-            ],
-            dtype=float,
-        )
-
-        hausdorff_distances = np.asarray(
-            [
-                result[
-                    "hausdorff_distance"
-                ]
-                for result in comparison_results
-            ],
-            dtype=float,
-        )
-
-        all_metrics[
-            transcription_resolution
-        ] = {
-            "relative_time_error_percent": (
-                relative_errors
-            ),
-            "hausdorff_distance": (
-                hausdorff_distances
-            ),
-        }
-
-        print_metric_statistics(
-            transcription_resolution=(
-                transcription_resolution
-            ),
-            relative_errors=(
-                relative_errors
-            ),
-            hausdorff_distances=(
-                hausdorff_distances
-            ),
-        )
-
-    figure = plot_sobol_ecdfs(
-        all_metrics
-    )
-
-    if SHOW_FIGURE:
-        plt.show(
-            block=True
-        )
-
-    else:
-        plt.close(
-            figure
-        )
+    main()

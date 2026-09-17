@@ -12,6 +12,7 @@ def compute_ocp_pose_to_pose_trajectory(
     T_guess=None,
     N=100,
     M=4,
+    linear_solver="mumps",
 ):
     x0 = start_pose.x
     y0 = start_pose.y
@@ -111,7 +112,7 @@ def compute_ocp_pose_to_pose_trajectory(
         "print_time": False,
         "error_on_fail": False,
         "ipopt": {
-            "linear_solver": "mumps",#"ma27", #"mumps",
+            "linear_solver": linear_solver,
             "print_level": 0,
             "tol": 1e-6,
             "sb": "yes",

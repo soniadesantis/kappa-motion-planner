@@ -297,7 +297,7 @@ def plot_turn_on_spot_sector(
         zorder=zorder,
     )
 
-    ax.add_patch(sector)
+    # ax.add_patch(sector)
 
 
 def plot_primitive_arrows_and_markers(
@@ -310,6 +310,9 @@ def plot_primitive_arrows_and_markers(
     intermediate_color="k",
     zorder=10,
     plot_turn_sectors=True,
+    turn_sector_color="b",
+    plot_pose_markers=True,
+    plot_pose_arrows=True,
 ):
     number_of_primitives = len(trajectory)
 
@@ -320,6 +323,7 @@ def plot_primitive_arrows_and_markers(
                 primitive,
                 ax,
                 radius=arrow_length * 1.4,
+                color=turn_sector_color,
                 zorder=zorder - 1,
             )
 
@@ -361,26 +365,28 @@ def plot_primitive_arrows_and_markers(
                 end_zorder,
             ),
         ]:
-            ax.scatter(
-                x,
-                y,
-                s=marker_size,
-                color=color,
-                zorder=pose_zorder,
-            )
+            if plot_pose_markers:
+                ax.scatter(
+                    x,
+                    y,
+                    s=marker_size,
+                    color=color,
+                    zorder=pose_zorder,
+                )
 
-            ax.arrow(
-                x,
-                y,
-                arrow_length * cos(theta),
-                arrow_length * sin(theta),
-                head_width=0.08,
-                head_length=0.08,
-                fc=color,
-                ec=color,
-                length_includes_head=True,
-                zorder=pose_zorder + 1,
-            )
+            if plot_pose_arrows:
+                ax.arrow(
+                    x,
+                    y,
+                    arrow_length * cos(theta),
+                    arrow_length * sin(theta),
+                    head_width=0.08,
+                    head_length=0.08,
+                    fc=color,
+                    ec=color,
+                    length_includes_head=True,
+                    zorder=pose_zorder + 1,
+                )
 
 
 def plot_analytical_trajectory(
@@ -391,6 +397,7 @@ def plot_analytical_trajectory(
     color="b",
     plot_primitive_arrows=False,
     plot_turn_sectors=True,
+    turn_sector_color=None,
 ):
     """
     Plot an analytical trajectory composed of multiple trajectory segments.
@@ -416,20 +423,28 @@ def plot_analytical_trajectory(
                 isinstance(trajectory_piece, CurvilinearArcUnicycle)
                 or isinstance(trajectory_piece, BackwardArc)
             ):
-                trajectory_piece.plot_circle(ax, color = 'k')
+                trajectory_piece.plot_circle(
+                    ax,
+                    color="k",
+                )
 
-    if plot_primitive_arrows:
+    if turn_sector_color is None:
+        turn_sector_color = color
+
+    if plot_primitive_arrows or plot_turn_sectors:
         plot_primitive_arrows_and_markers(
             trajectory,
             ax,
             plot_turn_sectors=plot_turn_sectors,
+            turn_sector_color=turn_sector_color,
+            plot_pose_markers=plot_primitive_arrows,
+            plot_pose_arrows=plot_primitive_arrows,
         )
 
     plt.xlabel("x [m]")
     plt.ylabel("y [m]")
 
     return figure
-
 
 def plot_velocity_profiles(trajectory, vehicle=None):
     """

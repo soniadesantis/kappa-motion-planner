@@ -1,0 +1,15 @@
+\documentclass[11pt,a4paper]{report}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,booktabs,listings,xcolor,hyperref}
+\usepackage[margin=27mm]{geometry}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,
+  columns=fullflexible,keepspaces=true,showstringspaces=false,
+  frame=single,rulecolor=\color{black!20},captionpos=b}
+\begin{document}
+% Chapter numbering follows the supplied draft; the thesis controls it on import.
+\setcounter{chapter}{6}
+\input{chapter_kappa_planner.tex}
+\clearpage
+\appendix
+\input{appendix_kappa_installation.tex}
+\end{document}

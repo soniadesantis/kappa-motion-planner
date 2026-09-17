@@ -1,0 +1,35 @@
+\chapter{Installing Kappa Motion Planner}\label{app:kappa-installation}
+\label{sec:kappa-installation}
+
+The source code is available in the
+\href{https://github.com/soniadesantis/kappa-motion-planner}{Kappa Motion Planner repository}.
+A local installation can be created in a Python virtual environment. On Linux
+or macOS, the following commands clone the repository and install the package:
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/soniadesantis/kappa-motion-planner.git
+cd kappa-motion-planner
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+\end{lstlisting}
+
+On Windows, the virtual environment can instead be activated from a command
+prompt using \texttt{.venv\textbackslash Scripts\textbackslash activate.bat}.
+The editable installation links the installed package to the source directory,
+so changes to the Python implementation are available without reinstalling it.
+
+The declared dependencies are NumPy, SciPy, Matplotlib, PyYAML, and SymPy. They
+provide numerical computation, plotting, configuration-file handling, and
+symbolic utilities. Numerical optimal-control experiments use additional
+software, including CasADi and Rockit, which is not included in the package's
+declared dependencies. These tools are separate from the analytical example
+presented in Chapter~\ref{ch:kappa-software}.
+
+The repository contains an \texttt{examples} directory for introductory scripts
+and an \texttt{experiments} directory for the research studies. Since the package
+is under active development, reproducing an experiment requires recording the
+source revision and the relevant vehicle and solver settings, in addition to
+the input geometry.
+

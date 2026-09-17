@@ -67,7 +67,7 @@ def compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, R, overlap 
         
         # If the distance between the two circles is > 2R or turn1 = turn2
         distance = np.hypot(xc2 - xc1, yc2 - yc1)
-        if abs(distance - 2.0 * R) <= 1e-9:
+        if turn1 != turn2 and abs(distance - 2.0 * R) <= 1e-9:
             x1 = 0.5 * (xc1 + xc2)
             y1 = 0.5 * (yc1 + yc2)
 
@@ -773,4 +773,3 @@ def build_segment_with_reversal(
         )
 
     return maneuvers
-

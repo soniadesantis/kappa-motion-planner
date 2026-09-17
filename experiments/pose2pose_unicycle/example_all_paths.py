@@ -24,17 +24,19 @@ from kappa_planner.helpers.ocp_pose_to_pose_unicycle import (
 # CONFIGURATION
 # =============================================================================
 
-THETA0_DEG = 288.0
-
-THETA0_DEG = 252.0
-
+# Select a saved case; all geometry and vehicle limits come from its record.
+CASE_ID = 3395
+THETA0_DEG = 252.0  # Used only when CASE_ID is None.
 THETAF_DEG = 252.0
-
 TRANSCRIPTION_RESOLUTION = 100
-
+LINEAR_SOLVER = "mumps"
+INITIAL_GUESS = "analytical"  # Use "TST" to reproduce the original sweep initialization.
+SHOW_FIGURE = True
+SHOW_LEGACY_ZOOM = False
+SAVE_FIGURE = True
 RESULTS_FILENAME = (
-    "experiments/pose2pose_unicycle/results/"
-    "orientation_sweep_N100_M4.json"
+    Path(__file__).resolve().parent / "results/sweep4/"
+    "sobol_sweep_OCP_TST_initial_guess_N100_M4.json"
 )
 
 SHOW_ALL_ANALYTICAL_CANDIDATES = False
@@ -365,17 +367,10 @@ def load_saved_case(
     theta0_deg,
     thetaf_deg,
     angle_tolerance=1.0e-9,
+    case_id=None,
 ):
-    """
-    Load the sweep result matching a prescribed pair of boundary orientations.
-
-    The case is identified by its saved orientation values, rather than by a
-    case ID.
-    """
-
-    results_path = Path(
-        results_filename
-    )
+    """Load a case by ID, or by boundary orientations when no ID is given."""
+    results_path = Path(results_filename)
 
     if not results_path.exists():
         raise FileNotFoundError(
@@ -401,29 +396,15 @@ def load_saved_case(
     ]
 
     matching_cases = [
-        case
-        for case in results
-        if np.isclose(
-            float(
-                case["theta0_deg"]
-            ),
-            theta0_deg,
-            atol=angle_tolerance,
-            rtol=0.0,
-        )
-        and np.isclose(
-            float(
-                case["thetaf_deg"]
-            ),
-            thetaf_deg,
-            atol=angle_tolerance,
-            rtol=0.0,
-        )
+        case for case in results
+        if (case.get("case_id") == case_id if case_id is not None else
+            np.isclose(float(case["theta0_deg"]), theta0_deg, atol=angle_tolerance, rtol=0)
+            and np.isclose(float(case["thetaf_deg"]), thetaf_deg, atol=angle_tolerance, rtol=0))
     ]
 
     if len(matching_cases) == 0:
         raise RuntimeError(
-            "No saved sweep case was found for "
+            f"No saved sweep case was found for case_id={case_id}, "
             f"theta0={theta0_deg} deg and "
             f"thetaf={thetaf_deg} deg."
         )
@@ -757,36 +738,23 @@ if __name__ == "__main__":
         results_filename=RESULTS_FILENAME,
         theta0_deg=THETA0_DEG,
         thetaf_deg=THETAF_DEG,
+        case_id=CASE_ID,
     )
 
     # -------------------------------------------------------------------------
     # Reconstruct the same boundary-value problem
     # -------------------------------------------------------------------------
 
-    start_pose = Pose(
-        Point(
-            0.0,
-            0.0,
-        ),
-        THETA0_DEG
-        * pi
-        / 180.0,
-    )
-
-    end_pose = Pose(
-        Point(
-            0.0,
-            5.0,
-        ),
-        THETAF_DEG
-        * pi
-        / 180.0,
-    )
-
+    start_pose = Pose(Point(saved_case["x0"], saved_case["y0"]),
+                      saved_case["theta0_rad"])
+    end_pose = Pose(Point(saved_case["xf"], saved_case["yf"]),
+                    saved_case["thetaf_rad"])
     vehicle_width = 0.430
     vehicle_length = 0.430
-    vehicle_vmax = 1.0
-    vehicle_omegamax = 1.0
+    vehicle_vmax = saved_case["v_max"]
+    vehicle_omegamax = saved_case["omega_max"]
+    print(f"Boundary positions: ({start_pose.x}, {start_pose.y}) -> "
+          f"({end_pose.x}, {end_pose.y}); R={saved_case['R']}")
 
     unicycle = Unicycle(
         state=[
@@ -870,14 +838,28 @@ if __name__ == "__main__":
     # Recompute the OCP
     # -------------------------------------------------------------------------
 
+    if INITIAL_GUESS == "TST":
+        from param_sweep_pose2pose_unicycle_simple_initial_guess import build_tst_initial_guess
+        initial_trajectory, initial_time, _ = build_tst_initial_guess(
+            start_pose, end_pose, unicycle,
+            samples_per_maneuver=metadata.get("initial_guess_samples_per_maneuver", 20),
+        )
+    elif INITIAL_GUESS == "analytical":
+        initial_trajectory, initial_time = best_trajectory, best_time
+    else:
+        raise ValueError(f"Unknown initial guess: {INITIAL_GUESS}")
+    print(f"Recomputing with {INITIAL_GUESS} initialization and {LINEAR_SOLVER}, "
+          f"N={TRANSCRIPTION_RESOLUTION}, M={saved_case['M']}")
+
     ocp_result = compute_ocp_pose_to_pose_trajectory(
         start_pose,
         end_pose,
         unicycle,
-        analytical_initial_guess=best_trajectory,
-        T_guess=best_time,
+        analytical_initial_guess=initial_trajectory,
+        T_guess=initial_time,
         N=TRANSCRIPTION_RESOLUTION,
-        M = 4,
+        M=saved_case["M"],
+        linear_solver=LINEAR_SOLVER,
     )
 
     print("\n" + "=" * 80)
@@ -1173,70 +1155,71 @@ if __name__ == "__main__":
     # Zoomed comparison of the region used in the Hausdorff figure
     # -------------------------------------------------------------------------
 
-    zoom_figure, zoom_axis = plt.subplots(
-        figsize=(8.5, 5.5)
-    )
+    if SHOW_LEGACY_ZOOM:
+        zoom_figure, zoom_axis = plt.subplots(
+            figsize=(8.5, 5.5)
+        )
 
-    zoom_axis.plot(
-        saved_ocp_x,
-        saved_ocp_y,
-        color=SAVED_OCP_COLOR,
-        linestyle="--",
-        linewidth=OCP_LINEWIDTH,
-        label="Saved OCP",
-    )
+        zoom_axis.plot(
+            saved_ocp_x,
+            saved_ocp_y,
+            color=SAVED_OCP_COLOR,
+            linestyle="--",
+            linewidth=OCP_LINEWIDTH,
+            label="Saved OCP",
+        )
 
-    zoom_axis.plot(
-        recomputed_ocp_x,
-        recomputed_ocp_y,
-        color=RECOMPUTED_OCP_COLOR,
-        linestyle=":",
-        linewidth=OCP_LINEWIDTH,
-        label="Recomputed OCP",
-    )
+        zoom_axis.plot(
+            recomputed_ocp_x,
+            recomputed_ocp_y,
+            color=RECOMPUTED_OCP_COLOR,
+            linestyle=":",
+            linewidth=OCP_LINEWIDTH,
+            label="Recomputed OCP",
+        )
 
-    # The analytical straight section is at approximately x = 1 m.
-    zoom_axis.axvline(
-        1.0,
-        color=ANALYTICAL_COLOR,
-        linestyle="-",
-        linewidth=ANALYTICAL_LINEWIDTH,
-        label="Analytical segment",
-    )
+        # The analytical straight section is at approximately x = 1 m.
+        zoom_axis.axvline(
+            1.0,
+            color=ANALYTICAL_COLOR,
+            linestyle="-",
+            linewidth=ANALYTICAL_LINEWIDTH,
+            label="Analytical segment",
+        )
 
-    zoom_axis.set_xlim(
-        0.82,
-        1.16,
-    )
+        zoom_axis.set_xlim(
+            0.82,
+            1.16,
+        )
 
-    zoom_axis.set_ylim(
-        3.77,
-        4.03,
-    )
+        zoom_axis.set_ylim(
+            3.77,
+            4.03,
+        )
 
-    zoom_axis.set_xlabel(
-        r"$x$ [m]"
-    )
+        zoom_axis.set_xlabel(
+            r"$x$ [m]"
+        )
 
-    zoom_axis.set_ylabel(
-        r"$y$ [m]"
-    )
+        zoom_axis.set_ylabel(
+            r"$y$ [m]"
+        )
 
-    zoom_axis.grid(
-        True,
-        linestyle=":",
-        alpha=0.6,
-    )
+        zoom_axis.grid(
+            True,
+            linestyle=":",
+            alpha=0.6,
+        )
 
-    zoom_axis.legend(
-        frameon=True
-    )
+        zoom_axis.legend(
+            frameon=True
+        )
 
-    zoom_axis.set_title(
-        "Zoomed comparison of saved and recomputed OCP paths"
-    )
+        zoom_axis.set_title(
+            "Zoomed comparison of saved and recomputed OCP paths"
+        )
 
-    zoom_figure.tight_layout()
+        zoom_figure.tight_layout()
 
     # -------------------------------------------------------------------------
     # Control comparison for the recomputed solution
@@ -1266,6 +1249,14 @@ if __name__ == "__main__":
             show_legend=True,
         )
 
-    plt.show(
-        block=True
-    )
+    if SAVE_FIGURE:
+        output_dir = Path(__file__).resolve().parent / "figures"
+        output_dir.mkdir(exist_ok=True)
+        for extension in ("pdf", "png"):
+            output = output_dir / f"sobol_case_{saved_case['case_id']}_{LINEAR_SOLVER}_{INITIAL_GUESS}.{extension}"
+            comparison_axis.figure.savefig(output, dpi=300, bbox_inches="tight")
+            print(f"Saved {output}")
+    if SHOW_FIGURE:
+        plt.show(block=True)
+    else:
+        plt.close("all")

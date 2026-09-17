@@ -266,14 +266,14 @@ def experiment_2():
 
     initial_pose = [
         1.33,
-        -0.34,
-        3 * pi / 4
+        -0.54,
+        pi / 2
     ]
 
     final_pose = [
-        1.76,
-        0.22,
-        -pi / 6
+        1.92,
+        0.62,
+        pi
     ]
 
     assert_experiment_fits_floor(
@@ -564,7 +564,7 @@ def experiment_4():
 # Select experiment
 # ============================================================
 
-experiment_number = 3
+experiment_number = 2
 
 
 if experiment_number == 1:
