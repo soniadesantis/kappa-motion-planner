@@ -1,3 +1,5 @@
+import argparse
+from datetime import datetime, timedelta
 from math import pi, degrees
 import json
 import time
@@ -40,7 +42,7 @@ from kappa_planner.helpers.plot_helpers import (
 SWEEP_ID = 4
 
 # OCP transcription settings
-N = 30
+N = 50
 M = 4
 
 
@@ -69,7 +71,7 @@ HAUSDORFF_N_SAMPLES = 2001
 # QUICK TEST
 # -----------------------------------------------------------------------------
 
-QUICK_TEST = True
+QUICK_TEST = False
 QUICK_TEST_N_CASES = 10
 
 
@@ -2084,7 +2086,115 @@ def build_common_case_information(
 # MAIN
 # =============================================================================
 
+def positive_integer(value):
+    """Parse a strictly positive integer command-line argument."""
+
+    parsed_value = int(value)
+
+    if parsed_value <= 0:
+        raise argparse.ArgumentTypeError(
+            "the value must be a positive integer"
+        )
+
+    return parsed_value
+
+
+def parse_command_line_arguments():
+    """Return command-line overrides for the OCP transcription."""
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the pose-to-pose unicycle parameter sweep with a TST "
+            "initial guess."
+        )
+    )
+
+    parser.add_argument(
+        "--N",
+        type=positive_integer,
+        default=N,
+        help=(
+            "number of OCP control intervals "
+            f"(default: {N})"
+        ),
+    )
+
+    parser.add_argument(
+        "--M",
+        type=positive_integer,
+        default=M,
+        help=(
+            "number of Runge-Kutta steps per control interval "
+            f"(default: {M})"
+        ),
+    )
+
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="allow replacing an existing result file",
+    )
+
+    return parser.parse_args()
+
+
+def format_duration(seconds):
+    """Format a duration as HH:MM:SS."""
+
+    seconds = max(0, int(round(seconds)))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def cases_with_progress(cases, bar_width=30):
+    """Yield numbered cases and display elapsed time plus a live ETA."""
+
+    n_cases = len(cases)
+    start_time = time.perf_counter()
+
+    print(
+        f"Progress [{' ' * bar_width}]   0.0% "
+        "| elapsed 00:00:00 | ETA calculating...",
+        end="\r",
+        flush=True,
+    )
+
+    for case_id, case in enumerate(cases, start=1):
+        yield case_id, case
+
+        elapsed = time.perf_counter() - start_time
+        average_case_time = elapsed / case_id
+        remaining_time = average_case_time * (n_cases - case_id)
+        fraction_complete = case_id / n_cases
+        filled_width = int(bar_width * fraction_complete)
+        bar = (
+            "#" * filled_width
+            + "-" * (bar_width - filled_width)
+        )
+        expected_finish = (
+            datetime.now()
+            + timedelta(seconds=remaining_time)
+        )
+
+        print(
+            f"Progress [{bar}] {100.0 * fraction_complete:5.1f}% "
+            f"({case_id}/{n_cases}) "
+            f"| elapsed {format_duration(elapsed)} "
+            f"| remaining {format_duration(remaining_time)} "
+            f"| finish ~{expected_finish:%Y-%m-%d %H:%M}",
+            end="\n" if case_id == n_cases else "\r",
+            flush=True,
+        )
+
+
 if __name__ == "__main__":
+
+    command_line_arguments = parse_command_line_arguments()
+
+    N = command_line_arguments.N
+    M = command_line_arguments.M
 
     cases, metadata = (
         generate_sweep_cases(
@@ -2108,6 +2218,48 @@ if __name__ == "__main__":
     n_cases = len(
         cases
     )
+
+    results_filename = (
+        f"{metadata['sweep_name']}"
+        f"_N{N}_M{M}"
+    )
+
+    if QUICK_TEST:
+
+        results_filename += (
+            f"_TEST{n_cases}"
+        )
+
+    results_filename += (
+        ".json"
+    )
+
+    current_dir = (
+        Path(
+            __file__
+        )
+        .resolve()
+        .parent
+    )
+
+    results_dir = (
+        current_dir
+        / "results"
+    )
+
+    save_path = (
+        results_dir
+        / results_filename
+    )
+
+    if (
+        save_path.exists()
+        and not command_line_arguments.overwrite
+    ):
+        raise FileExistsError(
+            f"Result file already exists: {save_path}. "
+            "Pass --overwrite to replace it."
+        )
 
     results = []
 
@@ -2175,9 +2327,8 @@ if __name__ == "__main__":
     # CASE LOOP
     # =========================================================================
 
-    for case_id, case in enumerate(
-        cases,
-        start=1,
+    for case_id, case in cases_with_progress(
+        cases
     ):
 
         x0 = case[
@@ -3239,6 +3390,12 @@ if __name__ == "__main__":
                 M
             ),
 
+        "nlp_solver":
+            "ipopt",
+
+        "linear_solver":
+            "ma27",
+
         "experiment_purpose":
             (
                 "OCP discretization study with "
@@ -3343,42 +3500,9 @@ if __name__ == "__main__":
             ),
     })
 
-    results_filename = (
-        f"{metadata['sweep_name']}"
-        f"_N{N}_M{M}"
-    )
-
-    if QUICK_TEST:
-
-        results_filename += (
-            f"_TEST{n_cases}"
-        )
-
-    results_filename += (
-        ".json"
-    )
-
-    current_dir = (
-        Path(
-            __file__
-        )
-        .resolve()
-        .parent
-    )
-
-    results_dir = (
-        current_dir
-        / "results"
-    )
-
     results_dir.mkdir(
         parents=True,
         exist_ok=True,
-    )
-
-    save_path = (
-        results_dir
-        / results_filename
     )
 
     output = {

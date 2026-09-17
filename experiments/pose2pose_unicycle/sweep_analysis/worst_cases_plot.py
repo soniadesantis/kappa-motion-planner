@@ -126,7 +126,7 @@ def create_figure(runs, cases):
                       linestyle="--", linewidth=2.5)
             for suffix, x, y in (("0", case["x0"], case["y0"]),
                                  ("f", case["xf"], case["yf"])):
-                axis.annotate(rf"$\boldsymbol{{p}}_{suffix}$", (x, y), xytext=(5, 6),
+                axis.annotate(rf"$\mathbf{{p}}_{suffix}$", (x, y), xytext=(5, 6),
                               textcoords="offset points", fontsize=15)
             axis.set(xlabel=r"$x$ [m]", ylabel=r"$y$ [m]",
                      title=f"{chr(97 + index)}) Case {case['case_id']}\n"
@@ -221,7 +221,8 @@ def create_control_figure(runs, cases, figure=None, axes=None):
         handles.append(Line2D([], [], color="0.5", linestyle="-.", linewidth=1))
         labels.append("Control bounds")
         if standalone:
-            figure.legend(handles, labels, loc="outside upper center", ncol=4, frameon=False)
+            figure.legend(handles, labels, loc="outside upper center",
+                          ncol=4, frameon=False)
     return figure
 
 

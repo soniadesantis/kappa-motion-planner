@@ -573,53 +573,198 @@ def check_inputs_analytical_planner(planner):
     return check_passed, messages, center_circumference_vector, turn_direction_vector, corner_point_vector
 
 def compute_minimum_widths(planner):
-    """ 
-    Compute the minimum widths required for each corridor to guarantee
-    collision-free maneuvers for the unicycle/bicycle vehicle.
-    :param planner: analytical planner
-    :type planner: MotionPlanner object
-    :return: list of minimum widths for each corridor
-    :rtype: list of floats
     """
+    Compute the minimum corridor widths required to guarantee
+    collision-free intermediate-circle maneuvers, together with
+    the maximum admissible shift of each intermediate circle
+    along the corresponding junction bisector.
+
+    Parameters
+    ----------
+    planner : MotionPlanner
+        Analytical motion planner.
+
+    Returns
+    -------
+    min_widths : list of float
+        Minimum admissible width for each corridor.
+
+    s_max_list : list of float
+        Maximum admissible shift for each intermediate circle.
+        For junction i, s_max is the displacement along the
+        junction bisector at which the swept robot footprint
+        becomes tangent to the opposite wall of one of the two
+        adjacent corridors.
+    """
+
     corridor_list = planner.corridor_list
+
     R = planner.vehicle.max_radius
     r = planner.vehicle.width * 0.5
 
-    # Extract tilt angles
-    phis = [c.tilt for c in corridor_list]
-    
-    # Compute betas
-    betas = [0.5 * abs(compute_angular_difference(phis[i], phis[i+1]))
-            for i in range(len(phis)-1)]
-    
-    # Compute q values
-    q = [(R - r) * cos(beta) for beta in betas]
-    
-    min_widths = []
-    
-    # First corridor:
-    min_widths.append(r + R - q[0])
-    
-    # Middle corridors:
-    for i in range(1, len(phis)-1):
-        mw = max(r + R - q[i-1], r + R - q[i])
-        min_widths.append(mw)
-    
-    # Last corridor:
-    min_widths.append(r + R - q[-1])
+    n_corridors = len(corridor_list)
 
-    s_max_list = [0] * (len(corridor_list)-1)
-    
-    # Maximum offset intermediate circles
-    for i in range(len(corridor_list)-1):
-        denom = cos(betas[i])
+    if n_corridors < 2:
+        raise ValueError(
+            "At least two corridors are required."
+        )
+
+    # --------------------------------------------------------
+    # Corridor orientations
+    # --------------------------------------------------------
+
+    phis = [
+        corridor.tilt
+        for corridor in corridor_list
+    ]
+
+    # --------------------------------------------------------
+    # Half of the angular difference at each junction
+    #
+    # beta_i corresponds to the junction between
+    # corridor i and corridor i+1.
+    # --------------------------------------------------------
+
+    betas = [
+        0.5 * abs(
+            compute_angular_difference(
+                phis[i],
+                phis[i + 1],
+            )
+        )
+        for i in range(n_corridors - 1)
+    ]
+
+    # --------------------------------------------------------
+    # Junction geometry
+    #
+    # q_i = (R-r) cos(beta_i)
+    #
+    # The local minimum corridor width required by junction i
+    # is
+    #
+    #     w_req_i = R + r - q_i
+    #
+    # --------------------------------------------------------
+
+    q = [
+        (R - r) * cos(beta)
+        for beta in betas
+    ]
+
+    local_min_widths = [
+        R + r - q_i
+        for q_i in q
+    ]
+
+    # --------------------------------------------------------
+    # Minimum admissible width of each corridor
+    #
+    # Boundary corridors participate in one junction.
+    # Interior corridors participate in two junctions and
+    # must satisfy the more restrictive one.
+    # --------------------------------------------------------
+
+    min_widths = []
+
+    # First corridor
+    min_widths.append(
+        local_min_widths[0]
+    )
+
+    # Interior corridors
+    for i in range(1, n_corridors - 1):
+
+        min_width = max(
+            local_min_widths[i - 1],
+            local_min_widths[i],
+        )
+
+        min_widths.append(
+            min_width
+        )
+
+    # Last corridor
+    min_widths.append(
+        local_min_widths[-1]
+    )
+
+    # --------------------------------------------------------
+    # Maximum admissible shift of each intermediate circle
+    #
+    # For junction i, the relevant nominal width requirement
+    # is the LOCAL junction requirement:
+    #
+    #     w_req_i = R + r - q_i
+    #
+    # If the circle is shifted by s_i along the bisector,
+    # the transverse displacement toward the opposite wall is
+    #
+    #     s_i cos(beta_i).
+    #
+    # Hence:
+    #
+    #     w_req_i + s_i cos(beta_i)
+    #         <= min(w_i, w_{i+1})
+    #
+    # which yields
+    #
+    #     s_max_i =
+    #       [min(w_i,w_{i+1}) - w_req_i] / cos(beta_i)
+    #
+    # --------------------------------------------------------
+
+    s_max_list = []
+
+    for i in range(n_corridors - 1):
+
+        denom = cos(
+            betas[i]
+        )
 
         if abs(denom) < 1e-12:
             raise ValueError(
-                f"Invalid corridor configuration at index {i}: "
-                "angle difference is pi (180 degrees), making cos(beta)=0."
+                f"Invalid corridor configuration at junction {i}: "
+                "the angular difference is pi (180 degrees), "
+                "so cos(beta) is zero."
             )
-        s_max_list[i] = (min(corridor_list[i].width, corridor_list[i+1].width) - min(min_widths[i], min_widths[i+1]))/denom
+
+        limiting_width = min(
+            corridor_list[i].width,
+            corridor_list[i + 1].width,
+        )
+
+        local_min_width = (
+            local_min_widths[i]
+        )
+
+        s_max = (
+            limiting_width
+            - local_min_width
+        ) / denom
+
+        # Under the standing assumptions this should be
+        # non-negative. Keep this check because a negative
+        # value indicates that at least one adjacent corridor
+        # violates the local minimum-width requirement.
+        if s_max < -1e-12:
+            raise ValueError(
+                f"Invalid corridor configuration at junction {i}: "
+                f"available width is smaller than the local "
+                f"minimum-width requirement. "
+                f"s_max = {s_max:.6e}."
+            )
+
+        # Remove tiny negative values due only to floating-
+        # point roundoff.
+        s_max = max(
+            0.0,
+            s_max,
+        )
+
+        s_max_list.append(
+            s_max
+        )
 
     return min_widths, s_max_list
 
