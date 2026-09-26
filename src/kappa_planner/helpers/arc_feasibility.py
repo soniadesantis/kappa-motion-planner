@@ -750,6 +750,9 @@ def compute_intermediate_circle_geometry(
     vehicle,
     other_intersection_point=None,
     tol=1e-9,
+    *,
+    _clearance_radii=None,
+    _transition_frame=None,
 ):
     """
     Compute the local and world placement of an intermediate circle
@@ -794,7 +797,10 @@ def compute_intermediate_circle_geometry(
     # ------------------------------------------------------------
     # Basic geometric quantities
     # ------------------------------------------------------------
-    r, R, S, D = compute_vehicle_clearance_radii(vehicle)
+    # Internal bp callers already know these invariants; legacy callers keep
+    # the original computation and candidate-selection behavior.
+    r, R, S, D = (compute_vehicle_clearance_radii(vehicle)
+                  if _clearance_radii is None else _clearance_radii)
 
     other_intersection_point_before_check = other_intersection_point
 
@@ -854,7 +860,7 @@ def compute_intermediate_circle_geometry(
     # ------------------------------------------------------------
     # Local-to-world transition frame
     # ------------------------------------------------------------
-    ex, ey = compute_transition_frame(
+    ex, ey = _transition_frame if _transition_frame is not None else compute_transition_frame(
         corridor1=corridor1,
         corridor2=corridor2,
         turn_direction=turn_direction,
@@ -1041,6 +1047,5 @@ def compute_intermediate_circle_geometry(
         "candidate_rules": [rule for rule, _ in candidates],
         "blocked_candidates": blocked_candidates,
     }
-
 
 
