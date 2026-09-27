@@ -2110,6 +2110,17 @@ def parse_command_line_arguments():
     )
 
     parser.add_argument(
+        "--sweep-id",
+        type=int,
+        choices=(1, 2, 3, 4),
+        default=SWEEP_ID,
+        help=(
+            "parameter-sweep definition to run "
+            f"(default: {SWEEP_ID})"
+        ),
+    )
+
+    parser.add_argument(
         "--N",
         type=positive_integer,
         default=N,
@@ -2127,6 +2138,12 @@ def parse_command_line_arguments():
             "number of Runge-Kutta steps per control interval "
             f"(default: {M})"
         ),
+    )
+
+    parser.add_argument(
+        "--linear-solver",
+        default="ma27",
+        help="IPOPT linear solver (default: ma27)",
     )
 
     parser.add_argument(
@@ -2195,10 +2212,12 @@ if __name__ == "__main__":
 
     N = command_line_arguments.N
     M = command_line_arguments.M
+    sweep_id = command_line_arguments.sweep_id
+    linear_solver = command_line_arguments.linear_solver
 
     cases, metadata = (
         generate_sweep_cases(
-            SWEEP_ID
+            sweep_id
         )
     )
 
@@ -2281,7 +2300,7 @@ if __name__ == "__main__":
 
     print(
         f"Sweep ID                 : "
-        f"{SWEEP_ID}"
+        f"{sweep_id}"
     )
 
     print(
@@ -2624,6 +2643,7 @@ if __name__ == "__main__":
 
                     N=N,
                     M=M,
+                    linear_solver=linear_solver,
                 )
             )
 
@@ -3394,7 +3414,7 @@ if __name__ == "__main__":
             "ipopt",
 
         "linear_solver":
-            "ma27",
+            linear_solver,
 
         "experiment_purpose":
             (

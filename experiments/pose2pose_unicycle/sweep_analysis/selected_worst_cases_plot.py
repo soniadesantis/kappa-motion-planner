@@ -16,7 +16,7 @@ import worst_cases_plot as base
 
 
 DIRECTORY = Path(__file__).resolve().parent.parent
-RESULTS_FILENAME = "sweep4/sobol_sweep_OCP_TST_initial_guess_N300_M4.json"
+RESULTS_FILENAME = "sobol_sweep_OCP_TST_initial_guess_N300_M4.json"
 CASE_IDS = (3395, 7337, 4092)
 CASE_ROLES = (
     "largest time difference",
@@ -101,34 +101,36 @@ def main():
             else:
                 label.set_fontsize(17)
     figure.legends[0].remove()
-    figure.legend(handles=[
-        Line2D([], [], color=base.COLORS["analytical"], linewidth=2.5,
-               label="Analytical"),
-        Line2D([], [], color=base.COLORS["initial"], linestyle=":", linewidth=2.4,
-               label="OCP initial guess (TST)"),
-        Line2D([], [], color=base.COLORS["ocp"], linestyle="--", linewidth=2.5,
-               label="OCP solution"),
-        Line2D([], [], color="g", marker="o", linestyle="None", markersize=9),
-        Line2D([], [], color="r", marker="o", linestyle="None", markersize=9),
-        Line2D([], [], color="0.5", linestyle="-.", linewidth=1,
-               label="Control bounds"),
-    ], labels=["Analytical", "OCP initial guess (TST)", "OCP solution",
-               "Start pose", "End pose", "Control bounds"],
-       loc="outside lower center", ncol=3, frameon=False, fontsize=18)
+    with plt.rc_context(base.STYLE):
+        figure.legend(handles=[
+            Line2D([], [], color=base.COLORS["analytical"], linewidth=2.5,
+                   label="Analytical"),
+            Line2D([], [], color=base.COLORS["initial"], linestyle=":", linewidth=2.4,
+                   label="OCP initial guess (TST)"),
+            Line2D([], [], color=base.COLORS["ocp"], linestyle="--", linewidth=2.5,
+                   label="OCP solution"),
+            Line2D([], [], color="g", marker="o", linestyle="None", markersize=9),
+            Line2D([], [], color="r", marker="o", linestyle="None", markersize=9),
+            Line2D([], [], color="0.5", linestyle="-.", linewidth=1,
+                   label="Control bounds"),
+        ], labels=["Analytical", "OCP initial guess (TST)", "OCP solution",
+                   "Start pose", "End pose", "Control bounds"],
+           loc="outside lower center", ncol=3, frameon=False, fontsize=18)
     control_figure = base.create_control_figure(runs, cases)
     for axis in control_figure.axes[:3]:
         axis.set_title(axis.get_title(), fontsize=21)
     control_figure.legends[0].remove()
-    control_figure.legend(handles=[
-        Line2D([], [], color=base.COLORS["analytical"], linewidth=2.5,
-               label="Analytical"),
-        Line2D([], [], color=base.COLORS["initial"], linestyle=":", linewidth=2.4,
-               label="OCP initial guess (TST)"),
-        Line2D([], [], color=base.COLORS["ocp"], linestyle="--", linewidth=2.5,
-               label="OCP solution"),
-        Line2D([], [], color="0.5", linestyle="-.", linewidth=1,
-               label="Control bounds"),
-    ], loc="outside lower center", ncol=4, frameon=False, fontsize=18)
+    with plt.rc_context(base.STYLE):
+        control_figure.legend(handles=[
+            Line2D([], [], color=base.COLORS["analytical"], linewidth=2.5,
+                   label="Analytical"),
+            Line2D([], [], color=base.COLORS["initial"], linestyle=":", linewidth=2.4,
+                   label="OCP initial guess (TST)"),
+            Line2D([], [], color=base.COLORS["ocp"], linestyle="--", linewidth=2.5,
+                   label="OCP solution"),
+            Line2D([], [], color="0.5", linestyle="-.", linewidth=1,
+                   label="Control bounds"),
+        ], loc="outside lower center", ncol=4, frameon=False, fontsize=18)
 
     base.FIGURES_DIRECTORY.mkdir(parents=True, exist_ok=True)
     stem = f"{path.stem}_selected_worst_cases_{args.linear_solver}"
