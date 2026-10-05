@@ -14,12 +14,13 @@ class SequenceGeometry:
     stale angular intervals. Logical records still keep their own door indices.
     """
 
-    def __init__(self, bounds, footprint_radius, tol):
+    def __init__(self, bounds, footprint_radius, tol, *, overlaps=None):
         self.bounds = tuple(tuple(b) for b in bounds)
         self.r, self.tol = footprint_radius, tol
-        self.overlaps = tuple((max(a[0], b[0]), min(a[1], b[1]),
-                               max(a[2], b[2]), min(a[3], b[3]))
-                              for a, b in zip(self.bounds, self.bounds[1:]))
+        self.overlaps = (tuple(overlaps) if overlaps is not None else
+                         tuple((max(a[0], b[0]), min(a[1], b[1]),
+                                max(a[2], b[2]), min(a[3], b[3]))
+                               for a, b in zip(self.bounds, self.bounds[1:])))
         self.eroded = tuple((a+self.r, b-self.r, c+self.r, d-self.r)
                             for a, b, c, d in self.bounds)
         self._corners, self._intersections, self._circle_intervals, self._unions = {}, {}, {}, {}
@@ -87,3 +88,38 @@ def sequence_geometry(data, footprint_radius, tol):
     if geometry is None or not geometry.matches(data.corridor_bounds, footprint_radius, tol):
         geometry = SequenceGeometry(data.corridor_bounds, footprint_radius, tol)
     return geometry
+
+
+def corridor_boundary_intersections(first, second, tol):
+    """Return distinct point intersections and shared boundary segments.
+
+    Constant-size edge intersection calculation on axis-aligned rectangles.
+    Shared edges are retained explicitly, not reduced to an arbitrary endpoint.
+    """
+    def edges(b):
+        return [(0,x,b[2],b[3]) for x in b[:2]]+[(1,y,b[0],b[1]) for y in b[2:]]
+    points, segments = [], []
+    def add(point):
+        point = np.asarray(point,dtype=float)
+        if not any(np.max(abs(point-old)) <= tol for old in points):
+            points.append(point)
+    for axis,a,lo,hi in edges(first):
+        for other,b,low,high in edges(second):
+            if axis != other:
+                if lo-tol <= b <= hi+tol and low-tol <= a <= high+tol:
+                    point = np.empty(2)
+                    point[axis],point[other] = a,b
+                    add(point)
+            elif abs(a-b) <= tol:
+                left,right = max(lo,low),min(hi,high)
+                if left > right+tol:
+                    continue
+                start,end = np.empty(2),np.empty(2)
+                start[axis] = end[axis] = (a+b)/2
+                start[1-axis],end[1-axis] = left,right
+                if right-left > tol:
+                    segments.append((start,end))
+                    add(start); add(end)
+                else:
+                    add((start+end)/2)
+    return np.asarray(points).reshape(-1,2), segments

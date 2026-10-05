@@ -2,6 +2,132 @@
 
 ## Current baseline and refinement entry points
 
+### Direct baseline pipeline
+
+The example uses `compute_baseline(corridors, vehicle, initial_pose=None,
+final_pose=None, connect_boundaries=False)` by default (`BASELINE_RULE = 'baseline'`). Its body calls the
+construction steps in order:
+
+1. Compute and store boundary intersection points and shared boundary segments.
+2. Compute overlaps `I_j`, then footprint-safe overlaps `D_j`.
+3. Determine unique internal passage directions and initial/final directions.
+4. Select the stored intersection on the turn side and construct local `A_j`.
+5. Propagate `R_j` by the translated-segment half-strip rule.
+6. Reconstruct the polyline backward using compatible-slice midpoints.
+
+The returned report exposes `overlaps`, `boundary_intersections`, `corner_points`,
+`admissible_sets`, and `fillet_reachability.reachable_sets`. Intersections also
+populate the shared geometry cache for later refinement. Empty `D_j`, empty
+`A_j`, ambiguous/unavailable directions or corners, and empty `R_j` reject the
+construction at their own stage. An absent pose selects one geometrically
+available perpendicular direction, otherwise straight continuation; this
+entry point does not search other direction pairs after a later failure.
+
+The direct pipeline performs one input validation and no preliminary `2R`
+reachability pass, nominal seed reconstruction, backtracking, optimization,
+segment-hypothesis certification, or independent final audit. Local sets have
+at most one rounded inequality; their extrema are computed in closed form
+instead of enumerating general circle/edge intersection events. Fillets are
+assembled directly from the selected points and directions. Existing reference
+and diagnostic APIs remain available separately.
+
+### Pose-aware boundary directions
+
+`compute_boundary_directed_baseline(corridors, robot, initial_pose=start_pose,
+final_pose=end_pose, method='exact')` constructs a baseline with directions in
+the initial and final corridors as well as the internal passages. `method`
+can be `heuristic`, `exact`, or `segment`.
+
+For the initial boundary, the reference segment joins the pose position to
+the centroid of the first safe overlap `I_1`. Its cross product with the first
+internal passage determines the turn sign and selects a perpendicular cardinal
+entry direction. At the final boundary, use the last passage followed by the
+segment from the last overlap centroid to the final position. Pose headings
+are used later by the bicycle boundary connection. Centroids are reference
+points; baseline waypoints remain free to move within their local regions.
+
+Without a pose, try feasible perpendicular directions before straight
+continuation. A pose exactly at its overlap centroid uses this fallback too.
+Parallel reversed reference segments report an unsupported 180-degree turn.
+The selected directions are returned in `initial_direction`, `final_direction`,
+and `segment_directions`. The internal-only `compute_filleted_baseline*`
+constructors remain available with their previous behavior.
+
+### Optional physical boundary connections
+
+Use `compute_baseline(corridors, bicycle, start_pose, end_pose,
+connect_boundaries=True)` to construct the baseline first and then try each
+boundary independently. The result exposes `initial_connection` and
+`final_connection`, each with `status`, `connected`, and `maneuvers`. A failed
+connection leaves the baseline and the other connection intact. Missing poses
+are skipped; this physical construction currently supports Bicycle vehicles.
+With the flag off, no physical connection work runs.
+
+The shared `bicycle_boundary_connections` module reuses the original constrained
+pose-to-circle construction and only forward-alignment recovery (strategy 3).
+A safe directed circle arc joins the tangent arrival to the first outgoing
+baseline contact. The final connection uses the reversed problem and joins
+the last incoming baseline contact to the goal pose. Successful connections
+replace their endpoint quarter fillets when assembling the complete path.
+Collinear boundaries use a direct segment when possible, otherwise a terminal
+turning circle tangent to the baseline endpoint. Circle joins cannot cross
+unsafe angular gaps. As in the original active pose-to-circle construction,
+there is no additional straight-segment containment check.
+
+The example produces two figures: provided corridors with circular footprint
+erosion and local `A_j` regions (including both endpoint overlaps), then forward
+reachable `R_j` sets with the selected polyline, filleted baseline and successful
+boundary connections. `EXAMPLE_NUM`, `BASELINE_RULE`, `USE_BOUNDARY_DIRECTIONS`,
+and `CONNECT_BOUNDARIES` at the top control VS Code Run. Connections default to
+on in the example; `--no-connect-boundaries` disables them. To also use the
+geometry-only boundary direction fallback, add `--no-boundary-directions`.
+Physical connections require the map poses, whose positions also determine
+the baseline boundary turn signs.
+
+`baseline_time_ms` measures the baseline alone; `total_time_ms` measures the
+same call including both boundary attempts, even when an attempt fails. The
+second plot and console report both when connections are enabled. Timing
+excludes map creation, display geometry and plotting. Refinement is not run.
+`--save /tmp/example.png` writes `example_local_regions.png` and
+`example_baseline.png`.
+
+Both exact and segment propagation select the midpoint of the last reachable
+set's bounding box when feasible, otherwise the midpoint of a feasible slice
+through its central x coordinate. Reconstruction proceeds backward through
+analytic compatible slices, clips them by the directed `2R` separation, and
+takes each midpoint. Segment propagation still uses certified extreme faces
+to propagate sets; only point reconstruction uses slices.
+
+### Exact propagation of the full fillet regions
+
+`compute_filleted_baseline_exact(corridors, robot)` is an alternative to the
+bounded midpoint heuristic. It reuses the same internal feasibility test,
+local `A_j` regions, optional virtual boundary directions, and final geometric
+validator. The default heuristic remains available unchanged.
+
+The existing local regions are convex boxes clipped by positive-part circular
+inequalities. The new helper `helpers/fillet_reachability.py` retains these
+analytic inequalities throughout propagation. For a rightward passage, it
+translates the previous set by `2R`, extends it to the right, and intersects
+with the next region. The exact transverse projection is retained; constraints
+that impose upper rather than lower longitudinal bounds are discarded during
+the extension. The other directions follow by symmetry. Projection extrema
+are computed from line/arc and arc/arc events, without sampled polygons or an
+optimizer. A nonempty terminal set supports backward reconstruction through
+exact one-dimensional slices.
+
+`result.fillet_reachability.reachable_sets` contains the curved forward sets;
+each exposes `bounds`, `contains(point)`, `slice_interval(axis, value)`, and a
+`witness`. `fillet_reachability_empty` certifies incompatibility of the local
+region model, to the implementation tolerance. It is not a statement about
+arbitrary free-space paths. Numerical reconstruction or validation failure
+remains unresolved. Exactness is relative to the existing local safety predicate
+and its prerequisites.
+
+Both example scripts accept `--baseline-rule exact`. For the VS Code Run button,
+set `BASELINE_RULE = 'exact'`. Random experiment results use an `_exact` filename
+suffix to preserve heuristic reports.
+
 ### Shared geometry and performance comparison
 
 Successful baseline construction owns a private `SequenceGeometry` context,
@@ -311,6 +437,61 @@ tangents, skipping, and `D_j` checks with one warm-up and five timed passes.
 It excludes plotting and endpoint maneuvers.
 
 ## Tests
+
+`random_baseline_endpoint_fillets.py` reruns the exact random experiment with
+mandatory fillets at both endpoint overlaps. The incoming direction follows
+the sampled first corridor heading; the outgoing direction follows the last.
+Sequences enter this sample only when both form quarter turns with the adjacent
+internal passages. Geometric-class and endpoint-heading rejections are recorded
+separately; subsequent empty local/propagated fillet sets remain in the sample.
+The first and last A sets are included in propagation, not added after waypoint
+selection. `compute_filleted_baseline_exact(..., initial_direction='up',
+final_direction='down')` supplies these virtual headings directly; no dummy
+boundary positions or boundary segment constraints are needed.
+
+```sh
+python experiments/bicycle_journal_paper/random_baseline_endpoint_fillets.py --no-show
+```
+
+Defaults compare 100 cases for each of 5, 8, 12 and 20 corridors with sampled
+widths 1.1–5, 1.1–8 and 1.1–12 m. Walk lengths and overhangs retain their previous
+ranges. Results and 20-case five/eight-corridor overview figures are saved under
+`results/random_baseline/endpoint_widths`. Endpoint arcs are orange, internal arcs
+green. These are conditional samples, not matched geometric cases across widths;
+covered-edge extension can increase final widths beyond their sampled values.
+
+`stress_exact_fillet_propagation.py` compares exact propagation and bounded
+construction on the same accepted random corridor sequences (default seed 37,
+100 cases each for 5, 8, 12 and 20 corridors). It saves per-case geometry,
+statuses, warmed median timings and retained constraint counts in
+`results/random_baseline/exact_propagation/stress_report.json`. Generation and
+plotting are excluded; full construction includes final geometric validation.
+Separate synthetic intersections retain up to 64 curved inequalities to expose
+the cost hidden by simple corridor examples. This conditional random-walk sample
+does not establish a general bound on runtime or completeness beyond the A model.
+
+```sh
+python experiments/bicycle_journal_paper/stress_exact_fillet_propagation.py
+python -m unittest discover -s tests -p 'test_fillet_reachability*.py'
+```
+
+The stress tests compare 64,000 propagated membership queries against direct
+existential predecessor slices in all four directions over multiple geometry
+scales. Additional tests check original-region conversion, projection with
+multiple constraints, thin lenses, near tangency and degenerate sets.
+
+The running thesis example now uses `compute_filleted_baseline_exact()`:
+
+```sh
+python experiments/bicycle_journal_paper/example_planner_thesis.py --no-show
+```
+
+Its additional `figures/planner_thesis/planner_thesis_exact_fillet_propagation`
+PDF/PNG shows (a) corridors, (b) independent local `A_j` sets over safe overlaps,
+and (c) exact forward `F_j` sets with the backward-reconstructed polyline.
+Curved display boundaries are sampled only for drawing; feasibility and
+reconstruction use the analytic sets. These are internal fillet sets; endpoint
+arc alternatives are shown separately in the existing arc-fillets figure.
 
 ```sh
 MPLBACKEND=Agg PYTHONPATH=src python -m unittest discover -s tests

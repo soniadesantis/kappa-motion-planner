@@ -26,7 +26,9 @@ from .baseline_construction import (
 from .helpers.fillet_safety import (
     region_contains_point, axis_aligned_concave_corners, fillet_vertex_region,
 )
-from .helpers.sequence_geometry import sequence_geometry
+from .helpers.sequence_geometry import (
+    sequence_geometry, corridor_boundary_intersections as _corridor_boundary_intersections,
+)
 
 @dataclass(frozen=True)
 class IndependentCirclePlacement:
@@ -483,41 +485,6 @@ def _place_circle_in_region(j, region, pair, r, R, tol, fallback=None, side=None
         raise ValueError(f'Baseline fallback at waypoint {j} is outside A_j.')
     return IndependentCirclePlacement(j,rule,_frozen_array(center),_frozen_array(vertex),
         R,_frozen_region(region),True,tuple(rejected),side), tuple(rejected)
-
-
-def _corridor_boundary_intersections(first, second, tol):
-    """Return distinct point intersections and shared boundary segments.
-
-    Constant-size edge intersection calculation on axis-aligned rectangles.
-    Shared edges are retained explicitly, not reduced to an arbitrary endpoint.
-    """
-    def edges(b):
-        return [(0,x,b[2],b[3]) for x in b[:2]]+[(1,y,b[0],b[1]) for y in b[2:]]
-    points, segments = [], []
-    def add(point):
-        point = np.asarray(point,dtype=float)
-        if not any(np.max(abs(point-old)) <= tol for old in points):
-            points.append(point)
-    for axis,a,lo,hi in edges(first):
-        for other,b,low,high in edges(second):
-            if axis != other:
-                if lo-tol <= b <= hi+tol and low-tol <= a <= high+tol:
-                    point = np.empty(2)
-                    point[axis],point[other] = a,b
-                    add(point)
-            elif abs(a-b) <= tol:
-                left,right = max(lo,low),min(hi,high)
-                if left > right+tol:
-                    continue
-                start,end = np.empty(2),np.empty(2)
-                start[axis] = end[axis] = (a+b)/2
-                start[1-axis],end[1-axis] = left,right
-                if right-left > tol:
-                    segments.append((start,end))
-                    add(start); add(end)
-                else:
-                    add((start+end)/2)
-    return np.asarray(points).reshape(-1,2), segments
 
 
 def _place_aligned_sides(j, point, direction, door, pair, r, R, tol, geometry=None):

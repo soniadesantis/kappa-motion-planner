@@ -1,4 +1,4 @@
-"""Three connected corridors and a magnified corner, using planner geometry."""
+"""Thesis-font version of the three-corridor and magnified-corner figure."""
 import argparse
 from pathlib import Path
 
@@ -8,10 +8,15 @@ import numpy as np
 
 from kappa_planner.corridor import CorridorWorld
 from kappa_planner.helpers.corridor_geometry import get_corner_point_and_intersecting_edges
-from tangent_convention_journal import STYLE
 from example_one_corridor import arrow, text, edge_label, robot
 
-OUTPUT_DIRECTORY = Path(__file__).resolve().parent / 'figures'
+OUTPUT_DIRECTORY = Path(__file__).resolve().parent
+STYLE = {
+    'text.usetex': True,
+    'font.family': 'serif',
+    'font.serif': ['Computer Modern Roman'],
+    'text.latex.preamble': r'\usepackage{amsmath}',
+}
 ROBOT_RADIUS = 0.20
 CORNER_COLOR = 'red'
 INSET_EDGE_COLORS = ('#0072B2', '#AA4499')

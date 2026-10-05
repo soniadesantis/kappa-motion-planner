@@ -1,0 +1,23 @@
+% Compile twice from experiments/avp_paper:
+% pdflatex -output-directory=/tmp relabel_demo1_traj.tex
+% Copy /tmp/relabel_demo1_traj.pdf to figures/demo1_traj.pdf after review.
+\documentclass{article}
+\usepackage[paperwidth=720bp,paperheight=288bp,margin=0bp]{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\begin{document}
+\begin{tikzpicture}[remember picture,overlay,x=1bp,y=1bp]
+  \node[anchor=south west,inner sep=0] at (current page.south west)
+    {\includegraphics[width=720bp,height=288bp]{figures/demo1_traj_original.pdf}};
+  \begin{scope}[shift={(current page.south west)}]
+% Cover only the original axis labels, preserving the artwork and units.
+    \fill[white] (335,0) rectangle (405,25);
+    \fill[white] (25,108) rectangle (48,178);
+    \node[inner sep=0,rotate=0,font=\fontsize{20}{24}\selectfont] at (369,11) {$x$ (m)};
+    \node[inner sep=0,rotate=90,font=\fontsize{20}{24}\selectfont] at (36,142) {$y$ (m)};
+  \end{scope}
+\end{tikzpicture}%
+\null
+\end{document}

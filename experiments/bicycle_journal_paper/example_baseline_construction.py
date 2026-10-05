@@ -1,23 +1,16 @@
-"""Show the baseline, repaired circle placements, and collision-free circle arcs.
+"""Two views of baseline construction: local A_j, then reachable R_j and path.
 
-The second figure applies the four existing placement rules plus baseline
-fallback, checking each implied waypoint against A_j, then overlap repairs.
-The third figure highlights eroded-corridor arcs joined through the certified fillet.
-Tangency contacts must lie on these green intervals. Shortcuts also cross the
-full overlaps at intermediate doors in order. Each straight segment's circular
-footprint is checked analytically in the original corridor union, including safe
-concave wedges. Global tangent intersections remain unchecked.
-Enable PLOT_FEASIBILITY for the optional exact-test figure.
+Choose EXAMPLE_NUM, USE_BOUNDARY_DIRECTIONS and CONNECT_BOUNDARIES below.
+Optional physical connections reuse the bicycle boundary construction.
+Timing covers one complete baseline construction, excluding imports, map creation,
+display geometry and plotting. Refinement is not run by this example.
 
-Use VS Code Run/Debug and choose EXAMPLE_NUM below. No arguments are needed.
-CLI example: python experiments/bicycle_journal_paper/example_baseline_construction.py \
-    --example 7 --repetitions 100 --save /tmp/baseline.png
-
-Timing covers the complete Boolean check, excluding imports, map creation,
-plotting and the optional backward pass for globally viable regions.
+CLI: python experiments/bicycle_journal_paper/example_baseline_construction.py \
+    --example 7 --save /tmp/baseline.png --no-plot
 """
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 from statistics import median
 from textwrap import fill
@@ -27,30 +20,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 from examples_maps_polyline import EXAMPLE_NUMBERS, example_corridor_sequence
 from matplotlib.lines import Line2D
-from matplotlib.patches import Circle, Patch, Polygon, Rectangle
+from matplotlib.collections import LineCollection
+from matplotlib.patches import Patch, Polygon, Rectangle
 
 from kappa_planner.baseline_construction import (
     analyze_orthogonal_polyline_feasibility,
     check_orthogonal_polyline_feasibility,
-    compute_filleted_baseline,
+    compute_boundary_directed_baseline,
+    compute_baseline,
 )
+from kappa_planner.bicycle_boundary_connections import build_baseline_boundary_connections
 from kappa_planner.helpers.fillet_backtracking import region_slice
-from kappa_planner.refinement import (
-    place_refinement_circles, restore_opposite_turn_overlaps,
-    repair_same_turn_overlaps, connect_refinement_circles, compute_circle_safe_arcs,
-    connect_safe_arc_circles, connect_simple_tangent_chain,
-)
+from kappa_planner.helpers.fillet_reachability import propagate_fillet_regions
+from kappa_planner.helpers.corridor_union import CorridorUnion
 
-EXAMPLE_NUM = 21  # Choose one map from 1 through 35, then press Run in VS Code.
-REPETITIONS = 100  # Calls per timing batch.
-BATCHES = 7
-WARMUP = 5
+EXAMPLE_NUM = 22  # Choose one map from 1 through 35, then press Run in VS Code.
 PLOT_RESULTS = True
-PLOT_FEASIBILITY = False  # Optional extra figure beyond baseline, placement, connections.
-ALLOW_SAFE_ARC_SKIPPING = True  # False compares against consecutive-only connections.
-CONNECTION_RULE = 'compare'  # 'graph', 'simple', or 'compare'; VS Code Run uses this.
 USE_JOINT_SOLVER = False  # Evaluate the cheap heuristic alone; enable for fallback.
-USE_BOUNDARY_DIRECTIONS = True  # Infer virtual entry/exit from the map's poses.
+BASELINE_RULE = 'baseline'  # Direct pipeline; 'segment', 'exact', 'heuristic' retain the older routines for comparison.
+USE_BOUNDARY_DIRECTIONS = True  # Pose-to-centroid turn signs; otherwise perpendicular then straight.
+CONNECT_BOUNDARIES = True  # Try initial/final bicycle connections after constructing the baseline.
 SAVE_FIGURE = None  # Optional filename, e.g. "/tmp/baseline.png".
 
 
@@ -320,8 +309,10 @@ def plot_filleted_baseline(number, result, elapsed_ms, robot=None,
                    if result.fillets[j + 1] is not None else points[j + 1])
             ax.plot([start[0], end[0]], [start[1], end[1]],
                     color="#172033", linewidth=2.5, zorder=4)
-        for fillet in result.fillets:
-            if fillet is None:
+        for j, fillet in enumerate(result.fillets):
+            connection = (result.initial_connection if j == 0 else
+                          result.final_connection if j == len(result.fillets)-1 else None)
+            if fillet is None or (connection is not None and connection.connected):
                 continue
             radial = fillet.incoming_tangent - fillet.center
             angles = (np.arctan2(radial[1], radial[0])
@@ -420,458 +411,255 @@ def plot_filleted_baseline(number, result, elapsed_ms, robot=None,
     return fig
 
 
-def plot_independent_circle_placement(number, baseline, placements):
-    """Display supporting circles and implied vertices in A_j; no connections."""
-    fig, (ax, notes) = plt.subplots(1,2,figsize=(13,8),gridspec_kw={'width_ratios':[3,1.4]})
-    notes.axis('off')
-    for bounds in baseline.feasibility.corridor_bounds:
-        draw_region(ax,bounds,'#64748b',alpha=.1,zorder=1)
-    for door in baseline.feasibility.safe_overlaps:
-        if door is not None:
-            draw_region(ax,door,'#a855f7',alpha=.2,zorder=2)
-    for region in baseline.fillet_regions:
-        if region is not None and not region['empty']:
-            draw_fillet_region(ax,region)
-    for decision in placements.aligned_sides:
-        color = '#0891b2' if decision.side == 'left' else '#7c3aed'
-        if decision.region is not None and not decision.region['empty']:
-            draw_fillet_region(ax,decision.region,color=color)
-        if decision.corner is not None:
-            ax.scatter(*decision.corner,marker='D',s=20,color=color,zorder=8)
-            ax.annotate(f'I{decision.waypoint_index+1}-{decision.side[0].upper()}',
-                        decision.corner,xytext=(-32,5),textcoords='offset points',
-                        fontsize=8,color=color)
-    if baseline.polyline is not None:
-        ax.plot(*baseline.polyline.T,':',color='#94a3b8',lw=1,zorder=3)
-    colors={'forty_five_safe_half':'#2563eb','safe_half_shifted':'#0891b2',
-            'forty_five_basic':'#9333ea','basic_shifted':'#ea580c','baseline':'#64748b','same_turn_coincident':'#059669'}
-    names={'forty_five_safe_half':'1. Nominal, safe halves',
-           'safe_half_shifted':'2. Shifted into halves',
-           'forty_five_basic':'3. Ordinary nominal',
-           'basic_shifted':'4. (a, b)', 'baseline':'5. Baseline fallback', 'same_turn_coincident':'Coincident-center shift'}
-    messages=[]
-    if placements.restored_waypoints:
-        messages.append('Overlap fallback: restored baseline circles at '+
-                        ', '.join(f'D{j+1}' for j in placements.restored_waypoints)+'.')
-    rejected_colors={'forty_five_safe_half':'#dc2626', 'safe_half_shifted':'#db2777',
-                     'forty_five_basic':'#b91c1c', 'basic_shifted':'#9f1239'}
-    for i, k, valid in placements.same_turn_transitions:
-        a, b = placements.circles[i], placements.circles[k]
-        messages.append(f'D{a.waypoint_index+1} → D{b.waypoint_index+1}: same-turn transition {"valid" if valid else "unresolved"}.')
-    if placements.coincident_waypoints:
-        messages.append("Shifted to common center: "+", ".join(f"D{j+1}" for j in placements.coincident_waypoints)+".")
-    rejected_handles={}
-    overlap_color = '#b8860b'
-    overlapping = {i for block in placements.overlap_blocks for i in block}
-    for circle_index, circle in enumerate(placements.circles):
-        color=colors[circle.rule] if circle.side is None else ('#0891b2' if circle.side == 'left' else '#7c3aed')
-        if circle_index in overlapping:
-            color = overlap_color
-        tag = f'{circle.waypoint_index+1}' + (f'-{circle.side[0].upper()}' if circle.side else '')
-        ax.add_patch(Circle(circle.center,circle.radius,fill=False,edgecolor=color,
-                            lw=2 if circle_index in overlapping else 1,
-                            linestyle='--',alpha=.9 if circle_index in overlapping else .6,zorder=4))
-        alpha=np.linspace(0,np.pi/2,151)
-        region=circle.region
-        points=circle.center+circle.radius*(-np.cos(alpha)[:,None]*region['outgoing']
-                                           +np.sin(alpha)[:,None]*region['incoming'])
-        ax.plot(*points.T,color=color,lw=2.4,zorder=5)
-        ax.scatter(*circle.center,marker='+',s=65,color=color,zorder=6)
-        ax.scatter(*circle.vertex,marker='s',s=25,color=color,zorder=7)
-        ax.annotate(f'O{tag}',circle.center,xytext=(5,5),
-                    textcoords='offset points',fontsize=9,color=color)
-        # Rules 1 and 3 can propose the identical nominal circle. Draw that
-        # geometry once and label both rules, rather than hiding one underneath.
-        groups={}
-        for rejected in circle.rejected_candidates:
-            key=tuple(np.r_[rejected['center'],rejected['vertex']])
-            groups.setdefault(key,[]).append(rejected)
-        for group in groups.values():
-            rejected=group[0]
-            rejected_color=rejected_colors[rejected['rule']]
-            rule_numbers='/'.join(names[item['rule']].split('.')[0] for item in group)
-            label=f'Rejected rule {rule_numbers}'
-            rejected_handles[label]=rejected_color
-            ax.add_patch(Circle(rejected['center'],circle.radius,fill=False,
-                                edgecolor=rejected_color,lw=1.3,linestyle=':',alpha=.8,zorder=6))
-            arc=rejected['center']+circle.radius*(-np.cos(alpha)[:,None]*region['outgoing']
-                                                 +np.sin(alpha)[:,None]*region['incoming'])
-            ax.plot(*arc.T,'--',color=rejected_color,lw=2,zorder=7)
-            ax.scatter(*rejected['center'],marker='+',s=60,color=rejected_color,zorder=8)
-            ax.scatter(*rejected['vertex'],marker='x',s=65,color=rejected_color,zorder=9)
-            ax.annotate(f'D{tag}: rejected {rule_numbers}',
-                        rejected['vertex'],xytext=(8,-18-14*(len(rejected_handles)-1)),
-                        textcoords='offset points',fontsize=8,color=rejected_color,
-                        arrowprops=dict(arrowstyle='-',color=rejected_color,lw=.7),zorder=10)
-            messages.append(f'D{tag}: rejected rules {rule_numbers}; '
-                            f'p=({rejected["vertex"][0]:.4f}, {rejected["vertex"][1]:.4f}) outside A_j.')
+def _erosion_display(bounds, radius):
+    """Sample exact union-boundary clearance for display, including concave arcs.
 
-        messages.append(f'D{tag}: {names[circle.rule]}; implied vertex in directional A_j: yes.'
-                        + (f' {len(circle.rejected_candidates)} earlier candidates outside A_j.'
-                           if circle.rejected_candidates else ''))
-    for decision in placements.aligned_sides:
-        if decision.status != 'placed':
-            messages.append(f'D{decision.waypoint_index+1}-{decision.side}: {decision.status}.')
-    if placements.skipped_waypoints:
-        messages.append('No placed circle: '+', '.join(f'D{j+1}' for j in placements.skipped_waypoints)+'.')
-    def circle_label(i):
-        circle = placements.circles[i]
-        return f'O{circle.waypoint_index+1}' + (f'-{circle.side[0].upper()}' if circle.side else '')
-    messages.append(f'Consecutive overlaps: {len(placements.overlap_pairs)} pairs, '
-                    f'{len(placements.overlap_blocks)} blocks (gold). Touching alone is excluded.')
-    for block_number, block in enumerate(placements.overlap_blocks, 1):
-        messages.append(f'Block {block_number}: '+', '.join(circle_label(i) for i in block)+'.')
-    notes.text(0,1,'\n\n'.join(fill(t,42) for t in [
-        f'Independent placement: {placements.status}',
-        f'{placements.elapsed_ms:.3f} ms; opposite-turn restoration and same-turn pair checks.',
-        'Dashed: supporting circles. Solid: permitted quarter-arcs. Squares: implied vertices p = o + R u - R v.',
-        'A_j is a waypoint region, not a center region. Red/pink dotted circles and dashed arcs are rejected proposals; crosses show their implied vertices. They are not accepted arcs.',
-        *messages,
-        'Gold marks remaining overlaps. See pair checks for valid or unresolved same-turn transitions. Local placements need not form a connected path.'
-    ]),va='top',fontsize=9,transform=notes.transAxes)
-    used={c.rule for c in placements.circles if c.side is None}
-    handles=[Patch(facecolor='#16a34a',alpha=.4,label='Local regions A_j'),
-             Line2D([],[],color='#94a3b8',ls=':',label='Baseline polyline')]
-    if overlapping:
-        handles.append(Line2D([],[],color=overlap_color,lw=2,label='Consecutive overlapping circles'))
-    handles += [Line2D([],[],color=colors[rule],lw=2,label=label)
-                for rule,label in names.items() if rule in used]
-    for side,color in (('left','#0891b2'),('right','#7c3aed')):
-        if any(c.side == side for c in placements.circles):
-            handles.append(Line2D([],[],color=color,lw=2,label=f'Aligned: {side} option'))
-    handles += [Line2D([],[],color=color,ls='--',marker='x',label=label)
-                for label,color in rejected_handles.items()]
-    fig.legend(handles=handles,loc='lower center',ncol=3,fontsize=9)
-    ax.set_title(f'Example {number}: independent circle placement')
-    ax.set_aspect('equal'); ax.autoscale_view(); ax.margins(.08)
-    ax.set_xlabel('x [m]'); ax.set_ylabel('y [m]'); ax.grid(alpha=.2)
-    fig.tight_layout(rect=(0,.1,1,1))
-    return fig
+    This grid is used only for drawing; construction never uses it. Eroding
+    each rectangle separately would incorrectly remove safe overlap corners.
+    """
+    union = CorridorUnion(bounds)
+    bounds = np.asarray(bounds)
+    low = bounds[:, (0, 2)].min(axis=0)
+    high = bounds[:, (1, 3)].max(axis=0)
+    span = high-low
+    counts = np.maximum(100, np.ceil(600*span/span.max()).astype(int))
+    xs, ys = [np.linspace(a, b, count) for a, b, count in zip(low, high, counts)]
+    xx, yy = np.meshgrid(xs, ys)
+    points = np.column_stack((xx.ravel(), yy.ravel()))
+    inside = np.zeros(len(points), dtype=bool)
+    for xmin, xmax, ymin, ymax in bounds:
+        inside |= ((points[:, 0] >= xmin) & (points[:, 0] <= xmax)
+                   & (points[:, 1] >= ymin) & (points[:, 1] <= ymax))
+    distance_squared = np.full(len(points), np.inf)
+    for a, b in union.boundary:
+        edge = b-a
+        parameter = np.clip((points-a) @ edge/(edge @ edge), 0., 1.)
+        delta = points-(a+parameter[:, None]*edge)
+        distance_squared = np.minimum(distance_squared, np.einsum('ij,ij->i', delta, delta))
+    clearance = np.sqrt(distance_squared)
+    clearance[~inside] *= -1
+    return xx, yy, clearance.reshape(xx.shape), union.boundary
 
 
-def plot_circle_connections(number, baseline, placements, connection):
-    """Display every safe candidate link and the contact-ordered selected chain."""
-    boxes = baseline.feasibility.corridor_bounds
-    width = max(b[1] for b in boxes)-min(b[0] for b in boxes)
-    height = max(b[3] for b in boxes)-min(b[2] for b in boxes)
-    fig, ax = plt.subplots(figsize=(10, np.clip(9*height/max(width, 1e-9)+2, 5, 10)))
-    for bounds in baseline.feasibility.corridor_bounds:
-        draw_region(ax, bounds, '#64748b', alpha=.12, zorder=1)
-    for door in baseline.feasibility.safe_overlaps:
-        if door is not None:
-            draw_region(ax, door, '#a855f7', alpha=.15, zorder=2)
-    if baseline.polyline is not None:
-        ax.plot(*baseline.polyline.T, ':', color='#94a3b8', lw=1, zorder=3)
-    selected = set(connection.selected_circles) if connection.feasible else set()
-    center_labels = {}
-    for i, circle in enumerate(placements.circles):
-        color = '#2563eb' if i in selected else '#94a3b8'
-        ax.add_patch(Circle(circle.center, circle.radius, fill=False, edgecolor=color,
-                            lw=1, linestyle='--', alpha=.5, zorder=3))
-        ax.scatter(*circle.center, marker='+', s=35, color=color, zorder=4)
-        suffix = f'-{circle.side[0].upper()}' if circle.side else ''
-        center_labels.setdefault(tuple(circle.center), []).append(f'O{circle.waypoint_index+1}{suffix}')
-    for center, labels in center_labels.items():
-        ax.annotate('/'.join(labels), center, xytext=(5, 5), textcoords='offset points',
-                    color='#475569', fontsize=10)
-    for state in connection.tangent_states:
-        ax.plot(*np.array([state.start, state.end]).T, color='#0891b2', lw=1, alpha=.35, zorder=4)
-        ax.scatter(*state.start, s=10, color='#0891b2', alpha=.35, zorder=4)
-        ax.scatter(*state.end, s=10, color='#0891b2', alpha=.35, zorder=4)
-    if connection.feasible:
-        for primitive in connection.primitives:
-            if primitive['kind'] == 'line':
-                ax.plot(*np.array([primitive['start'], primitive['end']]).T,
-                        color='#111827', lw=2.6, zorder=6)
+def _draw_baseline_scene(ax, report, erosion, radius):
+    xx, yy, clearance, boundary = erosion
+    if clearance.max() > radius:
+        ax.contourf(xx, yy, clearance, levels=[radius, clearance.max()+1.],
+                    colors=['#e2e8f0'], zorder=0)
+        ax.contour(xx, yy, clearance, levels=[radius], colors=['#94a3b8'],
+                   linewidths=.7, zorder=1)
+    for xmin, xmax, ymin, ymax in report.corridor_bounds:
+        ax.add_patch(Rectangle((xmin, ymin), xmax-xmin, ymax-ymin,
+                              fill=False, edgecolor='#94a3b8', linewidth=.7,
+                              linestyle='--', alpha=.7, zorder=1))
+    ax.add_collection(LineCollection(boundary, colors='#475569', linewidths=1., zorder=2))
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlabel('x [m]')
+    ax.set_ylabel('y [m]')
+    ax.grid(color='#cbd5e1', alpha=.25, linewidth=.5)
+    ax.set_axisbelow(True)
+    low = boundary.reshape(-1, 2).min(axis=0)
+    high = boundary.reshape(-1, 2).max(axis=0)
+    padding = .06*(high-low)
+    ax.set_xlim(low[0]-padding[0], high[0]+padding[0])
+    ax.set_ylim(low[1]-padding[1], high[1]+padding[1])
+    for spine in ax.spines.values():
+        spine.set_color('#cbd5e1')
+
+
+def _draw_reachable_set(ax, reachable):
+    """Draw analytic R_j slices rather than its rectangular bounding box."""
+    xmin, xmax, ymin, ymax = reachable.bounds
+    if xmax-xmin <= 1e-10 or ymax-ymin <= 1e-10:
+        draw_region(ax, reachable.bounds, '#2563eb', zorder=3)
+        return
+    lower, upper = [], []
+    for x in np.linspace(xmin, xmax, 241):
+        interval = reachable.slice_interval(0, x)
+        if interval is not None:
+            lower.append((x, interval[0]))
+            upper.append((x, interval[1]))
+    if lower:
+        vertices = np.array(lower+upper[::-1])
+        ax.add_patch(Polygon(vertices, facecolor='#60a5fa', edgecolor='#2563eb',
+                             alpha=.38, linewidth=1.1, zorder=3))
+
+
+def _region_label(ax, j, point, symbol, color):
+    ax.annotate(rf'${symbol}_{{{j+1}}}$', point,
+                xytext=(5, 8 if j % 2 == 0 else -13), textcoords='offset points',
+                fontsize=9, color=color, zorder=8,
+                bbox=dict(facecolor='white', edgecolor='none', alpha=.8, pad=.8))
+
+
+def plot_baseline_construction(number, result, elapsed_ms, robot,
+                               initial_position=None, final_position=None):
+    """Return exactly two clean figures: local A_j and reachable R_j + baseline."""
+    report = result.feasibility
+    r = robot.r if hasattr(robot, 'r') else robot.width/2
+    R = robot.R if hasattr(robot, 'R') else robot.max_radius
+    erosion = _erosion_display(report.corridor_bounds, r)
+    local_fig, local_ax = plt.subplots(figsize=(9, 7))
+    path_fig, path_ax = plt.subplots(figsize=(9, 7))
+    for ax in (local_ax, path_ax):
+        _draw_baseline_scene(ax, report, erosion, r)
+    for j, door in enumerate(report.safe_overlaps):
+        if door is None:
+            continue
+        center = ((door[0]+door[1])/2, (door[2]+door[3])/2)
+        if j >= len(result.fillet_regions):
+            continue  # A construction rejected earlier has no local A_j here.
+        region = result.fillet_regions[j]
+        if region is None:
+            directions = result.segment_directions[j:j+2]
+            if (len(directions) == 2 and all(d is not None for d in directions)
+                    and directions[0] != directions[1]):
+                # No local region was constructed for this unresolved turn.
+                local_ax.annotate(rf'$A_{{{j+1}}}$ unresolved', center, fontsize=8,
+                                  color='#b91c1c', zorder=8)
+                continue
+            draw_region(local_ax, door, '#16a34a', alpha=.35, zorder=3)
+        elif region['empty']:
+            local_ax.scatter(*center, marker='x', color='#b91c1c', s=45, zorder=5)
+        else:
+            draw_fillet_region(local_ax, region)
+        _region_label(local_ax, j, center, 'A', '#15803d')
+
+    reachability = result.fillet_reachability
+    if (reachability is None and report.feasible
+            and len(result.fillet_regions) == len(report.safe_overlaps)):
+        # Heuristic reports omit full R_j. Compute them only for the display,
+        # after the timed baseline call; this does not change the selected path.
+        reachability = propagate_fillet_regions(report, result.fillet_regions, R)
+    if reachability is not None:
+        for j, reachable in enumerate(reachability.reachable_sets):
+            if reachable is None:
+                door = report.safe_overlaps[j]
+                center = ((door[0]+door[1])/2, (door[2]+door[3])/2)
+                path_ax.scatter(*center, marker='x', color='#b91c1c', s=45, zorder=5)
             else:
-                angles = np.linspace(primitive['enter'], primitive['leave'], 100)
-                region = primitive['region']
-                points = primitive['center']+primitive['radius']*(
-                    -np.cos(angles)[:, None]*region['outgoing']+
-                    np.sin(angles)[:, None]*region['incoming'])
-                ax.plot(*points.T, color='#2563eb', lw=3, zorder=6)
-        for idx in connection.chosen_states:
-            state = connection.tangent_states[idx]
-            ax.scatter(*state.start, s=30, facecolor='white', edgecolor='#111827', zorder=7)
-            ax.scatter(*state.end, s=30, facecolor='white', edgecolor='#111827', zorder=7)
-        start, end = connection.primitives[0]['start'], connection.primitives[-1]['end']
-        ax.scatter(*start, marker='s', color='#16a34a', s=55, zorder=8)
-        ax.scatter(*end, marker='s', color='#dc2626', s=55, zorder=8)
-    handles = [Line2D([], [], color='#0891b2', alpha=.5, label='Admissible tangent candidates'),
-               Line2D([], [], color='#111827', lw=2.6, label='Selected tangents'),
-               Line2D([], [], color='#2563eb', lw=3, label='Selected directed arcs' if connection.geometry_only else 'Selected quarter-arc portions'),
-               Line2D([], [], marker='o', color='#111827', markerfacecolor='white', ls='', label='Selected contacts'),
-               Line2D([], [], marker='s', color='#16a34a', ls='', label='First-circle entry'),
-               Line2D([], [], marker='s', color='#dc2626', ls='', label='Last-circle exit')]
-    if not connection.feasible:
-        handles = handles[:1]
-    elif connection.skipped_waypoints:
-        handles.append(Line2D([], [], color='#94a3b8', ls='--', label='Unused supporting circles'))
-    fig.legend(handles=handles, loc='lower center', ncol=2, fontsize=10, frameon=False)
-    length = f'; length {connection.length:.3f} m' if connection.feasible else ''
-    ax.set_title(f'Example {number}: {connection.status.replace("_", " ")}\n'
-                 f'{connection.attempted_pairs} circle pairs; {len(connection.tangent_states)} tangent states'
-                 f'; {connection.elapsed_ms:.2f} ms{length}', fontsize=12)
-    details = ('Circle skipping enabled; first/last groups retained.' if connection.allow_skipping else
-               'Consecutive groups only.')
-    if connection.skipped_waypoints:
-        details += ' Skipped: '+', '.join(f'D{j+1}' for j in connection.skipped_waypoints)+'.'
-    details += (' Tangent intersections checked; containment and arc intersections pending.'
-                if connection.geometry_only else ' No boundary-pose connections or global self-intersection audit.')
-    if not connection.feasible:
-        blocked = sorted({placements.circles[i].waypoint_index+1 for i in connection.contact_order_blocks})
-        details = connection.reason + (f' Contact-order blocks at D: {blocked}.' if blocked else '')
-        failures = sorted({reason for _, _, reasons in connection.rejected_pairs for reason in reasons.split(',')})
-        if failures:
-            details += ' Rejected links: '+', '.join(reason.replace('_', ' ') for reason in failures)+'.'
-    fig.text(.5, .14, fill(details, 110), ha='center', fontsize=10)
-    ax.set_aspect('equal'); ax.autoscale_view(); ax.margins(.08)
-    ax.set_xlabel('x [m]'); ax.set_ylabel('y [m]'); ax.grid(alpha=.2)
-    fig.tight_layout(rect=(0, .2, 1, 1))
-    return fig
-
-
-def plot_circle_safe_arcs(number, baseline, placements, safe_arcs, elapsed_ms, connection=None,
-                         *, axis=None, title=None):
-    """Highlight green intervals and optional compatible tangent-chain shortcuts."""
-    own_figure = axis is None
-    if own_figure:
-        fig, ax = plt.subplots(figsize=(10, 8))
-    else:
-        ax, fig = axis, axis.figure
-    for bounds in baseline.feasibility.corridor_bounds:
-        draw_region(ax, bounds, '#64748b', alpha=.09, zorder=1)
-    boxes = {box for result in safe_arcs for box in result.eroded_corridors}
-    for xmin, xmax, ymin, ymax in sorted(boxes):
-        if xmin <= xmax and ymin <= ymax:
-            ax.add_patch(Rectangle((xmin, ymin), xmax-xmin, ymax-ymin, fill=False,
-                                   edgecolor='#64748b', linestyle=':', lw=1, alpha=.7, zorder=2))
-    if baseline.polyline is not None:
-        ax.plot(*baseline.polyline.T, ':', color='#94a3b8', lw=1, zorder=2)
-    labels = {}
-    for result in safe_arcs:
-        circle = placements.circles[result.circle_index]
-        ax.add_patch(Circle(circle.center, circle.radius, fill=False,
-                            edgecolor='#b8860b', linestyle='--', lw=1.2, alpha=.65, zorder=3))
-        ax.scatter(*circle.center, marker='+', s=45, color='#475569', zorder=5)
-        tag = f'O{circle.waypoint_index+1}' + (f'-{circle.side[0].upper()}' if circle.side else '')
-        labels.setdefault(tuple(circle.center), []).append(tag)
-        for start, end in result.intervals:
-            # Sampling is for rendering only; interval endpoints are analytic.
-            angles = np.linspace(start, end, max(2, int(100*(end-start))+2))
-            points = circle.center+circle.radius*np.column_stack((np.cos(angles), np.sin(angles)))
-            ax.plot(*points.T, color='#009e73', lw=2.8, solid_capstyle='butt', zorder=4)
-            if start == end:
-                ax.scatter(*points[0], color='#009e73', s=18, zorder=5)
-    for center, names in labels.items():
-        ax.annotate('/'.join(names), center, xytext=(5, 5), textcoords='offset points',
-                    fontsize=10, color='#334155')
-    if connection is not None:
-        for state in connection.tangent_states:
-            ax.plot(*np.array([state.start, state.end]).T, color='#38bdf8', lw=1, alpha=.4, zorder=3)
-            ax.scatter(*np.array([state.start, state.end]).T, color='#0284c7', s=12, zorder=5)
-        for i in (() if connection.feasible else connection.contact_order_blocks):
-            circle = placements.circles[i]
-            ax.scatter(*circle.center, s=150, facecolors='none', edgecolors='#dc2626', lw=1.5, zorder=6)
-        if connection.feasible:
-            for primitive in connection.primitives:
-                if primitive['kind'] != 'arc':
-                    continue
-                angles = np.linspace(primitive['enter'], primitive['leave'], 100)
-                region = primitive['region']
-                points = primitive['center']+primitive['radius']*(
-                    -np.cos(angles)[:, None]*region['outgoing']+
-                    np.sin(angles)[:, None]*region['incoming'])
-                ax.plot(*points.T, color='#2563eb', lw=3.1, zorder=6)
-            for idx in connection.chosen_states:
-                state = connection.tangent_states[idx]
-                ax.plot(*np.array([state.start, state.end]).T, color='#111827', lw=2, zorder=6)
-                ax.scatter(*np.array([state.start, state.end]).T, s=22,
-                           facecolor='white', edgecolor='#111827', zorder=7)
-    handles = [Line2D([], [], color='#b8860b', ls='--', label='Repositioned supporting circles'),
-               Line2D([], [], color='#009e73', lw=3.5, label='Collision-free arc portions'),
-               Line2D([], [], color='#64748b', ls=':', label='Eroded corridor boundaries'),
-               Line2D([], [], color='#94a3b8', ls=':', label='Baseline polyline')]
-    if connection is not None:
-        handles.extend((Line2D([], [], color='#38bdf8', alpha=.5, label='Admissible tangent candidates'),
-                        Line2D([], [], color='#111827', lw=2, marker='o', markerfacecolor='white',
-                               label='Selected tangents and contacts'),
-                        Line2D([], [], color='#2563eb', lw=3, label='Selected directed arcs')))
-        if connection.contact_order_blocks and not connection.feasible:
-            handles.append(Line2D([], [], color='#dc2626', marker='o', markerfacecolor='none',
-                                  ls='', label='Incompatible contact order'))
-    status = f'\n{connection.status}; connection {connection.elapsed_ms:.3f} ms' if connection is not None else ''
-    ax.set_title(title or f'Example {number}: collision-free arcs after circle repairs\n'
-                 f'{len(safe_arcs)} circles; angular-interval computation {elapsed_ms:.3f} ms{status}', fontsize=12)
-    ax.set_xlabel('x [m]'); ax.set_ylabel('y [m]')
-    ax.set_aspect('equal'); ax.autoscale_view(); ax.margins(.08); ax.grid(alpha=.2)
-    if own_figure:
-        fig.legend(handles=handles, loc='lower center', ncol=2, fontsize=10, frameon=False)
-    note = 'Safe arcs include the certified fillet bridging the gap between eroded corridors.'
-    if connection is not None:
-        note = 'Green arcs checked. '
-        note += ('Shortcut footprints checked; consecutive footprints unchecked. '
-                 if connection.footprint_scope == 'shortcuts' else
-                 'Straight footprints checked. ' if connection.tangent_containment_checked else
-                 'Straight footprints unchecked. ')
-        note += ('Overlap order checked. ' if connection.ordered_overlap_crossings_checked else
-                 'Overlap order unchecked. ')
-        note += 'Global intersections unchecked.'
-    if connection is not None and connection.contact_order_blocks:
-        if not connection.feasible:
-            note = 'Contact order blocked at '+', '.join(f'O{placements.circles[i].waypoint_index+1}'
-                                                       for i in connection.contact_order_blocks)+'. '+note
-    if connection is not None and connection.skipped_waypoints:
-        note = 'Skipped: '+', '.join(f'O{j+1}' for j in connection.skipped_waypoints)+'. '+note
-    if own_figure:
-        fig.text(.5, .12, fill(note, 125), ha='center', fontsize=9)
-        fig.tight_layout(rect=(0, .17, 1, 1))
-    return fig
-
-
-def plot_tangent_rule_comparison(number, baseline, placements, safe_arcs, graph, simple):
-    """Compare complete search and first-chain repair with all straight footprints checked."""
-    fig, axes = plt.subplots(1, 2, figsize=(17, 8), sharex=True, sharey=True)
-    for ax, name, result in zip(axes, ('Full graph: shortest chain', 'Local repair: first valid chain'),
-                               (graph, simple)):
-        length = f'{result.length:.3f} m' if result.feasible else 'unresolved'
-        title = f'{name}\n{length}; {result.attempted_pairs} pairs; {result.elapsed_ms:.3f} ms'
-        plot_circle_safe_arcs(number, baseline, placements, safe_arcs, 0., result, axis=ax, title=title)
-        chain = ', '.join(f'O{placements.circles[i].waypoint_index+1}'
-                          + (f'-{placements.circles[i].side[0].upper()}' if placements.circles[i].side else '')
-                          for i in result.selected_circles)
-        ax.text(.5, -.12, fill('Selected: '+chain if result.feasible else result.reason, 70),
-                transform=ax.transAxes, ha='center', va='top', fontsize=10)
-    axes[1].set_ylabel('')
-    fig.suptitle(f'Example {number}: alternative tangent-chain rules', fontsize=14)
-    fig.legend(handles=[Line2D([], [], color='#009e73', lw=3, label='Available green arcs'),
-                        Line2D([], [], color='#2563eb', lw=3, label='Selected directed arcs'),
-                        Line2D([], [], color='#111827', lw=2, label='Selected tangents'),
-                        Line2D([], [], color='#38bdf8', lw=1, label='Admissible candidate tangents')],
-               loc='lower center', ncol=4, frameon=False)
-    fig.text(.5, .055, 'Green contacts, directed arcs and all straight footprints checked. '
-             'Overlap order and global intersections unchecked.', ha='center', fontsize=10)
-    fig.tight_layout(rect=(0, .16, 1, .95))
-    return fig
+                _draw_reachable_set(path_ax, reachable)
+                bounds = reachable.bounds
+                center = ((bounds[0]+bounds[1])/2, (bounds[2]+bounds[3])/2)
+            _region_label(path_ax, j, center, 'R', '#1d4ed8')
+    path_handles = [Patch(facecolor='#60a5fa', edgecolor='#2563eb', alpha=.38,
+                          label=r'Reachable sets $R_j$')]
+    if result.feasible:
+        points = result.polyline
+        path_ax.plot(points[:, 0], points[:, 1], '--', color='#d97706',
+                     linewidth=1.2, alpha=.8, zorder=4)
+        path_ax.scatter(points[:, 0], points[:, 1], color='#d97706',
+                        edgecolors='white', linewidths=.5, s=22, zorder=6)
+        for j in range(len(points)-1):
+            start = result.fillets[j].outgoing_tangent if result.fillets[j] else points[j]
+            end = result.fillets[j+1].incoming_tangent if result.fillets[j+1] else points[j+1]
+            path_ax.plot([start[0], end[0]], [start[1], end[1]],
+                         color='#172033', linewidth=2.2, zorder=5)
+        for fillet in result.fillets:
+            if fillet is None:
+                continue
+            radial = fillet.incoming_tangent-fillet.center
+            angles = np.arctan2(radial[1], radial[0])+np.linspace(0, fillet.signed_angle, 100)
+            arc = fillet.center+fillet.radius*np.column_stack((np.cos(angles), np.sin(angles)))
+            path_ax.plot(arc[:, 0], arc[:, 1], color='#172033', linewidth=2.2, zorder=5)
+        path_handles.extend([
+            Line2D([], [], color='#d97706', linestyle='--', marker='o', markersize=4,
+                   label='Selected polyline'),
+            Line2D([], [], color='#172033', linewidth=2.2, label='Filleted baseline'),
+        ])
+    for connection, color, label in (
+            (result.initial_connection, '#7c3aed', 'Initial connection'),
+            (result.final_connection, '#db2777', 'Final connection')):
+        if connection is None or not connection.connected:
+            continue
+        for maneuver in connection.maneuvers:
+            coordinates = maneuver.path_coordinates
+            path_ax.plot(coordinates[:, 0], coordinates[:, 1],
+                         color=color, linewidth=2.2, zorder=6)
+        path_handles.append(Line2D([], [], color=color, linewidth=2.2, label=label))
+    for ax in (local_ax, path_ax):
+        draw_boundary_positions(ax, initial_position, final_position)
+    local_ax.set_title(f'Example {number} · local admissible regions', loc='left', fontsize=13)
+    path_ax.set_title(f'Example {number} · reachable sets and baseline', loc='left', fontsize=13)
+    local_fig.legend(handles=[
+        Line2D([], [], color='#475569', linewidth=1., label='Provided corridors'),
+        Patch(facecolor='#e2e8f0', edgecolor='#94a3b8', label='Circular-footprint erosion'),
+        Patch(facecolor='#16a34a', alpha=.4, label=r'Local regions $A_j$'),
+    ], loc='lower center', ncol=3, frameon=False, fontsize=9)
+    path_fig.legend(handles=path_handles, loc='lower center', ncol=3,
+                    frameon=False, fontsize=9)
+    status = 'Baseline found' if result.feasible else f'No baseline found ({result.status})'
+    timing = f'baseline: {elapsed_ms:.3f} ms'
+    if result.boundary_connections_requested:
+        timing += f' · baseline + boundaries: {result.total_time_ms:.3f} ms'
+    path_fig.text(.5, .065, f'{status} · {timing}',
+                  ha='center', fontsize=10, color='#334155')
+    local_fig.tight_layout(rect=(0, .065, 1, 1))
+    path_fig.tight_layout(rect=(0, .105, 1, 1))
+    return local_fig, path_fig
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--example", type=int, choices=list(EXAMPLE_NUMBERS),
-                        default=EXAMPLE_NUM)
-    parser.add_argument("--repetitions", type=int, default=REPETITIONS)
-    parser.add_argument("--batches", type=int, default=BATCHES)
-    parser.add_argument("--warmup", type=int, default=WARMUP)
-    parser.add_argument("--save", type=Path,
+    parser.add_argument('--example', type=int, choices=list(EXAMPLE_NUMBERS), default=EXAMPLE_NUM)
+    parser.add_argument('--save', type=Path,
                         default=Path(SAVE_FIGURE) if SAVE_FIGURE else None)
-    parser.add_argument("--no-plot", action="store_true")
-    parser.add_argument('--connection-rule', choices=('graph', 'simple', 'compare'), default=CONNECTION_RULE)
-    parser.add_argument("--boundary-directions", action="store_true", default=USE_BOUNDARY_DIRECTIONS,
-                        help="Infer virtual boundary directions from the map's start/end positions")
+    parser.add_argument('--no-plot', action='store_true')
+    parser.add_argument('--baseline-rule', choices=('baseline', 'heuristic', 'exact', 'segment'), default=BASELINE_RULE)
+    parser.add_argument('--boundary-directions', dest='boundary_directions', action='store_true',
+                        default=USE_BOUNDARY_DIRECTIONS,
+                        help='Choose boundary turn signs from pose-to-overlap-centroid segments')
+    parser.add_argument('--no-boundary-directions', dest='boundary_directions', action='store_false',
+                        help='Choose perpendicular directions when feasible, otherwise straight')
+    parser.add_argument('--connect-boundaries', dest='connect_boundaries', action='store_true',
+                        default=CONNECT_BOUNDARIES, help='Try physical boundary connections after the baseline')
+    parser.add_argument('--no-connect-boundaries', dest='connect_boundaries', action='store_false')
     args = parser.parse_args()
-    if args.repetitions < 1 or args.batches < 1 or args.warmup < 0:
-        parser.error("repetitions and batches must be positive; warmup nonnegative")
     corridors, start_pose, end_pose, robot = example_corridor_sequence(args.example)
-    report = analyze_orthogonal_polyline_feasibility(corridors, robot)
-    timings = benchmark_check(corridors, robot, args.repetitions,
-                              args.batches, args.warmup)
-    print(f"Example {args.example}: {report.status}; feasible={report.feasible}")
-    if report.reason:
-        print(report.reason)
-    print("Passage directions:", ", ".join(report.passage_directions) or "unavailable")
-    print(f"Boolean feasibility check (µs/call): min={timings[0]:.2f}, "
-          f"median={timings[1]:.2f}, max={timings[2]:.2f}")
-    print(f"{args.batches} batches × {args.repetitions} calls; "
-          "setup and backward visualization pass excluded.")
+    options = dict(use_joint_solver=USE_JOINT_SOLVER) if args.baseline_rule == 'heuristic' else {}
     start = perf_counter_ns()
-    baseline = compute_filleted_baseline(
-        corridors, robot, use_joint_solver=USE_JOINT_SOLVER,
-        initial_position=start_pose[:2] if args.boundary_directions else None,
-        final_position=end_pose[:2] if args.boundary_directions else None,
-    )
-    construction_ms = (perf_counter_ns() - start) / 1e6
-    print(f"Fillet construction: {baseline.status}; "
-          f"time={construction_ms:.3f} ms; method={baseline.selection_method}")
-    if baseline.reason:
-        print(baseline.reason)
-    placements = place_refinement_circles(baseline, robot)
-    placements = restore_opposite_turn_overlaps(placements, baseline)
-    placements = repair_same_turn_overlaps(placements, baseline, robot)
-    arc_start = perf_counter_ns()
-    safe_arcs = compute_circle_safe_arcs(placements, baseline, robot)
-    arc_ms = (perf_counter_ns()-arc_start)/1e6
-    simple = footprint_graph = None
-    if args.connection_rule == 'simple':
-        connection = connect_simple_tangent_chain(placements, baseline, robot, safe_arcs=safe_arcs)
+    poses = dict(initial_pose=start_pose if args.boundary_directions or args.connect_boundaries else None,
+                 final_pose=end_pose if args.boundary_directions or args.connect_boundaries else None)
+    if args.baseline_rule == 'baseline':
+        baseline = compute_baseline(corridors, robot, connect_boundaries=args.connect_boundaries, **poses)
     else:
-        connection = connect_safe_arc_circles(placements, baseline, robot, safe_arcs=safe_arcs,
-                                             allow_skipping=ALLOW_SAFE_ARC_SKIPPING)
-    if args.connection_rule == 'compare':
-        simple = connect_simple_tangent_chain(placements, baseline, robot, safe_arcs=safe_arcs)
-        footprint_graph = connect_safe_arc_circles(placements, baseline, robot, safe_arcs=safe_arcs,
-                                                  check_overlap_order=False)
-        print(f'Local first-chain repair, all straight footprints: {simple.status}; {simple.elapsed_ms:.3f} ms; '
-              f'{simple.attempted_pairs} pairs; length={simple.length}')
-        print(f'Full graph, all straight footprints: {footprint_graph.status}; {footprint_graph.elapsed_ms:.3f} ms; '
-              f'{footprint_graph.attempted_pairs} pairs; length={footprint_graph.length}')
-        print('Same selected circles (straight-footprint comparison):',
-              simple.feasible == footprint_graph.feasible and simple.selected_circles == footprint_graph.selected_circles)
-        print('Local repair rounds (occupied group indices):', simple.repair_rounds)
-    print(f'Independent circle placement: {placements.status}; '
-          f'{len(placements.circles)} circles; {placements.elapsed_ms:.3f} ms')
-    print(f'Consecutive circle overlaps: {len(placements.overlap_pairs)} pairs; '
-          f'{len(placements.overlap_blocks)} blocks')
-    print('Restored baseline circles:', tuple(j+1 for j in placements.restored_waypoints))
-    print('Shifted to common center:', tuple(j+1 for j in placements.coincident_waypoints))
-    print('Same-turn pair checks:', placements.same_turn_transitions)
-    print(f'Collision-free angular intervals: {arc_ms:.3f} ms.')
-    print(f'Green-arc tangent chain: {connection.status}; {connection.elapsed_ms:.3f} ms; '
-          f'{len(connection.tangent_states)} candidates; length={connection.length}')
-    print('Skipped circles:', tuple(j+1 for j in connection.skipped_waypoints))
-    clearance_rejections = tuple((placements.circles[i].waypoint_index+1,
-                                  placements.circles[k].waypoint_index+1)
-                                 for i, k, reason in connection.rejected_pairs
-                                 if 'straight_footprint_clearance' in reason)
-    if clearance_rejections:
-        print('Tangent pairs rejected by straight footprint clearance:', clearance_rejections)
-    if connection.contact_order_blocks:
-        print('Some continuations rejected by contact order at circles:',
-              tuple(placements.circles[i].waypoint_index+1 for i in connection.contact_order_blocks))
-    for result in safe_arcs:
-        circle = placements.circles[result.circle_index]
-        tag = f'D{result.waypoint_index+1}' + (f'-{circle.side}' if circle.side else '')
-        print(f'  {tag} safe angles [degrees, CCW from +x]: '
-              f'{[(round(float(np.degrees(a)), 3), round(float(np.degrees(b)), 3)) for a, b in result.intervals]}')
-    for circle in placements.circles:
-        print(f'  D{circle.waypoint_index+1}: {circle.rule}; '
-              f'implied vertex in A_j={circle.in_admissible_region}; '
-              f'earlier A_j rejections={len(circle.rejected_candidates)}; side={circle.side}')
-    for decision in placements.aligned_sides:
-        print(f'  Aligned D{decision.waypoint_index+1} {decision.side}: {decision.status}; '
-              f'boundary intersection points={decision.intersection_count}')
-    if PLOT_RESULTS and not args.no_plot or args.save:
-        figures = [('', plot_filleted_baseline(args.example, baseline, construction_ms, robot,
-                                               start_pose[:2], end_pose[:2])),
-                   ('_placement', plot_independent_circle_placement(args.example, baseline, placements)),
-                   ('_safe_arcs', plot_circle_safe_arcs(args.example, baseline, placements, safe_arcs, arc_ms, connection))]
-        if simple is not None:
-            figures.append(('_chain_comparison', plot_tangent_rule_comparison(
-                           args.example, baseline, placements, safe_arcs, footprint_graph, simple)))
-        if PLOT_FEASIBILITY:
-            figures.append(('_feasibility',plot_example(args.example,report,robot,timings,
-                                                       start_pose[:2],end_pose[:2])))
+        baseline = compute_boundary_directed_baseline(
+            corridors, robot, method=args.baseline_rule, **options, **poses)
+        baseline_ms = (perf_counter_ns()-start)/1e6
+        initial_connection = final_connection = None
+        if args.connect_boundaries:
+            initial_connection, final_connection = build_baseline_boundary_connections(
+                baseline, robot, start_pose, end_pose)
+        baseline = replace(baseline, baseline_time_ms=baseline_ms,
+                           total_time_ms=(perf_counter_ns()-start)/1e6,
+                           boundary_connections_requested=args.connect_boundaries,
+                           initial_connection=initial_connection, final_connection=final_connection)
+    construction_ms = baseline.baseline_time_ms
+    print(f'Example {args.example}: {baseline.status}')
+    print(f'Baseline computation: {construction_ms:.3f} ms')
+    if args.connect_boundaries:
+        print(f'Baseline + boundary connections: {baseline.total_time_ms:.3f} ms')
+        print(f'Initial connection: {baseline.initial_connection.status}; '
+              f'final connection: {baseline.final_connection.status}')
+    if not baseline.feasible and baseline.reason:
+        print(baseline.reason)
+    if (PLOT_RESULTS and not args.no_plot) or args.save:
+        figures = plot_baseline_construction(
+            args.example, baseline, construction_ms, robot,
+            start_pose[:2] if args.boundary_directions or args.connect_boundaries else None,
+            end_pose[:2] if args.boundary_directions or args.connect_boundaries else None)
         if args.save:
             args.save.parent.mkdir(parents=True, exist_ok=True)
-            for suffix,fig in figures:
-                path=args.save.with_name(args.save.stem+suffix+args.save.suffix)
-                fig.savefig(path,dpi=180,bbox_inches='tight')
+            for suffix, figure in zip(('_local_regions', '_baseline'), figures):
+                path = args.save.with_name(args.save.stem+suffix+args.save.suffix)
+                figure.savefig(path, dpi=180, bbox_inches='tight')
                 print(f'Saved figure to {path}')
         if PLOT_RESULTS and not args.no_plot:
             plt.show()
         else:
-            for _,fig in figures:
-                plt.close(fig)
+            for figure in figures:
+                plt.close(figure)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

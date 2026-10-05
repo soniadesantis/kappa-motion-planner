@@ -529,7 +529,7 @@ def example_corridor_sequence(num):
     return corridor_list, start_pose, end_pose, vehicle
 
 if __name__ == "__main__":
-    example_num = 34
+    example_num = 29
     # 34: Problem with final pose OK collision problem 
     # 32: Problem with end pose overlapping circles problem
     # 31: Problem with end pose OK collision problem

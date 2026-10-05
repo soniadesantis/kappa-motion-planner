@@ -2,7 +2,9 @@
 
 Press Run in VS Code. Edit the configuration below to change the distribution.
 Keep only sequences passing the exact internal 2R-polyline analysis, then run
-the fillet heuristic with the joint solver disabled. No refinement or boundary
+the selected fillet construction with the joint solver disabled. Use
+--baseline-rule exact for complete analytic propagation of the local regions.
+No refinement or boundary
 pose connections are included. This is a conditional sample from a connected
 random-walk generator, not a uniform sample of all corridor arrangements.
 
@@ -28,6 +30,7 @@ from example_baseline_construction import (
 )
 from kappa_planner.baseline_construction import (
     analyze_orthogonal_polyline_feasibility, compute_filleted_baseline,
+    compute_filleted_baseline_exact,
     compute_local_boundary_fillets,
 )
 
@@ -45,6 +48,7 @@ OVERHANG_RANGE = (0., 2.)  # Extra longitudinal extent at EACH corridor end.
 STRAIGHT_PROBABILITY = .15  # Other transitions split equally between left and right.
 EXTEND_PERPENDICULAR_CORRIDORS = True
 MAX_BACKTRACKING_ATTEMPTS = 128
+BASELINE_RULE = 'heuristic'  # Use 'exact' for complete analytic fillet-set propagation.
 PLOT_CASE = 83  # One-based accepted case number; None selects an informative case.
 PLOT_SINGLE_CASE = False  # Enable the two detailed figures in addition to the overview.
 OVERVIEW_START = 1  # First accepted case displayed in the overview.
@@ -118,10 +122,15 @@ def validate_configuration():
         raise ValueError('STRAIGHT_PROBABILITY must lie in [0,1].')
 
 
-def run_experiment(seed, count, max_generated, timing_repeats=7):
+def run_experiment(seed, count, max_generated, timing_repeats=7, *, baseline_rule=BASELINE_RULE):
     validate_configuration()
     if count < 1 or max_generated < 1 or timing_repeats < 1:
         raise ValueError('Case count and generation limit must be positive.')
+    if baseline_rule not in ('heuristic', 'exact'):
+        raise ValueError("baseline_rule must be 'heuristic' or 'exact'.")
+    constructor = compute_filleted_baseline_exact if baseline_rule == 'exact' else compute_filleted_baseline
+    constructor_options = ({} if baseline_rule == 'exact' else
+                           dict(use_joint_solver=False, max_backtracking_attempts=MAX_BACKTRACKING_ATTEMPTS))
     rng = np.random.default_rng(seed)
     robot = SimpleNamespace(r=ROBOT_RADIUS, R=TURNING_RADIUS)
     rejected, cases, reports, boundary_reports = Counter(), [], [], []
@@ -135,23 +144,21 @@ def run_experiment(seed, count, max_generated, timing_repeats=7):
             rejected[analysis.status] += 1
             continue
         started = perf_counter_ns()
-        result = compute_filleted_baseline(
-            corridors, robot, use_joint_solver=False,
-            max_backtracking_attempts=MAX_BACKTRACKING_ATTEMPTS)
+        result = constructor(corridors, robot, **constructor_options)
         construction_ms = (perf_counter_ns()-started)/1e6
         alternatives = compute_local_boundary_fillets(result, robot) if result.feasible else None
         samples = {'internal': [], 'local_boundary': []}
         for _ in range(timing_repeats):
             started = perf_counter_ns()
-            compute_filleted_baseline(corridors, robot, use_joint_solver=False,
-                                     max_backtracking_attempts=MAX_BACKTRACKING_ATTEMPTS)
+            constructor(corridors, robot, **constructor_options)
             samples['internal'].append((perf_counter_ns()-started)/1e6)
             if result.feasible:
                 started = perf_counter_ns()
                 compute_local_boundary_fillets(result, robot)
                 samples['local_boundary'].append((perf_counter_ns()-started)/1e6)
         boundary_reports.append(alternatives)
-        outcome = ('first_midpoints' if result.midpoint_only_success else
+        outcome = ('exact_propagation' if result.feasible and baseline_rule == 'exact' else
+                   'first_midpoints' if result.midpoint_only_success else
                    'alternative_candidates' if result.feasible else result.status)
         cases.append(dict(case=len(cases)+1, generated_index=generated, bounds=bounds,
                           **sampled, passage_directions=list(analysis.passage_directions),
@@ -180,7 +187,8 @@ def run_experiment(seed, count, max_generated, timing_repeats=7):
                                    overhang_range=OVERHANG_RANGE,
                                    straight_probability=STRAIGHT_PROBABILITY,
                                    extend_perpendicular_corridors=EXTEND_PERPENDICULAR_CORRIDORS,
-                                   max_attempts=MAX_BACKTRACKING_ATTEMPTS, use_joint_solver=False),
+                                   max_attempts=MAX_BACKTRACKING_ATTEMPTS, use_joint_solver=False,
+                                   baseline_rule=baseline_rule),
                 timing_repeats=timing_repeats,
                 timing_note='Per-case warmed medians: internal includes exact analysis; local_boundary is the '
                             'additional fixed-endpoint check. Excludes generation/plotting. Joint solver disabled.',
@@ -194,7 +202,9 @@ def plot_case_overview(cases, reports, seed, boundary_reports=None):
     rows = (len(cases)+columns-1)//columns
     fig, axes = plt.subplots(rows, columns, figsize=(4*columns, 3.4*rows+1), squeeze=False)
     labels = {'first_midpoints': 'First midpoints', 'alternative_candidates': 'Alternatives used',
-              'empty_fillet_region': 'Empty local region', 'backtracking_unresolved': 'Unresolved'}
+              'empty_fillet_region': 'Empty local region', 'backtracking_unresolved': 'Unresolved',
+              'exact_propagation': 'Exact propagation',
+              'fillet_reachability_empty': 'Empty propagated set'}
     for panel, (ax, case, internal_result) in enumerate(zip(axes.flat, cases, reports)):
         alternatives = boundary_reports[panel] if boundary_reports is not None else None
         result = internal_result
@@ -274,21 +284,23 @@ def main():
     parser.add_argument('--overview-start', type=int, default=OVERVIEW_START)
     parser.add_argument('--overview-count', type=int, default=OVERVIEW_COUNT)
     parser.add_argument('--timing-repeats', type=int, default=7)
+    parser.add_argument('--baseline-rule', choices=('heuristic', 'exact'), default=BASELINE_RULE)
     parser.add_argument('--no-plot', action='store_true')
     parser.add_argument('--save-figures', action='store_true')
     parser.add_argument('--output-directory', type=Path, default=OUTPUT_DIRECTORY)
     args = parser.parse_args()
     experiment, reports, boundary_reports, robot = run_experiment(
-        args.seed, args.cases, args.max_generated, args.timing_repeats)
+        args.seed, args.cases, args.max_generated, args.timing_repeats, baseline_rule=args.baseline_rule)
     args.output_directory.mkdir(parents=True, exist_ok=True)
-    output = args.output_directory / f'random_baseline_seed{args.seed}.json'
+    suffix = '_exact' if args.baseline_rule == 'exact' else ''
+    output = args.output_directory / f'random_baseline_seed{args.seed}{suffix}.json'
     output.write_text(json.dumps(experiment, indent=2, allow_nan=False) + '\n')
     print(f"Seed {args.seed}: {experiment['accepted']}/{experiment['generated']} generated sequences "
           f"passed the exact internal 2R-polyline test.")
     print('Rejected before fillet construction:', experiment['polyline_rejections'])
     print('Fully contained edges extended for perpendicular consecutive corridors:',
           EXTEND_PERPENDICULAR_CORRIDORS)
-    print('Heuristic-only outcomes:', experiment['outcomes'])
+    print(f'{args.baseline_rule.capitalize()} outcomes:', experiment['outcomes'])
     print('Empty local regions reject the local fillet model; bounded search failure is unresolved.')
     if experiment['accepted'] < args.cases:
         print(f'Generation limit reached; requested {args.cases} accepted cases.')

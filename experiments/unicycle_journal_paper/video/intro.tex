@@ -1,0 +1,44 @@
+\documentclass{article}
+\usepackage[paperwidth=320mm,paperheight=180mm,margin=18mm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tikz}
+\definecolor{background}{HTML}{006A93}
+\definecolor{foreground}{HTML}{FFFFFF}
+\definecolor{accent}{HTML}{71C5E8}
+\pagecolor{background}
+\color{foreground}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\begin{document}
+\centering
+\vspace*{0mm}
+{\fontsize{16}{20}\selectfont\bfseries Real-Robot Validation\par}
+\vspace{6mm}
+{\color{accent}\rule{32mm}{0.8mm}\par}
+\vspace{7mm}
+{\fontsize{28}{34}\selectfont\bfseries
+A Fast Analytical Trajectory Planner\\
+for Unicycle Robots Through Safe Rectangular\\
+Corridors Based on Time-Optimal Motion Primitives\par}
+\vspace{8mm}
+{\fontsize{16}{22}\selectfont
+Sonia De Santis, Alejandro Astudillo, Alejandro Gonzalez-Garcia,\\
+Wilm Decr\'{e}, Jan Swevers\par}
+\vspace{12mm}
+% Equal center-to-center spacing, with MECO at the center of the panel.
+\begin{tikzpicture}[x=1mm,y=1mm]
+\fill[white,rounded corners=4mm] (-113,-15.5) rectangle (113,15.5);
+\node[inner sep=0] at (-74,0)
+  {\includegraphics[width=54mm]{KULEUVEN_LOGO_2012.pdf}};
+\node[inner sep=0] at (0,0)
+  {\includegraphics[width=72mm]{MECO-logo-no-background.png}};
+\node[inner sep=0] at (74,0)
+  {\includegraphics[width=64mm,trim=100bp 130bp 100bp 130bp,clip]{Flanders make logo.jpg}};
+\end{tikzpicture}\par
+\vspace{-5mm}
+\vfill
+
+\vspace*{4mm}
+\end{document}

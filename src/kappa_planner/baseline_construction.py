@@ -1,19 +1,36 @@
 """Thesis baseline: feasibility of an internal directed 2R-spaced polyline.
 
+compute_baseline is the direct construction pipeline: stored boundary
+intersections, I_j, D_j, directions, A_j, segment propagation and midpoint
+reconstruction. It performs no preliminary reachability pass or final audit.
+
 Exact polyline existence is separate from bounded fillet-aware construction.
-Optional boundary positions infer virtual directions only; pose connections are
-not included. compute_filleted_baseline_candidates instead enumerates geometric
+compute_filleted_baseline_exact additionally propagates the full local fillet
+regions analytically and reconstructs a witness without bounded search.
+compute_boundary_directed_baseline uses pose-to-overlap-centroid turn signs to
+choose orthogonal boundary directions; absent poses prefer feasible perpendicular
+directions, then straight continuation. Pose connections are not included.
+Legacy optional boundary positions infer virtual directions only.
+compute_filleted_baseline_candidates instead enumerates geometric
 boundary-direction alternatives without positions and retains every successful
 pair. All indices in diagnostic data are zero-based.
 """
 
 from dataclasses import dataclass, field, replace
+from time import perf_counter_ns
 from types import MappingProxyType
 from typing import Optional, Tuple
 
 import numpy as np
 
 from .helpers.fillet_backtracking import region_slice
+from .helpers.fillet_reachability import (
+    FilletReachability, RoundedCornerConstraint, _midpoint_polyline,
+    propagate_fillet_regions,
+)
+from .helpers.fillet_segment_reachability import (
+    propagate_fillet_regions_segment, intersect_baseline_region,
+)
 from .helpers.fillet_safety import (
     fillet_vertex_region,
     region_contains_point,
@@ -21,7 +38,9 @@ from .helpers.fillet_safety import (
     revised_corner_condition,
 )
 from .helpers.nominal_polyline import _bounds, _interval_intersection
-from .helpers.sequence_geometry import SequenceGeometry, sequence_geometry
+from .helpers.sequence_geometry import (
+    SequenceGeometry, sequence_geometry, corridor_boundary_intersections,
+)
 
 Interval = Tuple[float, float]
 Rectangle = Tuple[float, float, float, float]
@@ -105,6 +124,57 @@ def infer_final_boundary_direction(door, point, tol=1e-9):
     """Infer exit from a safe door toward a point, without connecting to it."""
     incoming = infer_initial_boundary_direction(point, door, tol)
     return {'right': 'left', 'left': 'right', 'up': 'down', 'down': 'up'}.get(incoming)
+
+
+def _pose_centroid_boundary_direction(pose, door, internal_direction, tol, *, initial,
+                                      validate_inputs=True):
+    """Preserve the segment's turn sign while retaining cardinal directions."""
+    pose = np.asarray(tuple(pose), dtype=float)
+    bounds = np.asarray(door, dtype=float)
+    if validate_inputs and (pose.shape != (3,) or not np.all(np.isfinite(pose))
+            or bounds.shape != (4,) or not np.all(np.isfinite(bounds))
+            or bounds[0] > bounds[1] or bounds[2] > bounds[3]
+            or internal_direction not in _DIRECTION_VECTORS
+            or not np.isfinite(tol) or tol < 0):
+        raise ValueError('Require a finite XY-heading pose, ordered door bounds, '
+                         'a cardinal internal direction and finite tol >= 0.')
+    centroid = np.array([(bounds[0]+bounds[1])/2, (bounds[2]+bounds[3])/2])
+    segment = centroid-pose[:2] if initial else pose[:2]-centroid
+    length = np.linalg.norm(segment)
+    if length <= tol:
+        return None  # No reference segment: use the geometry-only default.
+    internal = _DIRECTION_VECTORS[internal_direction]
+    incoming, outgoing = (segment, internal) if initial else (internal, segment)
+    cross = incoming[0]*outgoing[1]-incoming[1]*outgoing[0]
+    if abs(cross) <= tol:
+        return internal_direction if segment @ internal > 0 else OPPOSITE[internal_direction]
+    turn = 1 if cross > 0 else -1
+    # Initial: rotate the internal outgoing vector backwards by the turn.
+    # Final: rotate the internal incoming vector forwards by the turn.
+    rotation = -turn if initial else turn
+    boundary = rotation*np.array([-internal[1], internal[0]])
+    return next(name for name, vector in _DIRECTION_VECTORS.items()
+                if np.array_equal(boundary, vector))
+
+
+def infer_initial_pose_boundary_direction(pose, first_overlap, first_passage_direction, tol=1e-9):
+    """Turn from pose position -> first safe-overlap centroid -> first passage.
+
+    Only XY determines the sign; heading is reserved for the bicycle connection.
+    A nonzero turn selects a perpendicular cardinal entry direction with that
+    sign. Parallel segments select straight or opposite travel; the latter is
+    an unsupported 180-degree boundary turn. A pose at the centroid returns
+    None, allowing the geometry-only fallback. The centroid is a reference
+    point, not a pinned baseline waypoint or a required straight connection.
+    """
+    return _pose_centroid_boundary_direction(
+        pose, first_overlap, first_passage_direction, tol, initial=True)
+
+
+def infer_final_pose_boundary_direction(last_overlap, pose, last_passage_direction, tol=1e-9):
+    """Turn from last passage -> last safe-overlap centroid -> pose position."""
+    return _pose_centroid_boundary_direction(
+        pose, last_overlap, last_passage_direction, tol, initial=False)
 
 
 def _robot_radii(robot):
@@ -363,10 +433,19 @@ class FilletedBaselineConstruction:
     Region dictionaries use the existing analytic representation: low/high,
     frame, offset, radius, corner, incoming/outgoing, empty and witness.
     remaining_lengths are the straight lengths after both neighboring trims.
+    compute_baseline additionally stores raw overlaps, boundary intersections,
+    selected corner points and analytic admissible_sets. Its direct construction
+    has no preliminary orthogonal_polyline seed or independent final audit;
+    max_violation and the validation snapshot remain unset.
+    Optional initial_connection/final_connection reports store physical bicycle
+    maneuvers and their individual statuses. baseline_time_ms excludes this
+    stage; total_time_ms includes it, regardless of connection success.
     backtracking_attempts counts candidate waypoint proposals, not full chains.
     midpoint_only_success means the first candidate at every waypoint succeeded.
     first_rejected_waypoint is zero-based and records the first failed candidate
     or empty predecessor domain; None means no geometric rejection was observed.
+    fillet_reachability stores full curved forward sets for the exact alternative;
+    it is None for the bounded heuristic or rejection before propagation.
     """
 
     feasible: bool
@@ -388,6 +467,16 @@ class FilletedBaselineConstruction:
     final_direction: Optional[str] = None
     segment_directions: Tuple[Optional[str], ...] = ()
     _validation_key: Optional[tuple] = field(default=None, repr=False, compare=False)
+    fillet_reachability: Optional[FilletReachability] = field(default=None, repr=False, compare=False)
+    overlaps: tuple = ()
+    boundary_intersections: tuple = field(default=(), repr=False, compare=False)
+    corner_points: tuple = field(default=(), repr=False, compare=False)
+    admissible_sets: tuple = field(default=(), repr=False, compare=False)
+    baseline_time_ms: Optional[float] = field(default=None, compare=False)
+    total_time_ms: Optional[float] = field(default=None, compare=False)
+    boundary_connections_requested: bool = False
+    initial_connection: object = field(default=None, repr=False, compare=False)
+    final_connection: object = field(default=None, repr=False, compare=False)
 
 
 def _recover_orthogonal_polyline(data, R, tol):
@@ -704,7 +793,8 @@ def _baseline_is_valid(baseline, r, R, tol):
 
 def compute_filleted_baseline(corridor_list, robot, *, tol=1e-9,
                               max_backtracking_attempts=128, use_joint_solver=True,
-                              initial_position=None, final_position=None):
+                              initial_position=None, final_position=None,
+                              initial_direction=None, final_direction=None):
     """Construct an internal directed 2R polyline with safe radius-R fillets.
 
     1. Run the exact forward polyline test and recover an unfilleted seed.
@@ -732,8 +822,17 @@ def compute_filleted_baseline(corridor_list, robot, *, tol=1e-9,
     direction enables the local fillet at its boundary door, with tangent
     containment in the two adjacent eroded corridors. Diagonal/interior points
     return boundary_direction_unresolved, leaving internal feasibility intact.
-    Omitted positions preserve the original construction without endpoint arcs.
+    Omitting both positions and directions preserves the original endpoint behavior.
+    Alternatively supply initial_direction/final_direction as cardinal names.
+    These impose the same virtual direction constraints without dummy positions.
+    A direction and a position cannot both be supplied for the same endpoint.
     """
+    for side, direction, position in (('initial', initial_direction, initial_position),
+                                      ('final', final_direction, final_position)):
+        if direction is not None and direction not in _DIRECTION_VECTORS:
+            raise ValueError(f'Invalid {side}_direction: expected right/left/up/down.')
+        if direction is not None and position is not None:
+            raise ValueError(f'Supply either {side}_direction or {side}_position, not both.')
     if (isinstance(max_backtracking_attempts, bool)
             or not isinstance(max_backtracking_attempts, (int, np.integer))
             or max_backtracking_attempts < 0):
@@ -749,10 +848,10 @@ def compute_filleted_baseline(corridor_list, robot, *, tol=1e-9,
             certified_infeasible=data.status in ('no_orthogonal_connection', 'insufficient_spacing'),
         )
     seed = _recover_orthogonal_polyline(data, R, tol)
-    initial_direction = (None if initial_position is None else
-                         infer_initial_boundary_direction(initial_position, data.safe_overlaps[0], tol))
-    final_direction = (None if final_position is None else
-                       infer_final_boundary_direction(data.safe_overlaps[-1], final_position, tol))
+    if initial_position is not None:
+        initial_direction = infer_initial_boundary_direction(initial_position, data.safe_overlaps[0], tol)
+    if final_position is not None:
+        final_direction = infer_final_boundary_direction(data.safe_overlaps[-1], final_position, tol)
     segment_directions = (initial_direction, *data.passage_directions, final_direction)
     boundary_data = dict(initial_direction=initial_direction, final_direction=final_direction,
                          segment_directions=segment_directions)
@@ -771,6 +870,94 @@ def compute_filleted_baseline(corridor_list, robot, *, tol=1e-9,
     return _construct_filleted_pair(corridors, data, seed, r, R, tol,
                                    max_backtracking_attempts, use_joint_solver,
                                    initial_direction, final_direction)
+
+
+def compute_filleted_baseline_exact(corridor_list, robot, *, tol=1e-9,
+                                   initial_position=None, final_position=None,
+                                   initial_direction=None, final_direction=None):
+    """Construct a baseline using analytic propagation of the complete A_j sets.
+
+    This is an alternative to compute_filleted_baseline, which keeps its fast
+    bounded heuristic unchanged. The same exact internal check, local regions,
+    optional boundary directions and independent final validation are reused.
+    No backtracking budget or joint numerical optimizer is used. Curved forward
+    sets F_j are available in result.fillet_reachability.reachable_sets.
+    Optional cardinal initial_direction/final_direction constrain endpoint A
+    sets before propagation, without requiring boundary positions or lengths.
+
+    Completeness is for the supplied local fillet-region model and prescribed
+    directed 2R constraints in real arithmetic, not arbitrary free-space paths.
+    Floating-point calculations use tol. Empty propagated sets certify failure
+    within that model; roundoff/reconstruction or validation failures remain
+    unresolved. The local predicate's own geometric assumptions still apply.
+    """
+    prepared = compute_filleted_baseline(
+        corridor_list, robot, tol=tol, max_backtracking_attempts=0,
+        use_joint_solver=False, initial_position=initial_position,
+        final_position=final_position, initial_direction=initial_direction,
+        final_direction=final_direction,
+    )
+    r, R = _robot_radii(robot)
+    return _complete_exact_filleted_baseline(prepared, r, R, tol)
+
+
+def compute_filleted_baseline_segment(corridor_list, robot, *, tol=1e-9,
+                                     initial_position=None, final_position=None,
+                                     initial_direction=None, final_direction=None):
+    """Construct and validate a baseline using certified extreme-segment propagation.
+
+    Uses the same local A_j regions, directed 2R spacing and optional boundary
+    directions as compute_filleted_baseline_exact. Every upstream extreme face
+    is certified to span the full transverse projection before it is propagated.
+    A failed structural certificate raises SegmentHypothesisError, rather than
+    silently falling back or incorrectly certifying geometric infeasibility.
+    Full reachable sets are returned in result.fillet_reachability. The generic
+    exact constructor remains available as the reference implementation.
+    """
+    prepared = compute_filleted_baseline(
+        corridor_list, robot, tol=tol, max_backtracking_attempts=0,
+        use_joint_solver=False, initial_position=initial_position,
+        final_position=final_position, initial_direction=initial_direction,
+        final_direction=final_direction,
+    )
+    r, R = _robot_radii(robot)
+    return _complete_exact_filleted_baseline(
+        prepared, r, R, tol, propagator=propagate_fillet_regions_segment,
+        selection_method='segment_set_propagation', force_propagation=True)
+
+
+def _complete_exact_filleted_baseline(prepared, r, R, tol, *,
+                                     propagator=propagate_fillet_regions,
+                                     selection_method='exact_set_propagation',
+                                     force_propagation=False):
+    """Reuse prepared local regions for one exact boundary-direction alternative."""
+    if (prepared.status != 'backtracking_unresolved'
+            and not (force_propagation and prepared.feasible)):
+        return replace(prepared, selection_method=selection_method)
+    reachability = propagator(prepared.feasibility, prepared.fillet_regions, R, tol=tol)
+    result = replace(prepared, feasible=False, selection_method=selection_method,
+                     fillet_reachability=reachability)
+    if not reachability.feasible:
+        empty = reachability.status == 'fillet_reachability_empty'
+        reason = (f'Full fillet reachable set is empty at waypoint {reachability.empty_waypoint}.'
+                  if empty else 'Analytic reachable sets were nonempty, but reconstruction failed numerically.')
+        return replace(result, status=reachability.status, reason=reason,
+                       certified_infeasible=empty)
+    validated = _validate_and_build_fillets(
+        reachability.polyline, prepared.feasibility, prepared.fillet_regions, r, R, tol)
+    if validated is None:
+        return replace(result, status='validation_failed',
+                       reason='Exact-propagation witness failed independent geometric validation.',
+                       certified_infeasible=False)
+    fillets, remaining, violation = validated
+    return replace(result, feasible=True, status='feasible', certified_infeasible=False,
+                   reason=('Certified extreme-segment propagation and reconstructed chain verified.'
+                           if selection_method == 'segment_set_propagation' else
+                           'Full fillet-set propagation and reconstructed chain verified.'),
+                   polyline=reachability.polyline, fillets=fillets,
+                   remaining_lengths=remaining, max_violation=violation,
+                   _validation_key=_baseline_validation_key(
+                       reachability.polyline, prepared.feasibility, prepared.fillet_regions, r, R, tol))
 
 
 def _construct_filleted_pair(corridors, data, seed, r, R, tol,
@@ -974,3 +1161,367 @@ def compute_filleted_baseline_candidates(corridor_list, robot, *, tol=1e-9,
               if all(result.certified_infeasible for result in results)
               else "boundary_construction_unresolved")
     return FilletedBaselineCandidates(data, initial, final, candidates, results, status)
+
+
+def compute_boundary_directed_baseline(corridor_list, robot, *, initial_pose=None,
+                                       final_pose=None, method='heuristic', tol=1e-9,
+                                       max_backtracking_attempts=128,
+                                       use_joint_solver=True):
+    """Build a baseline with pose-aware initial/final corridor directions.
+
+    A supplied pose chooses the boundary turn using its XY position and the
+    centroid of the first/last safe overlap I_j. Keep the sign of that turn
+    while replacing its reference segment by an orthogonal boundary direction.
+    Heading does not participate, and neither the centroid nor the pose pins
+    the constructed waypoint. Bicycle boundary connections are built later.
+
+    At an unspecified boundary (or a pose at the centroid), try geometrically
+    available perpendicular directions in right/left/up/down order, then the
+    adjacent passage's straight direction. Try pairs with two perpendicular
+    boundaries before pairs with one, then the straight pair, accepting the
+    first validated construction. Pose-selected directions are never replaced
+    by another turn to rescue a failed construction. Parallel reversed pose
+    segments retain the existing unsupported_turn diagnostic.
+
+    method selects the existing heuristic, exact or segment construction.
+    The internal feasibility pass, seed and geometry are shared across all
+    pairs (at most nine). Budget/solver options apply only to the heuristic.
+    If every pair fails, return the first preferred pair's failure report;
+    it describes that pair, not infeasibility of all boundary alternatives.
+    The internal-only compute_filleted_baseline* APIs retain their semantics.
+    """
+    if method not in ('heuristic', 'exact', 'segment'):
+        raise ValueError('method must be heuristic, exact or segment.')
+    if (isinstance(max_backtracking_attempts, bool)
+            or not isinstance(max_backtracking_attempts, (int, np.integer))
+            or max_backtracking_attempts < 0):
+        raise ValueError('max_backtracking_attempts must be a nonnegative integer.')
+    for pose in (initial_pose, final_pose):
+        if pose is not None:
+            values = np.asarray(tuple(pose), dtype=float)
+            if values.shape != (3,) or not np.all(np.isfinite(values)):
+                raise ValueError('Boundary poses must contain finite x, y and heading.')
+    corridors = tuple(corridor_list)
+    data = analyze_orthogonal_polyline_feasibility(corridors, robot, tol=tol,
+                                                compute_viable=False)
+    r, R = _robot_radii(robot)
+    if not data.feasible:
+        return FilletedBaselineConstruction(
+            False, data.status, data.reason, data,
+            certified_infeasible=data.status in ('no_orthogonal_connection', 'insufficient_spacing'))
+    data = replace(data, _geometry=SequenceGeometry(data.corridor_bounds, r, tol))
+    seed = _recover_orthogonal_polyline(data, R, tol)
+
+    def boundary_options(pose, *, initial):
+        j = 0 if initial else -1
+        internal = data.passage_directions[j]
+        door = data.safe_overlaps[j]
+        if pose is not None:
+            direction = _pose_centroid_boundary_direction(pose, door, internal, tol, initial=initial)
+            if direction is not None:
+                return (direction,)
+        xmin, xmax, ymin, ymax = data.corridor_bounds[j]
+        eroded = xmin+r, xmax-r, ymin+r, ymax-r
+        admissible = admissible_initial_directions if initial else admissible_final_directions
+        perpendicular = tuple(d for d in admissible(eroded, door, internal, tol)
+                              if d != internal)
+        return (*perpendicular, internal)
+
+    entries = boundary_options(initial_pose, initial=True)
+    exits = boundary_options(final_pose, initial=False)
+    pairs = [(entry, exit_direction) for entry in entries for exit_direction in exits]
+    # Stable ordering preserves the deterministic order within each priority.
+    pairs.sort(key=lambda pair: sum(
+        direction == internal for direction, internal in zip(
+            pair, (data.passage_directions[0], data.passage_directions[-1]))))
+    first_failure = None
+    for entry, exit_direction in pairs:
+        result = _construct_filleted_pair(
+            corridors, data, seed, r, R, tol,
+            max_backtracking_attempts if method == 'heuristic' else 0,
+            use_joint_solver if method == 'heuristic' else False,
+            entry, exit_direction)
+        if method == 'exact':
+            result = _complete_exact_filleted_baseline(result, r, R, tol)
+        elif method == 'segment':
+            result = _complete_exact_filleted_baseline(
+                result, r, R, tol, propagator=propagate_fillet_regions_segment,
+                selection_method='segment_set_propagation', force_propagation=True)
+        if result.feasible:
+            return result
+        if first_failure is None:
+            first_failure = result
+    return first_failure
+
+
+def compute_baseline(corridor_sequence, vehicle, initial_pose=None, final_pose=None, *,
+                     connect_boundaries=False, tol=1e-9):
+    """Construct the baseline by the seven geometric steps, in their order.
+
+    Poses are optional [x, y, heading] inputs; their positions determine the
+    boundary turn signs. With no pose, choose an available perpendicular
+    boundary direction, otherwise continue straight. Select one direction per
+    boundary, without searching pairs after a later geometric failure.
+
+    Empty D_j, ambiguous/unavailable directions or corners, empty A_j, and
+    empty propagated R_j reject the chosen construction at that step. This
+    routine assumes the baseline's orthogonal, single-local-constraint model;
+    it does not run the preliminary 2R pass, seed/backtracking, optimizers,
+    segment-hypothesis certificates or an independent final validation.
+    With connect_boundaries=True, try the provided boundary poses after the
+    baseline is complete. Each connection has its own status and maneuvers;
+    failure leaves the baseline intact. baseline_time_ms excludes these tries,
+    total_time_ms includes them. Neither timing includes plotting.
+    """
+    started = perf_counter_ns()
+    plan = _prepare_baseline(corridor_sequence, vehicle, initial_pose, final_pose, tol)
+    try:
+        _compute_boundary_intersections(plan)
+        _compute_overlaps(plan)
+        _compute_safe_overlaps(plan)
+        _determine_internal_directions(plan)
+        _determine_boundary_directions(plan)
+        _compute_admissible_regions(plan)
+        _propagate_admissible_regions(plan)
+        _reconstruct_polyline(plan)
+    except _InvalidBaseline as failure:
+        result = _baseline_result(plan, failure)
+    else:
+        result = _baseline_result(plan)
+    baseline_ms = (perf_counter_ns()-started)/1e6
+    initial_connection = final_connection = None
+    if connect_boundaries:
+        from .bicycle_boundary_connections import build_baseline_boundary_connections
+        initial_connection, final_connection = build_baseline_boundary_connections(
+            result, vehicle, plan.initial_pose, plan.final_pose, tol=tol)
+    return replace(result, baseline_time_ms=baseline_ms,
+                   total_time_ms=(perf_counter_ns()-started)/1e6,
+                   boundary_connections_requested=bool(connect_boundaries),
+                   initial_connection=initial_connection, final_connection=final_connection)
+
+
+@dataclass
+class _BaselinePlan:
+    bounds: tuple
+    r: float
+    R: float
+    tol: float
+    initial_pose: object
+    final_pose: object
+    intersections: tuple = ()
+    overlaps: tuple = ()
+    safe_overlaps: tuple = ()
+    internal_directions: tuple = ()
+    initial_direction: Optional[str] = None
+    final_direction: Optional[str] = None
+    regions: tuple = ()
+    corners: tuple = ()
+    admissible: tuple = ()
+    reachable: tuple = ()
+    polyline: Optional[np.ndarray] = None
+
+
+class _InvalidBaseline(Exception):
+    def __init__(self, status, reason, waypoint=None):
+        self.status, self.reason, self.waypoint = status, reason, waypoint
+
+
+def _prepare_baseline(corridors, vehicle, initial_pose, final_pose, tol):
+    """Read and validate the external input once, before the geometric steps."""
+    if not np.isfinite(tol) or tol < 0:
+        raise ValueError('tol must be finite and nonnegative.')
+    bounds = tuple(_bounds(corridor, tol) for corridor in corridors)
+    if len(bounds) < 3:
+        raise ValueError('At least three corridors are required for an internal passage.')
+    r, R = _robot_radii(vehicle)
+    poses = []
+    for pose in (initial_pose, final_pose):
+        if pose is not None:
+            values = np.asarray(tuple(pose), dtype=float)
+            if values.shape != (3,) or not np.all(np.isfinite(values)):
+                raise ValueError('Boundary poses must contain finite x, y and heading.')
+            pose = values
+        poses.append(pose)
+    return _BaselinePlan(bounds, r, R, tol, *poses)
+
+
+def _compute_boundary_intersections(plan):
+    """Store all point intersections and shared boundary segments per pair."""
+    plan.intersections = tuple(corridor_boundary_intersections(a, b, plan.tol)
+                               for a, b in zip(plan.bounds, plan.bounds[1:]))
+
+
+def _compute_overlaps(plan):
+    """I_j = C_j intersect C_{j+1}."""
+    plan.overlaps = tuple((max(a[0], b[0]), min(a[1], b[1]),
+                           max(a[2], b[2]), min(a[3], b[3]))
+                          for a, b in zip(plan.bounds, plan.bounds[1:]))
+
+
+def _compute_safe_overlaps(plan):
+    """D_j = I_j eroded by the circular footprint radius r."""
+    doors = []
+    for j, (xmin, xmax, ymin, ymax) in enumerate(plan.overlaps):
+        x = _interval_intersection((xmin+plan.r, xmax-plan.r),
+                                   (xmin+plan.r, xmax-plan.r), plan.tol)
+        y = _interval_intersection((ymin+plan.r, ymax-plan.r),
+                                   (ymin+plan.r, ymax-plan.r), plan.tol)
+        doors.append(None if x is None or y is None else (*x, *y))
+    plan.safe_overlaps = tuple(doors)
+    for j, door in enumerate(doors):
+        if door is None:
+            raise _InvalidBaseline('empty_safe_overlap', f'D_{j+1} is empty.', j)
+
+
+def _determine_internal_directions(plan):
+    """The unique signed axis along which consecutive D_j can be joined."""
+    directions = []
+    for j, (a, b) in enumerate(zip(plan.safe_overlaps, plan.safe_overlaps[1:])):
+        horizontal = _interval_intersection(a[2:], b[2:], plan.tol) is not None
+        vertical = _interval_intersection(a[:2], b[:2], plan.tol) is not None
+        if horizontal == vertical:
+            plan.internal_directions = tuple(directions)
+            status = 'ambiguous_passage_direction' if horizontal else 'no_orthogonal_connection'
+            raise _InvalidBaseline(status, f'No unique passage direction between D_{j+1} and D_{j+2}.', j)
+        directions.append(('right' if b[0] > a[1] else 'left') if horizontal else
+                          ('up' if b[2] > a[3] else 'down'))
+    plan.internal_directions = tuple(directions)
+
+
+def _determine_boundary_directions(plan):
+    """Use pose-to-I_j-centroid turn signs, or a geometric perpendicular entry/exit."""
+    def direction(pose, *, initial):
+        j = 0 if initial else -1
+        internal = plan.internal_directions[j]
+        if pose is not None:
+            chosen = _pose_centroid_boundary_direction(
+                pose, plan.overlaps[j], internal, plan.tol, initial=initial, validate_inputs=False)
+            if chosen is not None:
+                return chosen
+        a, b, c, d = plan.bounds[j]
+        xmin, xmax, ymin, ymax = plan.safe_overlaps[j]
+        extensions = (a+plan.r < xmin-plan.tol, b-plan.r > xmax+plan.tol,
+                      c+plan.r < ymin-plan.tol, d-plan.r > ymax+plan.tol)
+        if not initial:
+            extensions = extensions[1], extensions[0], extensions[3], extensions[2]
+        return next((name for name, extends in zip(CARDINAL_DIRECTIONS, extensions)
+                     if extends and name not in (internal, OPPOSITE[internal])), internal)
+    plan.initial_direction = direction(plan.initial_pose, initial=True)
+    plan.final_direction = direction(plan.final_pose, initial=False)
+
+
+def _compute_admissible_regions(plan):
+    """Select the stored intersection on the turn side, then build each A_j."""
+    directions = (plan.initial_direction, *plan.internal_directions, plan.final_direction)
+    regions, corners, admissible = [], [], []
+    failure = None
+    for j, door in enumerate(plan.safe_overlaps):
+        incoming, outgoing = (_DIRECTION_VECTORS[d] for d in directions[j:j+2])
+        turn = incoming[0]*outgoing[1]-incoming[1]*outgoing[0]
+        region, corner, local = None, None, None
+        if directions[j] == directions[j+1]:
+            local = intersect_baseline_region(door, tol=plan.tol)
+        elif turn == 0:
+            failure = failure or _InvalidBaseline('unsupported_turn', f'A_{j+1} requires a 180-degree turn.', j)
+        else:
+            # Test the side throughout D_j, since its waypoint is selected later.
+            vertices = np.array([(x, y) for x in door[:2] for y in door[2:]])
+            matches = []
+            for point in plan.intersections[j][0]:
+                delta = point-vertices
+                if (np.all(turn*(incoming[0]*delta[:, 1]-incoming[1]*delta[:, 0]) > plan.tol)
+                        and np.all(turn*(outgoing[0]*delta[:, 1]-outgoing[1]*delta[:, 0]) > plan.tol)):
+                    matches.append(point)
+            if len(matches) != 1:
+                failure = failure or _InvalidBaseline(
+                    'corner_unresolved', f'A_{j+1} has {len(matches)} intersections on the turn side.', j)
+            else:
+                corner = matches[0]
+                region = fillet_vertex_region(
+                    dict(x=door[:2], y=door[2:]), (None, None), corner,
+                    incoming, outgoing, plan.r, plan.R, plan.tol,
+                    pair_bounds=plan.bounds[j:j+2], validate_inputs=False)
+                if not region['empty']:
+                    constraint = RoundedCornerConstraint(tuple(-region['offset']),
+                        tuple(map(int, region['frame'].sum(axis=1))), plan.R-plan.r)
+                    local = intersect_baseline_region(
+                        (region['low'][0], region['high'][0], region['low'][1], region['high'][1]),
+                        constraint, tol=plan.tol)
+                if local is None:
+                    failure = failure or _InvalidBaseline('empty_fillet_region', f'A_{j+1} is empty.', j)
+        regions.append(region)
+        corners.append(corner)
+        admissible.append(local)
+    plan.regions, plan.corners, plan.admissible = tuple(regions), tuple(corners), tuple(admissible)
+    if failure is not None:
+        raise failure
+
+
+def _propagate_admissible_regions(plan):
+    """R_1 = A_1; R_{j+1} = A_{j+1} intersect the translated segment half-strip."""
+    reachable = [plan.admissible[0]]
+    for j, (local, direction) in enumerate(zip(plan.admissible[1:], plan.internal_directions), start=1):
+        bounds = list(local.bounds)
+        previous = reachable[-1].bounds
+        axis = 0 if direction in ('right', 'left') else 1
+        transverse = 1-axis
+        bounds[2*transverse] = max(bounds[2*transverse], previous[2*transverse])
+        bounds[2*transverse+1] = min(bounds[2*transverse+1], previous[2*transverse+1])
+        if direction in ('right', 'up'):
+            bounds[2*axis] = max(bounds[2*axis], previous[2*axis]+2*plan.R)
+        else:
+            bounds[2*axis+1] = min(bounds[2*axis+1], previous[2*axis+1]-2*plan.R)
+        current = intersect_baseline_region(bounds, local.constraints[0] if local.constraints else None,
+                                             tol=plan.tol)
+        reachable.append(current)
+        if current is None:
+            plan.reachable = tuple(reachable)
+            raise _InvalidBaseline('fillet_reachability_empty', f'R_{j+1} is empty.', j)
+    plan.reachable = tuple(reachable)
+
+
+def _reconstruct_polyline(plan):
+    """Midpoint of the last R_j, then midpoint of each compatible backward slice."""
+    plan.polyline = _midpoint_polyline(plan.reachable, plan.internal_directions, plan.R,
+                                      plan.tol, verify=False)
+    if plan.polyline is None:
+        raise _InvalidBaseline('exact_reconstruction_unresolved', 'A compatible midpoint slice was lost numerically.')
+
+
+def _baseline_result(plan, failure=None):
+    """Package the computed geometry and fillets without another geometry check."""
+    feasible = failure is None
+    status = 'feasible' if feasible else failure.status
+    reason = 'Segment propagation and backward midpoint construction completed.' if feasible else failure.reason
+    geometry = SequenceGeometry(plan.bounds, plan.r, plan.tol, overlaps=plan.overlaps)
+    for j, intersections in enumerate(plan.intersections):
+        points, segments = intersections
+        points.setflags(write=False)
+        for a, b in segments:
+            a.setflags(write=False)
+            b.setflags(write=False)
+        geometry._intersections[j] = points, segments
+    data = OrthogonalPolylineFeasibility(feasible, status, reason, plan.bounds,
+                                         plan.safe_overlaps, plan.internal_directions, _geometry=geometry)
+    reachability = (FilletReachability(feasible, status, plan.reachable, plan.polyline,
+                                     None if feasible else failure.waypoint)
+                    if plan.reachable else None)
+    fillets, remaining = (), None
+    if feasible:
+        fillets = tuple(None if region is None else QuarterCircleFillet(
+            j, point-plan.R*region['incoming']+plan.R*region['outgoing'],
+            point-plan.R*region['incoming'], point+plan.R*region['outgoing'], plan.R,
+            float((region['incoming'][0]*region['outgoing'][1]
+                   -region['incoming'][1]*region['outgoing'][0])*np.pi/2))
+            for j, (point, region) in enumerate(zip(plan.polyline, plan.regions)))
+        trims = np.array([plan.R if region is not None else 0. for region in plan.regions])
+        remaining = np.linalg.norm(np.diff(plan.polyline, axis=0), axis=1)-trims[:-1]-trims[1:]
+    return FilletedBaselineConstruction(
+        feasible, status, reason, data,
+        certified_infeasible=status in ('empty_safe_overlap', 'empty_fillet_region', 'fillet_reachability_empty'),
+        polyline=plan.polyline, fillet_regions=plan.regions, fillets=fillets, remaining_lengths=remaining,
+        selection_method='segment_midpoints', midpoint_only_success=feasible,
+        initial_direction=plan.initial_direction, final_direction=plan.final_direction,
+        segment_directions=(plan.initial_direction, *plan.internal_directions, plan.final_direction),
+        fillet_reachability=reachability, overlaps=plan.overlaps,
+        boundary_intersections=plan.intersections, corner_points=plan.corners, admissible_sets=plan.admissible)

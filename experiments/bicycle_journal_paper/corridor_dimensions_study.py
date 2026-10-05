@@ -1,538 +1,315 @@
-import numpy as np
+"""Overlap-based corner-circle placement: four ordered local construction classes.
+
+Run directly in VS Code, or use --no-show for PDF/PNG export. The width map
+shows which candidate is selected by the effective overlap dimensions; it does
+not apply the planner's A_j acceptance check or certify a complete path.
+"""
+
+import argparse
+from pathlib import Path
+
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, Rectangle
+from matplotlib.lines import Line2D
+from matplotlib.patches import Arc, Circle, FancyArrowPatch, Patch, Polygon, Rectangle
+import numpy as np
 
 
-# ============================================================
-# Parameters
-# ============================================================
+# Editable study parameters. All example widths below are multiples of R.
 R = 1.0
 r = 0.2
+w_plot_max = 2.8 * R
+OUTPUT_DIRECTORY = Path(__file__).resolve().parent / "thesis_figures"
+EXAMPLE_WIDTHS = ((1.6, 1.6), (1.0, 1.8), (1.0, 1.0), (0.5, 1.0))
 
-S = R + r      # inflated / swept radius
-D = R - r      # allowed distance of intermediate-circle center from corner
+S = R + r
+D = R - r
 q = D / np.sqrt(2)
-
 w_min = 2 * r
 w_45 = S - q
+WIDTH_TOL = 32 * np.finfo(float).eps * S
+SQUARED_TOL = 32 * np.finfo(float).eps * S**2
 
-w_plot_max = 1.8
+CASE_NAMES = {
+    1: r"Preferred $45^\circ$ placement",
+    2: "Preferred shifted placement",
+    3: r"Ordinary $45^\circ$ placement",
+    4: "Ordinary shifted placement",
+}
+CASE_COLORS = {1: "#486A7C", 2: "#416B59", 3: "#946D28", 4: "#80556F"}
+CASE_FILLS = {1: "#B7C8D2", 2: "#B7C8B9", 3: "#DFD0A8", 4: "#D0B9C6"}
+STYLE = {
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern Roman"],
+    "text.latex.preamble": r"\usepackage{amsmath}",
+    "font.size": 20,
+    "axes.labelsize": 23,
+    "xtick.labelsize": 16,
+    "ytick.labelsize": 16,
+    "figure.facecolor": "white",
+    "savefig.facecolor": "white",
+}
 
-print(f"R = {R}")
-print(f"r = {r}")
-print(f"S = R + r = {S:.3f}")
-print(f"D = R - r = {D:.3f}")
-print(f"q = D/sqrt(2) = {q:.3f}")
-print(f"45-degree threshold width = S-q = {w_45:.3f}")
-print(f"Narrow corridor width = 2r = {w_min:.3f}")
-print(f"Companion width in narrow case = S = R+r = {S:.3f}")
 
-
-# ============================================================
-# Basic feasibility functions
-# ============================================================
 def lower_bounds(w1, w2):
-    """
-    Feasibility lower bounds for the Intermediate Circle center:
-        x >= a = max(0, S - w1)
-        y >= b = max(0, S - w2)
-    """
-    a = max(0.0, S - w1)
-    b = max(0.0, S - w2)
-    return a, b
+    """Ordinary wall-clearance bounds a, b for the local center (x, y)."""
+    return np.maximum(0.0, S - np.asarray(w1)), np.maximum(0.0, S - np.asarray(w2))
 
 
 def centerline_half_bounds(w1, w2):
-    """
-    Lower bounds for the swept circle to remain entirely on the preferred
-    half-side of both corridor centerlines.
-
-    Corridor 1 centerline: x = -w1/2
-    Corridor 2 centerline: y = -w2/2
-
-    Swept circle radius is S.
-
-    Need:
-        Cx - S >= -w1/2  ->  Cx >= S - w1/2
-        Cy - S >= -w2/2  ->  Cy >= S - w2/2
-    """
-    h1 = max(0.0, S - w1 / 2.0)
-    h2 = max(0.0, S - w2 / 2.0)
-    return h1, h2
+    """Preferred-half bounds h_1, h_2 for the local center (x, y)."""
+    return (np.maximum(0.0, S - np.asarray(w1) / 2),
+            np.maximum(0.0, S - np.asarray(w2) / 2))
 
 
 def is_feasible_width_pair(w1, w2):
-    """
-    Some collision-free Intermediate Circle placement exists.
-    """
+    """Whether a center in the local corner-following family exists."""
     a, b = lower_bounds(w1, w2)
-    return a**2 + b**2 <= D**2
+    return a**2 + b**2 <= D**2 + SQUARED_TOL
 
 
 def is_centerline_half_feasible(w1, w2):
-    """
-    A feasible placement exists such that the inflated circle stays completely
-    on the preferred half-side of both corridor centerlines.
+    """Whether some center satisfies both preferred-half bounds."""
+    h1, h2 = centerline_half_bounds(w1, w2)
+    return h1**2 + h2**2 <= D**2 + SQUARED_TOL
+
+
+def placement_classes(w1, w2):
+    """Return classes 1--4 in priority order; 0 means no local candidate.
+
+    Equality is admitted at every clearance boundary. The roundoff tolerance
+    only protects numerical evaluation of those boundary equalities.
     """
     h1, h2 = centerline_half_bounds(w1, w2)
-    return h1**2 + h2**2 <= D**2
-
-
-def minimum_w2_for_w1(w1):
-    """
-    Feasibility boundary:
-        max(0,S-w1)^2 + max(0,S-w2)^2 = D^2
-
-    Returns the minimum w2 needed for a given w1.
-    """
-    a = max(0.0, S - w1)
-
-    if a > D:
-        return np.nan
-
-    remaining = D**2 - a**2
-    b_max = np.sqrt(max(0.0, remaining))
-
-    # Need max(0,S-w2) <= b_max
-    w2_required = S - b_max
-
-    return max(w_min, w2_required)
-
-
-def minimum_w2_centerline_half_for_w1(w1):
-    """
-    Boundary for existence of a placement completely on the preferred
-    half-side of both centerlines:
-        max(0,S-w1/2)^2 + max(0,S-w2/2)^2 = D^2
-
-    Returns the minimum w2 needed for a given w1.
-    """
-    h1 = max(0.0, S - w1 / 2.0)
-
-    if h1 > D:
-        return np.nan
-
-    remaining = D**2 - h1**2
-    h2_max = np.sqrt(max(0.0, remaining))
-
-    # Need max(0,S-w2/2) <= h2_max
-    # S - w2/2 <= h2_max
-    # w2 >= 2(S - h2_max)
-    w2_required = 2.0 * (S - h2_max)
-
-    return max(w_min, w2_required)
+    a, b = lower_bounds(w1, w2)
+    conditions = (
+        (h1 <= q + WIDTH_TOL) & (h2 <= q + WIDTH_TOL),
+        h1**2 + h2**2 <= D**2 + SQUARED_TOL,
+        (a <= q + WIDTH_TOL) & (b <= q + WIDTH_TOL),
+        a**2 + b**2 <= D**2 + SQUARED_TOL,
+    )
+    return np.select(conditions, (1, 2, 3, 4), default=0)
 
 
 def choose_example_center(w1, w2):
+    """Select a width-based candidate, without applying the planner's A_j test."""
+    case = int(placement_classes(w1, w2))
+    if case in (1, 3):
+        center = np.array([q, q])
+    elif case == 2:
+        center = np.array(centerline_half_bounds(w1, w2))
+    elif case == 4:
+        center = np.array(lower_bounds(w1, w2))
+    else:
+        return None, "no local placement"
+    return center, CASE_NAMES[case]
+
+
+def minimum_w2_for_w1(w1):
+    """Lower boundary a(w_1)^2 + b(w_2)^2 <= D^2."""
+    a = np.maximum(0.0, S - np.asarray(w1))
+    required = S - np.sqrt(np.maximum(0.0, D**2 - a**2))
+    return np.where(a <= D + WIDTH_TOL, np.maximum(w_min, required), np.nan)
+
+
+def minimum_w2_centerline_half_for_w1(w1):
+    """Lower boundary h_1(w_1)^2 + h_2(w_2)^2 <= D^2."""
+    h1 = np.maximum(0.0, S - np.asarray(w1) / 2)
+    required = 2 * (S - np.sqrt(np.maximum(0.0, D**2 - h1**2)))
+    return np.where(h1 <= D + WIDTH_TOL, np.maximum(w_min, required), np.nan)
+
+
+def example_cases():
+    """Return one explicit width pair and selected center for each class."""
+    examples = []
+    for expected, (w1_ratio, w2_ratio) in enumerate(EXAMPLE_WIDTHS, 1):
+        w1, w2 = R * w1_ratio, R * w2_ratio
+        actual = int(placement_classes(w1, w2))
+        if actual != expected:
+            raise ValueError(
+                f"Example {expected} belongs to class {actual} for r/R={r/R:g}. "
+                "Update EXAMPLE_WIDTHS to illustrate the four classes."
+            )
+        center, _ = choose_example_center(w1, w2)
+        examples.append((expected, w1, w2, center))
+    return examples
+
+
+def create_width_map():
+    """Partition effective overlap dimensions into the four placement classes.
+
+    The scalar clearance helpers also apply to corridor widths at a regular
+    junction, where these equal the overlap dimensions.
     """
-    Simple placement policy:
-    1. use 45-degree point if feasible;
-    2. else use both-centerline half-side target if feasible;
-    3. else use minimal feasible point.
-    """
-    a, b = lower_bounds(w1, w2)
+    with plt.rc_context(STYLE):
+        fig, ax = plt.subplots(figsize=(6.2, 3.15))
+        # Reserve a narrow right column for the legend and keep the square
+        # data axes compact; this uses less height than the two-row legend.
+        fig.subplots_adjust(left=0.13, right=0.59, bottom=0.20, top=0.98)
+        values = np.unique(np.concatenate([
+            np.linspace(w_min, w_plot_max, 1200),
+            [w_min, 2 * w_min, w_45, 2 * w_45, S, 2 * S],
+        ]))
+        values = values[(values >= w_min) & (values <= w_plot_max)]
+        ordinary = minimum_w2_for_w1(values)
+        preferred = minimum_w2_centerline_half_for_w1(values)
 
-    if not is_feasible_width_pair(w1, w2):
-        return None, "infeasible"
+        # Paint in reverse priority order, using opaque fills. No mixed colors.
+        ax.fill_between(values / R, ordinary / R, w_plot_max / R,
+                        color=CASE_FILLS[4], linewidth=0)
+        ax.add_patch(Rectangle((w_45 / R, w_45 / R),
+                               (w_plot_max - w_45) / R,
+                               (w_plot_max - w_45) / R,
+                               facecolor=CASE_FILLS[3], edgecolor="none"))
+        ax.fill_between(values / R, preferred / R, w_plot_max / R,
+                        color=CASE_FILLS[2], linewidth=0)
+        ax.add_patch(Rectangle((2 * w_45 / R, 2 * w_45 / R),
+                               (w_plot_max - 2 * w_45) / R,
+                               (w_plot_max - 2 * w_45) / R,
+                               facecolor=CASE_FILLS[1], edgecolor="none"))
 
-    # Candidate 1: nominal 45-degree point
-    c45 = np.array([q, q])
-    if c45[0] >= a and c45[1] >= b and np.dot(c45, c45) <= D**2:
-        return c45, "45-degree rule"
+        # Only draw boundaries which separate different selected classes.
+        ax.plot(values[values <= S] / R, ordinary[values <= S] / R,
+                color=CASE_COLORS[4], lw=1.15)
+        ax.plot(values / R, preferred / R, color=CASE_COLORS[2], lw=1.05)
+        upper = np.linspace(w_45, w_plot_max, 600)
+        ordinary_active = ~is_centerline_half_feasible(w_45, upper)
+        visible = np.where(ordinary_active, upper / R, np.nan)
+        ax.plot(np.full_like(upper, w_45 / R), visible,
+                color=CASE_COLORS[3], lw=1.05)
+        ax.plot(visible, np.full_like(upper, w_45 / R),
+                color=CASE_COLORS[3], lw=1.05)
+        threshold = 2 * w_45 / R
+        ax.plot([threshold, threshold, w_plot_max / R],
+                [w_plot_max / R, threshold, threshold],
+                color=CASE_COLORS[2], lw=1.05)
+        half_min = 2 * (S - D) / R
+        half_saturation = 2 * S / R
+        ax.plot([half_min, half_min], [half_saturation, w_plot_max / R],
+                color=CASE_COLORS[2], lw=1.05)
+        ax.plot([half_saturation, w_plot_max / R], [half_min, half_min],
+                color=CASE_COLORS[2], lw=1.05)
 
-    # Candidate 2: tangent to both centerlines
-    cstar = np.array([S - w1 / 2.0, S - w2 / 2.0])
-    cstar = np.maximum(cstar, 0.0)
-
-    if (
-        cstar[0] >= a
-        and cstar[1] >= b
-        and np.dot(cstar, cstar) <= D**2
-    ):
-        return cstar, "centerline half-side rule"
-
-    # Candidate 3: minimal feasible shifted point
-    cmin = np.array([a, b])
-    return cmin, "minimal shifted feasible point"
-
-
-# ============================================================
-# Drawing helpers for local geometry figure
-# ============================================================
-def draw_double_arrow(ax, start, end, text, text_offset=(0, 0), fontsize=10):
-    ax.annotate(
-        "",
-        xy=end,
-        xytext=start,
-        arrowprops=dict(arrowstyle="<->", linewidth=1.4),
-    )
-    xm = 0.5 * (start[0] + end[0]) + text_offset[0]
-    ym = 0.5 * (start[1] + end[1]) + text_offset[1]
-    ax.text(xm, ym, text, fontsize=fontsize, ha="center", va="center")
-
-
-def draw_case(ax, w1, w2, C, title):
-    """
-    Draw one local geometry case.
-
-    Local convention:
-        O = (0,0) is the corner point.
-        active wall 1 is x=-w1.
-        active wall 2 is y=-w2.
-        positive x,y point away from the active walls.
-    """
-    Cx, Cy = C
-    a, b = lower_bounds(w1, w2)
-
-    xmin = -max(w1, S) - 0.25
-    ymin = -max(w2, S) - 0.25
-    xmax = D + 0.45
-    ymax = D + 0.45
-
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(ymin, ymax)
-    ax.set_aspect("equal", adjustable="box")
-    ax.grid(True, alpha=0.3)
-    ax.set_title(title, fontsize=12)
-
-    # Region on the allowed side of active walls
-    rect = Rectangle(
-        (-w1, -w2),
-        xmax + w1,
-        ymax + w2,
-        alpha=0.08,
-    )
-    ax.add_patch(rect)
-
-    # Active walls
-    ax.axvline(-w1, linestyle="-", linewidth=2)
-    ax.axhline(-w2, linestyle="-", linewidth=2)
-    ax.text(-w1, ymax - 0.08, "wall 1\nx=-w1", fontsize=9, ha="center", va="top")
-    ax.text(xmax - 0.04, -w2, "wall 2: y=-w2", fontsize=9, ha="right", va="center")
-
-    # Corridor centerlines
-    ax.axvline(-w1 / 2.0, linestyle=":", linewidth=1.8)
-    ax.axhline(-w2 / 2.0, linestyle=":", linewidth=1.8)
-    ax.text(
-        -w1 / 2.0,
-        ymin + 0.08,
-        "centerline 1",
-        fontsize=8,
-        ha="center",
-        va="bottom",
-        rotation=90,
-    )
-    ax.text(
-        xmin + 0.08,
-        -w2 / 2.0,
-        "centerline 2",
-        fontsize=8,
-        ha="left",
-        va="center",
-    )
-
-    # Local axes
-    ax.annotate(
-        "",
-        xy=(xmax * 0.92, 0),
-        xytext=(xmin * 0.12, 0),
-        arrowprops=dict(arrowstyle="->", linewidth=2),
-    )
-    ax.annotate(
-        "",
-        xy=(0, ymax * 0.92),
-        xytext=(0, ymin * 0.12),
-        arrowprops=dict(arrowstyle="->", linewidth=2),
-    )
-    ax.text(xmax * 0.94, 0.04, "x", fontsize=12)
-    ax.text(0.04, ymax * 0.94, "y", fontsize=12)
-
-    # Corner
-    ax.plot(0, 0, marker="o", markersize=6)
-    ax.text(0.04, -0.08, "O corner", fontsize=10)
-
-    # Width arrows
-    draw_double_arrow(
-        ax,
-        (-w1, -0.12),
-        (0, -0.12),
-        r"$w_1$",
-        text_offset=(0, -0.08),
-        fontsize=10,
-    )
-    draw_double_arrow(
-        ax,
-        (-0.12, -w2),
-        (-0.12, 0),
-        r"$w_2$",
-        text_offset=(-0.08, 0),
-        fontsize=10,
-    )
-
-    # Feasible disk for C
-    feasible_disk = Circle((0, 0), D, fill=False, linestyle="--", linewidth=2)
-    ax.add_patch(feasible_disk)
-    ax.text(
-        0.34 * D,
-        0.78 * D,
-        "center feasible disk\nx^2+y^2 <= D^2",
-        fontsize=9,
-        ha="center",
-    )
-
-    # Small corner circle radius r
-    small_circle = Circle((0, 0), r, fill=False, linewidth=2)
-    ax.add_patch(small_circle)
-    ax.text(-0.02, r + 0.04, "radius r", fontsize=9, ha="right")
-
-    # Intermediate Circle radius R
-    intermediate_circle = Circle((Cx, Cy), R, fill=False, linewidth=2)
-    ax.add_patch(intermediate_circle)
-
-    # Swept circle radius S
-    swept_circle = Circle((Cx, Cy), S, fill=False, linestyle=":", linewidth=2)
-    ax.add_patch(swept_circle)
-
-    # Center C
-    ax.plot(Cx, Cy, marker="*", markersize=14)
-    ax.text(Cx + 0.04, Cy + 0.04, "C", fontsize=12)
-
-    # Radius markers
-    ax.plot(
-        [Cx, Cx + R / np.sqrt(2)],
-        [Cy, Cy + R / np.sqrt(2)],
-        linewidth=1.2,
-    )
-    ax.text(Cx + 0.38 * R, Cy + 0.38 * R + 0.04, "R", fontsize=10)
-
-    ax.plot([Cx, Cx - S], [Cy, Cy], linewidth=1.0)
-    ax.text(Cx - 0.5 * S, Cy + 0.04, "S=R+r", fontsize=9, ha="center")
-
-    # Wall-clearance distances
-    draw_double_arrow(
-        ax,
-        (-w1, Cy - 0.12),
-        (Cx, Cy - 0.12),
-        r"$x+w_1$",
-        text_offset=(0, -0.07),
-        fontsize=9,
-    )
-    draw_double_arrow(
-        ax,
-        (Cx - 0.12, -w2),
-        (Cx - 0.12, Cy),
-        r"$y+w_2$",
-        text_offset=(-0.12, 0),
-        fontsize=9,
-    )
-
-    ax.text(
-        xmin + 0.05,
-        ymax - 0.25,
-        f"w1={w1:.3f}\nw2={w2:.3f}\n"
-        f"a=max(0,S-w1)={a:.3f}\n"
-        f"b=max(0,S-w2)={b:.3f}",
-        fontsize=9,
-        va="top",
-        bbox=dict(boxstyle="round", alpha=0.15),
-    )
-
-    ax.text(
-        xmin + 0.05,
-        ymin + 0.08,
-        "Wall constraints:\n"
-        "x + w1 >= S\n"
-        "y + w2 >= S\n\n"
-        "Half-side constraints:\n"
-        "x + w1/2 >= S\n"
-        "y + w2/2 >= S",
-        fontsize=8.5,
-        va="bottom",
-        bbox=dict(boxstyle="round", alpha=0.15),
-    )
+        ax.set(xlim=(w_min / R, w_plot_max / R),
+               ylim=(w_min / R, w_plot_max / R), aspect="equal")
+        ax.set_xlabel(r"$d_{x,j}/R$", fontsize=14)
+        ax.set_ylabel(r"$d_{y,j}/R$", fontsize=14)
+        ax.tick_params(axis="both", labelsize=9.5)
+        fig.text(0.61, 0.83, rf"$r/R={r/R:g}$", fontsize=12,
+                 ha="left", va="center")
+        ax.tick_params(direction="out", length=4)
+        ax.spines[["top", "right"]].set_visible(False)
+        fig.legend(handles=[
+            Patch(facecolor=CASE_FILLS[case], edgecolor="none",
+                  label=CASE_NAMES[case])
+            for case in (1, 2, 3, 4)
+        ], loc="center left", bbox_to_anchor=(0.59, 0.49),
+            ncol=1, fontsize=12, frameon=False, labelspacing=0.65,
+            handlelength=0.85, handleheight=0.8)
+        return fig
 
 
-# ============================================================
-# Figure 1: three local geometry cases
-# ============================================================
-w1_nominal = w_45
-w2_nominal = w_45
-C_nominal = (q, q)
-
-w1_narrow1 = w_min
-w2_narrow1 = S
-C_narrow1 = (D, 0.0)
-
-w1_narrow2 = S
-w2_narrow2 = w_min
-C_narrow2 = (0.0, D)
-
-fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-
-draw_case(
-    axs[0],
-    w1_nominal,
-    w2_nominal,
-    C_nominal,
-    "Nominal 45-degree case",
-)
-
-draw_case(
-    axs[1],
-    w1_narrow1,
-    w2_narrow1,
-    C_narrow1,
-    "Narrow corridor 1",
-)
-
-draw_case(
-    axs[2],
-    w1_narrow2,
-    w2_narrow2,
-    C_narrow2,
-    "Narrow corridor 2",
-)
-
-fig.suptitle(
-    "Local convention for Intermediate Circle placement\n"
-    "positive x and y point away from the two active limiting walls",
-    fontsize=14,
-)
-
-plt.tight_layout()
+def draw_width(ax, start, end, symbol, offset, rotation=0):
+    ax.add_patch(FancyArrowPatch(start, end, arrowstyle="<->",
+                                mutation_scale=11, lw=0.95, color="0.2",
+                                shrinkA=0, shrinkB=0))
+    midpoint = (np.asarray(start) + np.asarray(end)) / 2 + offset
+    ax.text(*midpoint, symbol, ha="center", va="center",
+            rotation=rotation, fontsize=17)
 
 
-# ============================================================
-# Figure 2: width-space feasibility map
-# ============================================================
-fig, ax = plt.subplots(figsize=(9, 8))
+def draw_case(ax, case, w1, w2, center):
+    """Show the actual L-junction, supporting circle, and swept SW quarter."""
+    lower, upper = -2.25 * R, 1.95 * R
+    color = CASE_COLORS[case]
+    # The two open corridor arms meet at the concave corner (0, 0).
+    vertices = [(-w1, -w2), (upper, -w2), (upper, 0),
+                (0, 0), (0, upper), (-w1, upper)]
+    ax.add_patch(Polygon(vertices, facecolor="0.96", edgecolor="none"))
+    for xs, ys in [
+        ([-w1, -w1], [-w2, upper]), ([-w1, upper], [-w2, -w2]),
+        ([0, 0], [0, upper]), ([0, upper], [0, 0]),
+    ]:
+        ax.plot(xs, ys, color="black", lw=1.2)
+    ax.plot([-w1 / 2] * 2, [-w2, upper], color="0.55", lw=1.0, ls=":")
+    ax.plot([-w1, upper], [-w2 / 2] * 2, color="0.55", lw=1.0, ls=":")
 
-w_values = np.linspace(w_min, w_plot_max, 900)
-w2_min_values = np.array([minimum_w2_for_w1(w1) for w1 in w_values])
-w2_half_values = np.array([minimum_w2_centerline_half_for_w1(w1) for w1 in w_values])
+    ax.add_patch(Circle((0, 0), r, facecolor="0.88", edgecolor="0.5", lw=0.9))
+    ax.plot(0, 0, "o", ms=3, color="0.25")
+    ax.add_patch(Circle(center, R, fill=False, edgecolor="0.45", lw=1.0))
+    ax.add_patch(Arc(center, 2 * S, 2 * S, theta1=180, theta2=270,
+                     color="0.4", lw=1.2, ls="--"))
+    ax.add_patch(Arc(center, 2 * R, 2 * R, theta1=180, theta2=270,
+                     color=color, lw=3.0))
+    if case in (2, 4):
+        nominal = np.array([q, q])
+        ax.plot(*nominal, "o", ms=5, mfc="white", mec="0.5", zorder=6)
+        ax.add_patch(FancyArrowPatch(nominal, center, arrowstyle="->",
+                                    color="0.5", lw=0.9, mutation_scale=9,
+                                    shrinkA=4, shrinkB=4, zorder=6))
+    ax.plot(*center, "o", ms=5, color=color, zorder=7)
+    ax.text(*(center + [0.14 * R, 0.13 * R]), r"$\mathbf{o}$",
+            color=color, fontsize=20, ha="left", va="center")
 
-# General feasible region
-ax.fill_between(
-    w_values,
-    w2_min_values,
-    w_plot_max,
-    where=~np.isnan(w2_min_values),
-    alpha=0.18,
-    label="some feasible arc placement exists",
-)
+    draw_width(ax, (-w1, -w2 - 0.25 * R), (0, -w2 - 0.25 * R),
+               rf"$w_1={w1/R:g}R$", (0, -0.15 * R))
+    draw_width(ax, (-w1 - 0.25 * R, -w2), (-w1 - 0.25 * R, 0),
+               rf"$w_2={w2/R:g}R$", (-0.15 * R, 0), rotation=90)
+    ax.set(xlim=(lower, upper), ylim=(lower, upper), aspect="equal")
+    ax.set_title(CASE_NAMES[case], fontsize=18, pad=7)
+    ax.axis("off")
 
-# Region where a placement exists completely on preferred half-side of both centerlines
-ax.fill_between(
-    w_values,
-    w2_half_values,
-    w_plot_max,
-    where=~np.isnan(w2_half_values),
-    alpha=0.28,
-    label="feasible placement on preferred half-side of both centerlines",
-)
 
-# General feasibility boundary
-ax.plot(
-    w_values,
-    w2_min_values,
-    linewidth=2.4,
-    label="feasibility boundary",
-)
+def create_geometry_figure(examples):
+    with plt.rc_context(STYLE):
+        fig, axes = plt.subplots(2, 2, figsize=(9.5, 9.1))
+        fig.subplots_adjust(left=0.015, right=0.985, bottom=0.11, top=0.95,
+                            wspace=0.08, hspace=0.20)
+        for ax, example in zip(axes.flat, examples):
+            draw_case(ax, *example)
+        fig.legend(handles=[
+            Line2D([], [], color="0.45", lw=1.0, label=r"Supporting circle $R$"),
+            Line2D([], [], color="0.4", lw=1.2, ls="--",
+                   label=r"Outer swept radius $R+r$"),
+            Line2D([], [], color="0.55", lw=1.0, ls=":", label="Corridor centerlines"),
+            Patch(facecolor="0.88", edgecolor="0.5", label=r"Corner disk $r$"),
+        ], loc="lower center", bbox_to_anchor=(0.5, 0.02),
+            ncol=2, fontsize=14, frameon=False, columnspacing=1.6,
+            handlelength=1.5, labelspacing=0.6)
+        return fig
 
-# Centerline half-side boundary
-ax.plot(
-    w_values,
-    w2_half_values,
-    linewidth=2.4,
-    linestyle="--",
-    label="both-centerlines tangent / half-side boundary",
-)
 
-# Physical lower bounds
-ax.axvline(w_min, linestyle="--", linewidth=1.4, label="w1 = 2r")
-ax.axhline(w_min, linestyle="--", linewidth=1.4, label="w2 = 2r")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-show", action="store_true", help="Export without opening windows.")
+    parser.add_argument("--output-directory", type=Path, default=OUTPUT_DIRECTORY)
+    args = parser.parse_args()
+    if not 0 < r < R:
+        raise ValueError("The parameters must satisfy 0 < r < R.")
+    if w_plot_max <= 2 * S:
+        raise ValueError("Use w_plot_max > 2(R+r) to show the preferred-half region clearly.")
+    examples = example_cases()
+    for case, w1, w2, center in examples:
+        print(f"Class {case}: w1/R={w1/R:g}, w2/R={w2/R:g}; "
+              f"center/R=({center[0]/R:.4f}, {center[1]/R:.4f})")
 
-# R+r thresholds
-ax.axvline(S, linestyle=":", linewidth=1.5, label="wi = R+r")
-ax.axhline(S, linestyle=":", linewidth=1.5)
+    figures = {
+        "corridor_dimensions_placement_map": create_width_map(),
+        "corridor_dimensions_placement_examples": create_geometry_figure(examples),
+    }
+    args.output_directory.mkdir(parents=True, exist_ok=True)
+    with plt.rc_context(STYLE):
+        for name, fig in figures.items():
+            for extension in ("pdf", "png"):
+                output = args.output_directory / f"{name}.{extension}"
+                fig.savefig(output, dpi=300, bbox_inches="tight", pad_inches=0.06)
+                print(f"Saved {output}")
+    if args.no_show:
+        for fig in figures.values():
+            plt.close(fig)
+    else:
+        plt.show()
 
-# 45-degree threshold
-ax.axvline(w_45, linestyle="-.", linewidth=1.5, label="wi = R+r-q")
-ax.axhline(w_45, linestyle="-.", linewidth=1.5)
 
-# Optional: 2S thresholds, where the swept circle can sit without crossing a centerline
-ax.axvline(2 * S, linestyle=(0, (3, 5, 1, 5)), linewidth=1.2, label="wi = 2(R+r)")
-ax.axhline(2 * S, linestyle=(0, (3, 5, 1, 5)), linewidth=1.2)
-
-# Special points
-ax.plot(w_min, S, marker="o", markersize=8)
-ax.text(w_min + 0.02, S + 0.02, "(2r, R+r)", fontsize=10)
-
-ax.plot(S, w_min, marker="o", markersize=8)
-ax.text(S + 0.02, w_min + 0.02, "(R+r, 2r)", fontsize=10)
-
-ax.plot(w_45, w_45, marker="o", markersize=8)
-ax.text(w_45 + 0.02, w_45 + 0.02, "(R+r-q, R+r-q)", fontsize=10)
-
-# Symmetric point for centerline half-side boundary
-# Solve w = 2(S - D/sqrt(2))
-w_half_sym = 2.0 * (S - q)
-ax.plot(w_half_sym, w_half_sym, marker="s", markersize=7)
-ax.text(
-    w_half_sym + 0.02,
-    w_half_sym + 0.02,
-    "symmetric half-side point",
-    fontsize=10,
-)
-
-# Region where nominal 45-degree placement is feasible:
-# w1 >= w_45 and w2 >= w_45
-ax.fill_between(
-    w_values,
-    w_45,
-    w_plot_max,
-    where=(w_values >= w_45),
-    alpha=0.18,
-    label="nominal 45-degree placement feasible",
-)
-
-# Add annotations explaining regions
-ax.text(
-    0.46,
-    1.45,
-    "feasible, but\nrequires shifted placement",
-    fontsize=10,
-    bbox=dict(boxstyle="round", alpha=0.15),
-)
-
-ax.text(
-    1.08,
-    1.35,
-    "preferred half-side\nplacement exists",
-    fontsize=10,
-    bbox=dict(boxstyle="round", alpha=0.15),
-)
-
-ax.text(
-    0.72,
-    0.50,
-    "infeasible for\nfixed R",
-    fontsize=10,
-    bbox=dict(boxstyle="round", alpha=0.15),
-)
-
-ax.set_xlabel("corridor width w1")
-ax.set_ylabel("corridor width w2")
-ax.set_title(
-    "Width-space feasibility and centerline half-side placement\n"
-    f"R={R}, r={r}, S=R+r={S:.2f}, D=R-r={D:.2f}"
-)
-
-ax.set_xlim(w_min - 0.05, w_plot_max)
-ax.set_ylim(w_min - 0.05, w_plot_max)
-ax.set_aspect("equal", adjustable="box")
-ax.grid(True, alpha=0.35)
-ax.legend(loc="upper right", fontsize=8.5)
-
-plt.tight_layout()
-plt.show()
+if __name__ == "__main__":
+    main()

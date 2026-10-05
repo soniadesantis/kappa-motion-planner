@@ -1,8 +1,8 @@
 """An integer-coordinate running example for the thesis planner procedure.
 
 Run this file with VS Code's Run button. The first stage uses the finalized
-feasibility algorithm. The optional polyline uses the midpoint-first fillet-aware
-construction, so its waypoints can be reused in the later fillet stage. Geometry is
+feasibility algorithm. The polyline uses exact full fillet-set propagation and
+backward reconstruction, so its waypoints can be reused in the fillet stage. Geometry is
 shared by all panels and can be reused for subsequent planner stages.
 
 CLI: python experiments/bicycle_journal_paper/example_planner_thesis.py --no-show
@@ -20,7 +20,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle, Polygon
 
 from kappa_planner.baseline_construction import (
-    analyze_orthogonal_polyline_feasibility, compute_filleted_baseline,
+    analyze_orthogonal_polyline_feasibility, compute_filleted_baseline_exact,
     compute_local_boundary_fillets,
 )
 from kappa_planner.helpers.fillet_backtracking import region_slice
@@ -248,8 +248,65 @@ def draw_reachable_fillet_region(ax, region, reachable):
                              alpha=.7, linewidth=1.2, zorder=4))
 
 
+def draw_exact_reachable_set(ax, reachable):
+    """Render F_j using analytic slices; sampling is only for the display."""
+    xmin, xmax, ymin, ymax = reachable.bounds
+    if min(xmax-xmin, ymax-ymin) < 1e-9:
+        rectangle(ax, reachable.bounds, REACHABLE_COLOR, alpha=.7, zorder=4)
+        return
+    # Include constraint junctions so straight/curved boundary changes are shown.
+    xs = np.unique(np.r_[np.linspace(xmin, xmax, 501),
+                         [g.center[0] for g in reachable.constraints
+                          if xmin < g.center[0] < xmax]])
+    lower, upper = [], []
+    for x in xs:
+        interval = reachable.slice_interval(0, x)
+        if interval is not None:
+            lower.append((x, interval[0]))
+            upper.append((x, interval[1]))
+    vertices = np.array(lower + upper[::-1])
+    ax.add_patch(Polygon(vertices, facecolor=REACHABLE_COLOR,
+                         edgecolor=REACHABLE_COLOR, alpha=.7,
+                         linewidth=1.2, zorder=4))
+
+
+def create_exact_propagation_figure(report, baseline):
+    """Corridors, independent local A_j, then full F_j and a recovered witness.
+
+    Endpoint directions are deliberately absent from this internal problem.
+    At aligned and endpoint waypoints A_j=D_j. F_j includes all preceding
+    local fillet conditions and signed 2R constraints, not future constraints.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(19, 6.7))
+    for ax, title in zip(axes, ('(a)', '(b)', '(c)')):
+        base_panel(ax, title, corridor_labels=ax is axes[0])
+    for ax in axes[1:]:
+        ax.set_ylabel("")
+        draw_doors(ax, report, labels=False)
+    for door, region in zip(report.safe_overlaps, baseline.fillet_regions):
+        # Use D_j, not R_j: this panel depicts the independent local sets.
+        draw_reachable_fillet_region(axes[1], region, door)
+        draw_reachable_fillet_region(axes[2], region, door)
+    for reachable in baseline.fillet_reachability.reachable_sets:
+        draw_exact_reachable_set(axes[2], reachable)
+    axes[2].plot(*baseline.polyline.T, '-o', color='#222222', lw=2,
+                 markersize=5, zorder=6)
+    fig.legend(handles=[
+        Patch(facecolor=DOOR_COLOR, alpha=.2, label=r'$\mathcal{D}_j$'),
+        Patch(facecolor='#ea580c', alpha=.7, label=r'$\mathcal{A}_j$'),
+        Patch(facecolor=REACHABLE_COLOR, alpha=.7, label=r'$\mathcal{F}_j$'),
+        Line2D([], [], color='#222222', marker='o', label='Polyline'),
+    ], loc='lower center', ncol=4, fontsize=21,
+       bbox_to_anchor=(.5, .015), frameon=False)
+    fig.subplots_adjust(left=.06, right=.985, bottom=.21, top=.93, wspace=.16)
+    fig.add_artist(Rectangle((.003, .003), .994, .994,
+                             transform=fig.transFigure, fill=False,
+                             edgecolor='black', linewidth=.8, zorder=100))
+    return fig
+
+
 def create_fillet_figure(report, baseline, boundary):
-    """Local admissible regions and the same midpoint chain with quarter arcs.
+    """Local admissible regions and the reconstructed chain with quarter arcs.
 
     This running geometry has exactly one validated arc at each fixed endpoint.
     Those arcs impose no connection to a prescribed initial/final pose.
@@ -357,18 +414,26 @@ def main():
                                         report.y_reachable), start=1):
         print(f"  D{j}: X={interval_text(door[:2])}, Y={interval_text(door[2:])}; "
               f"reachable x={interval_text(x)}, y={interval_text(y)}")
-    baseline = compute_filleted_baseline(corridors, robot, use_joint_solver=False)
+    baseline = compute_filleted_baseline_exact(corridors, robot)
     if not baseline.feasible:
         raise ValueError("Running example fillet construction failed: " + baseline.reason)
     boundary = compute_local_boundary_fillets(baseline, robot)
     points = baseline.polyline
     print("Waypoint construction:", baseline.selection_method,
-          f"({baseline.backtracking_attempts} proposals)")
+          "(analytic forward sets and backward reconstruction)")
+    print("Full fillet reachable sets (bounding intervals):")
+    for j, reachable in enumerate(baseline.fillet_reachability.reachable_sets, start=1):
+        print(f"  F{j}: x={interval_text(reachable.bounds[:2])}, "
+              f"y={interval_text(reachable.bounds[2:])}; "
+              f"{len(reachable.constraints)} curved constraints")
     print("Waypoints:\n", points)
     print("Local endpoint arc directions:", [d for d,_ in boundary.initial],
           [d for d,_ in boundary.final])
     with plt.rc_context(STYLE):
         figures = {
+            "planner_thesis_exact_fillet_propagation": create_exact_propagation_figure(
+                report, baseline
+            ),
             "planner_thesis_polyline_feasibility": create_progressive_figure(
                 report, points
             ),

@@ -1,0 +1,25 @@
+% Compile from experiments/avp_paper with:
+% pdflatex -output-directory=figures relabel_demo2_traj.tex
+% The original vector PDF is preserved as demo2_traj_original.pdf.
+\documentclass{article}
+\usepackage[paperwidth=720bp,paperheight=288bp,margin=0bp]{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\begin{document}
+\begin{tikzpicture}[remember picture,overlay,x=1bp,y=1bp]
+  \node[anchor=south west,inner sep=0] at (current page.south west)
+    {\includegraphics[width=720bp,height=288bp]{figures/demo2_traj_original.pdf}};
+  \begin{scope}[shift={(current page.south west)}]
+    % Cover only the old axis labels; retain units in the replacements.
+    \fill[white] (345,0) rectangle (425,25);
+    \fill[white] (0,126) rectangle (23,201);
+    \node[inner sep=0,font=\fontsize{20}{24}\selectfont] at (384,11)
+      {$x$ (m)};
+    \node[inner sep=0,rotate=90,font=\fontsize{20}{24}\selectfont] at (10,164)
+      {$y$ (m)};
+  \end{scope}
+\end{tikzpicture}%
+\null
+\end{document}

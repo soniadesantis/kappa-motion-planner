@@ -1,28 +1,32 @@
+"""Two-panel thesis tangent construction; run with --no-show for export."""
+
+import argparse
+import runpy
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Arc, Circle, FancyArrowPatch, Wedge
 from matplotlib.lines import Line2D
+from matplotlib.patches import Arc, ArrowStyle, Circle, FancyArrowPatch, Wedge
 
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
-SYMBOL_FONT_SIZE = 32
+SYMBOL_FONT_SIZE = 22
 TICK_LABEL_FONT_SIZE = 14
-REFERENCE_LABEL_FONT_SIZE = 20
-POINT_LABEL_FONT_SIZE = 32
-SET_LABEL_FONT_SIZE = 32
-SEGMENT_LABEL_FONT_SIZE = 22
-TANGENCY_LABEL_FONT_SIZE = 21
-TANGENT_LABEL_FONT_SIZE = 23
-ANGLE_LABEL_FONT_SIZE = 20
-REFERENCE_ARROW_COLOR = "0.55"
-REFERENCE_LABEL_COLOR = "0.55"
+REFERENCE_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+POINT_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+SET_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+SEGMENT_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+TANGENCY_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+TANGENT_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+ANGLE_LABEL_FONT_SIZE = SYMBOL_FONT_SIZE
+REFERENCE_ARROW_COLOR = "0.45"
+REFERENCE_LABEL_COLOR = "0.45"
 CIRCLE_EDGE_COLOR = "black"
 POINT_MARKER_SIZE = 5.8
-TANGENCY_MARKER_SIZE = 5.2
+TANGENCY_MARKER_SIZE = 5.5
 
 SAVE_FIGURE = True
 SHOW_FIGURE = True
@@ -45,7 +49,30 @@ POINT_CIRCLE_CENTER = np.array([1.15, 0.35])
 CIRCLE_1_CENTER = np.array([-2.1, -0.35])
 CIRCLE_2_CENTER = np.array([2.15, 1.25])
 
-FIGURE_SIZE = (15.5, 11.0)
+FIGURE_SIZE = (14.5, 5.8)
+JOURNAL = runpy.run_path(str(Path(__file__).resolve().parents[1]
+                           / "unicycle_journal_paper" / "tangent_convention_journal.py"))
+
+
+# Redundant visual encoding for grayscale and color-vision accessibility.
+TANGENT_LINESTYLES = {
+    ("-", "-"): (0, (7, 3)),             # Long dashes.
+    ("-", "+"): (0, (1, 2)),             # Dots.
+    ("+", "-"): (0, (6, 2, 1, 2, 1, 2)), # Dash-dot-dot.
+    ("+", "+"): (0, (6, 2, 1, 2)),       # Dash-dot.
+}
+
+
+THESIS_STYLE = {
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern Roman"],
+    "mathtext.fontset": "cm",
+    "text.latex.preamble": r"\usepackage{amsmath}",
+}
+# This is a private runpy namespace: only the thesis rendering changes.
+# The reused drawing function enters its own STYLE context, so override that too.
+JOURNAL["STYLE"].update(THESIS_STYLE)
 
 
 plt.rcParams.update({
@@ -297,15 +324,15 @@ def draw_oriented_reference_line(
     label,
     label_offset,
 ):
-    """Draw a thin ordered reference line with an arrow."""
+    """Match the journal center-to-center solid double-arrow segment."""
     axis.add_patch(
         FancyArrowPatch(
             start,
             end,
             arrowstyle="<|-|>",
-            mutation_scale=13,
-            linewidth=1.25,
-            linestyle="--",
+            mutation_scale=11,
+            linewidth=1.1,
+            linestyle="-",
             color=REFERENCE_ARROW_COLOR,
             zorder=1,
         )
@@ -353,6 +380,7 @@ def draw_extended_line(
     point_2,
     extension_start=0.80,
     extension_end=1.25,
+    color="0.60",
 ):
     """Draw the supporting tangent line as a light dashed line."""
     direction = point_2 - point_1
@@ -365,8 +393,9 @@ def draw_extended_line(
         [start[0], end[0]],
         [start[1], end[1]],
         linestyle="--",
-        linewidth=0.85,
-        color="0.60",
+        linewidth=0.9,
+        color=color,
+        alpha=0.6,
         zorder=0,
     )
 
@@ -474,7 +503,7 @@ def setup_axis(axis):
 # PANEL 1: POINT-CIRCLE TANGENTS
 # =============================================================================
 
-def plot_point_circle_panel(axis, distances=False):
+def plot_point_circle_panel(axis, distances=False, combined=False):
     point = POINT
     center = POINT_CIRCLE_CENTER
     radius = RADIUS
@@ -496,7 +525,7 @@ def plot_point_circle_panel(axis, distances=False):
         )
     )
 
-    if distances:
+    if distances or combined:
         draw_oriented_reference_line(
             axis,
             point,
@@ -525,7 +554,7 @@ def plot_point_circle_panel(axis, distances=False):
 
     axis.text(
         point[0],
-        point[1] + 0.38,
+        point[1] + 0.25,
         r"$\mathbf{p}$",
         fontsize=POINT_LABEL_FONT_SIZE,
         ha="center",
@@ -541,11 +570,13 @@ def plot_point_circle_panel(axis, distances=False):
         va="center",
     )
 
-    draw_circle_label(axis, center, radius, r"$\mathcal{O}$", 40)
+    label_direction = np.array([np.cos(np.radians(25)), np.sin(np.radians(25))])
+    axis.text(*(center + 0.62 * radius * label_direction), r"$\mathcal{O}$",
+              fontsize=SET_LABEL_FONT_SIZE, ha="center", va="center")
 
     tangent_colors = {
-        "+": "tab:green",
-        "-": "tab:orange",
+        "+": JOURNAL["COLORS"][("+", "+")],  # Match the external tangent.
+        "-": JOURNAL["COLORS"][("-", "-")],
     }
 
     label_offsets = {
@@ -553,10 +584,9 @@ def plot_point_circle_panel(axis, distances=False):
         "-": np.array([-0.10, 0.16]),
     }
 
-    q_offsets = {
-        "+": np.array([0.00, 0.18]),
-        "-": np.array([0.00, 0.18]),
-    }
+    # Equal outward normal offsets keep both labels outside the circle.
+    q_offsets = {symbol: 0.65 * (tangent["q"]-center)/radius
+                 for symbol, tangent in tangents.items()}
 
     for symbol in (
         "-",
@@ -579,6 +609,7 @@ def plot_point_circle_panel(axis, distances=False):
                 axis,
                 point,
                 q,
+                color=color,
             )
 
 
@@ -593,7 +624,7 @@ def plot_point_circle_panel(axis, distances=False):
             zorder=9,
         )
 
-        if distances:
+        if distances or combined:
             draw_dimension(axis, point, q, rf"$d^{{{symbol}}}$", color,
                            0.22 if symbol == "-" else -0.22)
 
@@ -602,40 +633,36 @@ def plot_point_circle_panel(axis, distances=False):
             angle_vertex = point + angle_fraction * (q - point)
             draw_positive_tangent_angle(axis, angle_vertex, tangent_direction,
                                         0.46 if symbol == "-" else 0.34, color)
-            axis.text(
-                q[0] + q_offsets[symbol][0],
-                q[1] + q_offsets[symbol][1],
-                rf"$\mathbf{{q}}^{{{symbol}}}$",
-                fontsize=TANGENCY_LABEL_FONT_SIZE,
-                color=color,
-                ha="center",
-                va="center",
-            )
+            angle = angle_of(tangent_direction)
+            label_angle = angle/2 if symbol == "-" else np.pi/2
+            label_radius = 0.52 if symbol == "-" else 0.35
+            label_position = angle_vertex + label_radius * np.array([
+                np.cos(label_angle), np.sin(label_angle)])
+            axis.text(*label_position, rf"$\alpha^{{{symbol}}}$", color=color,
+                      fontsize=16, ha="center", va="center", zorder=8,
+                      bbox=dict(facecolor="white", edgecolor="none", alpha=0.7, pad=0.5))
+            # Optional tangency labels and arrows: uncomment to restore.
+            # axis.annotate(
+            #     rf"$\mathbf{{q}}^{{{symbol}}}$", xy=q,
+            #     xytext=q+q_offsets[symbol],
+            #     fontsize=TANGENCY_LABEL_FONT_SIZE, color=color,
+            #     ha="center", va="center", zorder=10,
+            #     arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0.35",
+            #                     color=color, lw=1.0, mutation_scale=10,
+            #                     shrinkA=1, shrinkB=3),
+            # )
 
-            if symbol == "-":
-                t_label_position = (
-                    q
-                    + 0.58 * tangent_direction
-                    + 0.16 * tangent_normal
-                )
-                t_label_color = REFERENCE_ARROW_COLOR
-            else:
-                t_label_position = (
-                    q
-                    + 0.58 * tangent_direction
-                    - 0.16 * tangent_normal
-                )
-                t_label_color = REFERENCE_ARROW_COLOR
-
-            axis.text(
-                t_label_position[0],
-                t_label_position[1],
-                rf"$t^{{{symbol}}}$",
-                fontsize=TANGENT_LABEL_FONT_SIZE,
-                color=t_label_color,
-                ha="center",
-                va="center",
-            )
+    if not distances:
+        legend = axis.legend(
+            handles=[Line2D([], [], color=tangent_colors[symbol], lw=1.5,
+                            linestyle="--", label=rf"$t^{{{symbol}}}$")
+                     for symbol in ("-", "+")],
+            loc="lower center", bbox_to_anchor=(0.5, 0.16), ncol=2,
+            frameon=True, edgecolor="0.8", facecolor="white", framealpha=1,
+            fancybox=False, columnspacing=1.2, handlelength=1.5,
+            fontsize=SYMBOL_FONT_SIZE,
+        )
+        legend.get_frame().set_linewidth(0.6)
 
     axis.set_xlim(-3.45, 2.95)
     axis.set_ylim(-2.30, 2.35)
@@ -802,67 +829,140 @@ def plot_circle_circle_panel(axis, distances=False):
 # MAIN
 # =============================================================================
 
-if __name__ == "__main__":
-    figure, axes = plt.subplots(2, 2, figsize=FIGURE_SIZE)
-    plot_point_circle_panel(axes[0, 0])
-    plot_circle_circle_panel(axes[0, 1])
-    plot_point_circle_panel(axes[1, 0], distances=True)
-    plot_circle_circle_panel(axes[1, 1], distances=True)
-    for axis, title in zip(axes.flat, (
-        "a) Point–circle: tangency points", "b) Circle–circle: tangency points",
-        "c) Point–circle: distances", "d) Circle–circle: distances",
-    )):
-        axis.set_title(title, fontsize=20, pad=4)
-    figure.legend(
-        handles=[
-            Line2D([], [], marker="o", linestyle="None", color="0.3", markersize=7,
-                   label=r"$\mathbf{q}_i^{\sigma_1,\sigma_2}$" + "\nTangency point on circle " + r"$i$"),
-            Line2D([], [], linestyle="--", color="0.55", linewidth=1,
-                   label=r"$t^{\sigma_1,\sigma_2}$" + "\nCommon tangent"),
-            Line2D([], [], color="0.3", linewidth=1.5,
-                   label=r"$d^{\sigma_1,\sigma_2}$" + "\nDistance between tangency points"),
-        ],
-        loc="lower center", bbox_to_anchor=(0.5, 0.01), ncol=3,
-        frameon=False, fontsize=15, columnspacing=2.5, handletextpad=0.8,
-    )
-    figure.tight_layout(w_pad=1.5, h_pad=1.0, rect=(0, 0.10, 1, 1))
+def create_figure():
+    # Reuse the original drawing without modifying its source or exported files.
+    journal = JOURNAL
+    with plt.rc_context(THESIS_STYLE):
+        figure = journal["create_figure"]()
+        figure.set_size_inches(*FIGURE_SIZE)
+        right = figure.axes[0]
+        grid = figure.add_gridspec(1, 2, left=0.025, right=0.975,
+                                  bottom=0.04, top=0.93, wspace=0.025,
+                                  width_ratios=(6.4, 8.15))
+        right.set_subplotspec(grid[0, 1])
+        left = figure.add_subplot(grid[0, 0])
+        plot_point_circle_panel(left, combined=True)
+        right.set_ylim(-2.10, 3.15)
+        left.set_ylim(right.get_ylim())  # Equal scale avoids aspect-ratio padding between panels.
+        center_labels = {
+            r"$\mathbf{p}^{o}_1$": r"$\mathbf{o}_1$",
+            r"$\mathbf{p}^{o}_2$": r"$\mathbf{o}_2$",
+        }
+        center_positions = {
+            r"$\mathbf{o}$": POINT_CIRCLE_CENTER,
+            r"$\mathbf{o}_1$": journal["CENTER_1"],
+            r"$\mathbf{o}_2$": journal["CENTER_2"],
+        }
+        patterns_by_color = {journal["COLORS"][signs]: pattern
+                             for signs, pattern in TANGENT_LINESTYLES.items()}
+        for axis in (left, right):
+            for line in axis.lines:
+                if line.get_marker() == "o" and line.get_color() in patterns_by_color:
+                    line.set_markersize(TANGENCY_MARKER_SIZE)
+                    line.set_markeredgecolor("white")
+                    line.set_markeredgewidth(0.8)
+                if line.is_dashed() and line.get_color() in patterns_by_color:
+                    if axis is right:
+                        endpoints = line.get_xydata()
+                        direction = endpoints[-1]-endpoints[0]
+                        direction /= np.linalg.norm(direction)
+                        # The journal already extends by 1; add another 0.4 per end.
+                        endpoints = np.array([endpoints[0]-0.4*direction,
+                                              endpoints[-1]+0.4*direction])
+                        line.set_data(endpoints[:, 0], endpoints[:, 1])
+                    line.set_linestyle(patterns_by_color[line.get_color()])
+                    line.set_alpha(0.8)
+            legend = axis.get_legend()
+            if legend is not None:
+                for handle in legend.get_lines():
+                    if handle.get_color() in patterns_by_color:
+                        handle.set_linestyle(patterns_by_color[handle.get_color()])
+            # Larger distance arrowheads; angle arrows stay intact.
+            for patch in axis.patches:
+                if (isinstance(patch, FancyArrowPatch)
+                        and isinstance(patch.get_arrowstyle(), ArrowStyle.CurveFilledAB)):
+                    patch.set_mutation_scale(20)
+            for text in axis.texts:
+                text.set_text(center_labels.get(text.get_text(), text.get_text()))
+                text.set_fontsize(SYMBOL_FONT_SIZE)
+                if text.get_text() in center_positions:
+                    center = center_positions[text.get_text()]
+                    offset = 0.30 if text.get_text() == r"$\mathbf{o}_1$" else 0.20
+                    text.set_position((center[0], center[1]+offset))
+            if axis.get_legend() is not None:
+                for text in axis.get_legend().get_texts():
+                    text.set_fontsize(SYMBOL_FONT_SIZE)
+        # Preserve the journal's alpha positions, alignment, and label backgrounds.
+        # Its smaller alpha size keeps the original spacing around the sectors.
+        for axis in (left, right):
+            for text in axis.texts:
+                if text.get_text().startswith(r"$\alpha^{"):
+                    text.set_fontsize(16)
+        for text in right.texts:
+            if text.get_text() in {r"$\alpha^{-,-}$", r"$\alpha^{+,+}$"}:
+                x, y = text.get_position()
+                text.set_position((x+0.08, y))
+            if text.get_text() in {r"$d^{+,+}$", r"$d^{+,-}$", r"$d^{-,+}$"}:
+                x, y = text.get_position()
+                text.set_position((x, y-0.07))
+        for text in left.texts:
+            if text.get_text() in {r"$d^{+}$", r"$d^{-}$"}:
+                x, y = text.get_position()
+                shift = 0.08 if text.get_text() == r"$d^{+}$" else -0.08
+                text.set_position((x, y+shift))
+        # Optional right-panel tangency labels and arrows: uncomment to restore.
+        # # Equal normal offsets make each pair symmetric about the circle midpoint.
+        # for signs, contacts in journal["common_tangents"](
+        #         journal["CENTER_1"], journal["CENTER_2"], journal["RADIUS"]).items():
+        #     direction = contacts[1]-contacts[0]
+        #     normal = perpendicular(direction)/np.linalg.norm(direction)
+        #     external = signs[0] == signs[1]
+        #     for index, contact in enumerate(contacts, 1):
+        #         if external:
+        #             side = 1 if signs == ("-", "-") else -1
+        #             offset = side * 0.95 * normal
+        #         else:
+        #             # Reverse the inward normals to place both labels outside their circles.
+        #             side = (1 if signs == ("+", "-") else -1) * (1 if index == 1 else -1)
+        #             offset = -side * 1.00 * normal
+        #         dx, dy = offset
+        #         ha = va = "center"
+        #         color = journal["COLORS"][signs]
+        #         right.annotate(rf"$\mathbf{{q}}_{index}^{{{','.join(signs)}}}$",
+        #                        xy=contact, xytext=(contact[0]+dx, contact[1]+dy),
+        #                        color=color, fontsize=SYMBOL_FONT_SIZE,
+        #                        ha=ha, va=va, zorder=10,
+        #                        arrowprops=dict(arrowstyle="->",
+        #                                        connectionstyle=f"arc3,rad={0.35 if external else -0.35}",
+        #                                        color=color, lw=1.0, mutation_scale=10,
+        #                                        shrinkA=1, shrinkB=3))
+        # Align the centers of the one-row and two-row legend boxes.
+        for axis, horizontal in ((left, 0.5), (right, 0.73)):
+            legend = axis.get_legend()
+            legend.set_loc("center")
+            legend.set_bbox_to_anchor((horizontal, 0.12))
+        left.set_title("a) Point–circle construction", fontsize=24, y=1.0, pad=6)
+        right.set_title("b) Circle–circle construction", fontsize=24, y=1.0, pad=6)
 
-    current_directory = (
-        Path(__file__).resolve().parent
-    )
+    return figure
 
-    pdf_path = (
-        current_directory
-        / f"{OUTPUT_FILENAME}.pdf"
-    )
 
-    png_path = (
-        current_directory
-        / f"{OUTPUT_FILENAME}.png"
-    )
-
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--no-show", action="store_true", help="Export without opening a window.")
+    args = parser.parse_args()
+    figure = create_figure()
     if SAVE_FIGURE:
-        figure.savefig(
-            pdf_path,
-            bbox_inches="tight",
-        )
-
-        figure.savefig(
-            png_path,
-            dpi=300,
-            bbox_inches="tight",
-        )
-
-        print("Saved:")
-        print(pdf_path)
-        print(png_path)
-
-    if SHOW_FIGURE:
-        plt.show(
-            block=True
-        )
-
+        for extension in ("pdf", "png"):
+            output = Path(__file__).resolve().parent / f"{OUTPUT_FILENAME}.{extension}"
+            with plt.rc_context(THESIS_STYLE):
+                figure.savefig(output, dpi=300, bbox_inches="tight")
+            print(f"Saved {output}")
+    if SHOW_FIGURE and not args.no_show:
+        plt.show(block=True)
     else:
-        plt.close(
-            figure
-        )
+        plt.close(figure)
+
+
+if __name__ == "__main__":
+    main()
