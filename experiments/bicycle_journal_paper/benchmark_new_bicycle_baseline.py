@@ -43,7 +43,7 @@ from kappa_planner.baseline_construction_new import (
 )
 from kappa_planner.corridor import CorridorWorld
 from kappa_planner.vehicle import Bicycle
-from kappa_planner.refinement_new import refine_bicycle_baseline
+from kappa_planner.refinement_new import refine_bicycle_baseline, is_baseline_circle
 from kappa_planner.helpers.poses import (
     absolute_to_relative_pose,
     relative_to_absolute_pose,
@@ -429,23 +429,46 @@ def evaluate_refinement(corridors, baseline, bicycle, initial_pose, final_pose):
         "status": "failed", "error": None, "failure_reason": None,
         "computation_ms": None, "traversal_time": None,
         "trajectory_primitives": None, "active_circles": None,
+        "baseline_position_circles": None,
+        "all_active_circles_at_baseline": None,
         "solution_source": None, "attempt_status": "failed",
     }
     started = perf_counter_ns()
     try:
-        result = refine_bicycle_baseline(
+        refinement_return = refine_bicycle_baseline(
             corridor_list=corridors, bicycle=bicycle, baseline=baseline,
             initial_pose=initial_pose, final_pose=final_pose,
+            return_failure=True,
         )
+        if isinstance(refinement_return, tuple) and len(refinement_return) == 2:
+            result, failure = refinement_return
+        else:
+            # Preserve compatibility with patched/legacy implementations used
+            # by downstream benchmark tests.
+            result, failure = refinement_return, None
         outcome["computation_ms"] = (perf_counter_ns() - started) / 1e6
         if result is None or result.trajectory is None:
-            outcome["failure_reason"] = "complete_refinement_failed"
+            outcome["failure_reason"] = (
+                failure.reason if failure is not None else "complete_refinement_failed"
+            )
         else:
+            active_circles = [
+                next(iter(result.circle_groups[index].values()))
+                for index in result.active_circle_indices
+            ]
+            baseline_position_circles = sum(
+                is_baseline_circle(circle) for circle in active_circles
+            )
             outcome.update(
                 status="success", attempt_status="success", solution_source="refined",
                 traversal_time=compute_trajectory_traversal_time(result.trajectory),
                 trajectory_primitives=len(result.trajectory),
                 active_circles=len(result.active_circle_indices),
+                baseline_position_circles=baseline_position_circles,
+                all_active_circles_at_baseline=(
+                    bool(active_circles)
+                    and baseline_position_circles == len(active_circles)
+                ),
             )
     except Exception as exception:
         outcome["computation_ms"] = (perf_counter_ns() - started) / 1e6
@@ -1189,6 +1212,16 @@ def run_group(corridor_count, cases, max_generated, rng, bicycle):
         "refinement_errors": dict(Counter(
             r["refinement"]["error"] for r in records if r["refinement"].get("error")
         )),
+        "refinement_failure_reasons": dict(Counter(
+            r["refinement"]["failure_reason"]
+            for r in records
+            if r["refinement"].get("attempt_status") in {"failed", "error"}
+            and r["refinement"].get("failure_reason")
+        )),
+        "successful_refinements_all_circles_at_baseline": sum(
+            r["refinement"].get("all_active_circles_at_baseline") is True
+            for r in records
+        ),
         "refinement_recovers_boundary_failure_cases": sum(
             r["baseline_success_boundary_failure"] and r["refinement_success"] for r in records
         ),
@@ -1390,6 +1423,9 @@ def main():
         print(
             f"  refinement outcomes: {group['refinement_statuses']}; "
             f"sources: {group['refinement_solution_sources']}; "
+            f"failure reasons: {group['refinement_failure_reasons']}; "
+            f"all circles at baseline: "
+            f"{group['successful_refinements_all_circles_at_baseline']}; "
             f"recovered boundary failures: {group['refinement_recovers_boundary_failure_cases']}; "
             f"paired cases: {comparison['paired_cases']}", flush=True,
         )

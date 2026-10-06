@@ -167,6 +167,14 @@ class BicycleRefinementResult:
         return 4
 
 
+@dataclass(frozen=True)
+class BicycleRefinementFailure:
+    """Stage-specific reason why no complete refinement was produced."""
+
+    reason: str
+    transition_index: int | None = None
+
+
 
 
 
@@ -184,6 +192,7 @@ def refine_bicycle_baseline(
     baseline,
     initial_pose=None,
     final_pose=None,
+    return_failure=False,
 ):
     """
     Refine a validated bicycle baseline and, when boundary poses are available,
@@ -240,10 +249,17 @@ def refine_bicycle_baseline(
         BicycleRefinementResult, or None if the refined chain cannot be made
         feasible. The validated baseline remains the caller's fallback.
     """
+    def failed(reason, transition_index=None):
+        failure = BicycleRefinementFailure(reason, transition_index)
+        return (None, failure) if return_failure else None
+
+    def succeeded(result):
+        return (result, None) if return_failure else result
+
     n = len(corridor_list)
 
     if n < 2:
-        return None
+        return failed("invalid_corridor_sequence")
 
     R = bicycle.max_radius
     r = bicycle.width / 2
@@ -312,7 +328,7 @@ def refine_bicycle_baseline(
             )
 
         if circle is None:
-            return None
+            return failed("circle_placement_failed", j)
 
         circle_groups[j][tau] = circle
 
@@ -323,7 +339,7 @@ def refine_bicycle_baseline(
     # At least one circle is required by the current complete-trajectory
     # construction.
     if len(active_circle_indices) == 0:
-        return None
+        return failed("no_active_refinement_circles")
 
     # The safe-region cache depends only on corridor indices, not on circle
     # positions, and can therefore be reused after circle repairs.
@@ -343,7 +359,7 @@ def refine_bicycle_baseline(
     )
 
     if internal_state is None:
-        return None
+        return failed("no_tangent_connection_found")
 
     (
         active_circle_indices,
@@ -358,12 +374,12 @@ def refine_bicycle_baseline(
         # Preserve the useful internal refinement result when the caller did
         # not provide/construct boundary poses, but do not claim a complete
         # trajectory.
-        return BicycleRefinementResult(
+        return succeeded(BicycleRefinementResult(
             circle_groups=circle_groups,
             straight_passage_groups=straight_passage_groups,
             active_circle_indices=active_circle_indices,
             tangents=tangents,
-        )
+        ))
 
     boundary_state = build_consistent_boundary_state(
         circle_groups=circle_groups,
@@ -380,7 +396,7 @@ def refine_bicycle_baseline(
     )
 
     if boundary_state is None:
-        return None
+        return failed("boundary_connection_failed_after_circle_fallback")
 
     (
         active_circle_indices,
@@ -410,7 +426,7 @@ def refine_bicycle_baseline(
     )
 
     if boundary_simplification is None:
-        return None
+        return failed("boundary_tangent_chain_could_not_be_simplified")
 
     (
         active_circle_indices,
@@ -435,7 +451,7 @@ def refine_bicycle_baseline(
     )
 
     if trajectory is None:
-        return None
+        return failed("refined_trajectory_assembly_failed")
 
     traversal_time = float(
         sum(
@@ -444,7 +460,7 @@ def refine_bicycle_baseline(
         )
     )
 
-    return BicycleRefinementResult(
+    return succeeded(BicycleRefinementResult(
         circle_groups=circle_groups,
         straight_passage_groups=straight_passage_groups,
         active_circle_indices=active_circle_indices,
@@ -453,7 +469,7 @@ def refine_bicycle_baseline(
         final_maneuvers=final_maneuvers,
         trajectory=trajectory,
         traversal_time=traversal_time,
-    )
+    ))
 
 
 
