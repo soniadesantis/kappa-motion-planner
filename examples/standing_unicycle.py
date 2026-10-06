@@ -96,9 +96,13 @@ analytical_trajectory = mp.compute_trajectory_analytical()
 print(f"Analytical trajectory computed in {mp.comp_time_analytical_sol} seconds.")
 
 ### Plot results ###
-figure = mp.plot_planner_inputs()
-plt.title('Analytical Motion Planner - Unicycle Within Multiple Corridors')
-plot_analytical_trajectory(analytical_trajectory, figure = figure)
+figure, ax = plt.subplots(figsize=(12, 6))
+mp.plot_planner_inputs(figure=figure, plot_shrunken_corridors=False,
+                       plot_corridor_numbers=True)
+plot_analytical_trajectory(analytical_trajectory, figure=ax, color="#2563eb", linewidth=2.5)
+ax.set(title="Standing unicycle planner: five corridors", xlabel="x [m]", ylabel="y [m]")
+ax.grid(alpha=0.15)
+figure.tight_layout()
 plot_velocity_profiles(analytical_trajectory, unicycle)
 
-plt.show(block = True)
+plt.show(block=True)

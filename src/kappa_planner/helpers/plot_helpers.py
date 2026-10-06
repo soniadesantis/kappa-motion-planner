@@ -132,7 +132,8 @@ def plot_vehicle(vehicle, figure, color='b', plot_vector=False):
     if plot_vector:
         ax.quiver(state[0], state[1], cos(state[2]), sin(state[2]), color=color, angles='xy', scale_units='xy', scale=2/length) 
 
-def plot_planner_inputs(planner, figure=None, plot_intermediate_circles = False, plot_shrunken_corridors = True ):
+def plot_planner_inputs(planner, figure=None, plot_intermediate_circles = False,
+                        plot_shrunken_corridors = True, plot_corridor_numbers=False):
     """
     Plot the corridors and start/end poses of a MotionPlanner instance.
 
@@ -142,11 +143,18 @@ def plot_planner_inputs(planner, figure=None, plot_intermediate_circles = False,
     :type figure: matplotlib.figure.Figure, optional
     :returns: The resulting matplotlib figure.
     :rtype: matplotlib.figure.Figure
+    :param plot_corridor_numbers: Label corridor centers with C1, C2, etc.
     """
 
     figure = plot_corridors(planner.corridor_list, figure)
     if plot_shrunken_corridors:
         plot_corridors(planner.shrunken_corridor_list, figure)
+
+    if plot_corridor_numbers:
+        ax = figure.axes[0]
+        for index, corridor in enumerate(planner.corridor_list, start=1):
+            ax.text(*corridor.center, f"C{index}", ha="center", va="center", fontsize=9,
+                    bbox=dict(facecolor="white", edgecolor="none", alpha=0.8), zorder=5)
 
     r = planner.vehicle.width * 0.5
     l = r + 0.3

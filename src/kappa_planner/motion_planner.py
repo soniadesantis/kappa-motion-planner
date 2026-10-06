@@ -221,6 +221,7 @@ class MotionPlanner:
         figure=None,
         plot_intermediate_circles=False,
         plot_shrunken_corridors=True,
+        plot_corridor_numbers=False,
     ):
         """
         Plot the corridors and start/end poses of the motion planner.
@@ -235,6 +236,7 @@ class MotionPlanner:
             figure,
             plot_intermediate_circles=plot_intermediate_circles,
             plot_shrunken_corridors=plot_shrunken_corridors,
+            plot_corridor_numbers=plot_corridor_numbers,
         )
     
     def print_planner_inputs(self):

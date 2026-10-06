@@ -53,7 +53,8 @@ def main(save_path=None):
         print(f"Traversal time reduction: {improvement:.2f}%")
 
     figure, ax = plt.subplots(figsize=(12, 6))
-    planner.plot_planner_inputs(figure=figure, plot_shrunken_corridors=False)
+    planner.plot_planner_inputs(figure=figure, plot_shrunken_corridors=False,
+                                plot_corridor_numbers=True)
 
     def plot_sequence(maneuvers, label, color, linestyle="solid", linewidth=2.5):
         for index, maneuver in enumerate(maneuvers):
@@ -65,13 +66,8 @@ def main(save_path=None):
     plot_sequence(trajectory, "Refined trajectory" if planner.solution_source == "refined"
                   else "Baseline fallback", "#2563eb")
     solution = planner.refinement_result if planner.solution_source == "refined" else baseline
-    plot_sequence(solution.initial_maneuvers, "Start connection", "#16a34a", linewidth=3)
-    plot_sequence(solution.final_maneuvers, "Goal connection", "#ea580c", linewidth=3)
-    for index, corridor in enumerate(corridors, start=1):
-        ax.text(*corridor.center, f"C{index}", ha="center", va="center", fontsize=9,
-                bbox=dict(facecolor="white", edgecolor="none", alpha=0.8))
-    for name, pose in (("Start", START_POSE), ("Goal", END_POSE)):
-        ax.annotate(name, pose[:2], xytext=(6, 8), textcoords="offset points", color="#b91c1c")
+    plot_sequence(solution.initial_maneuvers, "Initial connection", "#16a34a", linewidth=3)
+    plot_sequence(solution.final_maneuvers, "Final connection", "#ea580c", linewidth=3)
     ax.set(title="Axis-aligned bicycle planner: ten corridors", xlabel="x [m]", ylabel="y [m]")
     ax.grid(alpha=0.15)
     ax.legend(loc="upper right")
