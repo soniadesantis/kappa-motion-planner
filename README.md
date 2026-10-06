@@ -75,8 +75,9 @@ This means that modifications to the source files are immediately reflected with
 ## Running an example
 After installation, you can run one of the example scripts: 
 ```bash
-python examples/example_multiple_corridors_unicycle.py
-python examples/example_bicycle.py
+python examples/hello_world_unicycle.py
+python examples/standing_unicycle.py
+python examples/axis_aligned_bicycle.py
 ```                                          
 
 Select the planner through `MotionPlanner(..., assumptions="standing")` for
