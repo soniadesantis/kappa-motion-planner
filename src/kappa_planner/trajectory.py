@@ -657,11 +657,14 @@ class LinearSegmentUnicycle(_LinearSegmentTrajectory):
     """Straight segment with unicycle velocity controls."""
 
     def __init__(self, x0, y0, xf, yf, theta, v, unicycle=None,
-                 t0=0, samples_number=10):
+                 t0=0, samples_number=10, start_circle_index=None,
+                 end_circle_index=None):
         from .vehicle import Unicycle
         if unicycle is not None and not isinstance(unicycle, Unicycle):
             raise TypeError("LinearSegmentUnicycle requires a Unicycle.")
         self.unicycle = unicycle
+        self.start_circle_index = start_circle_index
+        self.end_circle_index = end_circle_index
         super().__init__(x0, y0, xf, yf, theta, v, t0, samples_number)
 
 
@@ -669,9 +672,12 @@ class LinearSegmentBicycle(_LinearSegmentTrajectory):
     """Straight bicycle segment with zero steering."""
 
     def __init__(self, x0, y0, xf, yf, theta, v, bicycle,
-                 t0=0, samples_number=10):
+                 t0=0, samples_number=10, start_circle_index=None,
+                 end_circle_index=None):
         _check_bicycle_model(bicycle)
         self.bicycle = bicycle
+        self.start_circle_index = start_circle_index
+        self.end_circle_index = end_circle_index
         self.delta = 0.0
         super().__init__(x0, y0, xf, yf, theta, v, t0, samples_number)
         self.steering_angle = np.zeros(self.samples_number)

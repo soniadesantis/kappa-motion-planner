@@ -54,6 +54,27 @@ class CorridorWorld:
         self.W = self._init_W_from_width_height_tilt() # edge parameter vectors
         self.wf, self.wr, self.wb, self.wl = self.W.T # individual edge parameter vectors
         self.corners = self.get_corners()
+        self.outward_normals = self._init_outward_normals()
+
+    def _init_outward_normals(self):
+        """Outward unit normals in forward/right/back/left edge order."""
+        forward = np.array([cos(self.tilt), sin(self.tilt)])
+        right = np.array([sin(self.tilt), -cos(self.tilt)])
+        return {
+            self.FWD: forward, self.RGT: right,
+            self.BCK: -forward, self.LFT: -right,
+        }
+
+    def get_edge_segment(self, edge_index):
+        """Return the two corner points bounding the selected corridor edge."""
+        edges = {
+            self.FWD: (3, 0), self.RGT: (0, 1),
+            self.BCK: (1, 2), self.LFT: (2, 3),
+        }
+        if edge_index not in edges:
+            raise ValueError(f"Invalid corridor edge index: {edge_index}")
+        start, end = edges[edge_index]
+        return self.corners[start], self.corners[end]
         
     def __str__(self):
         """Return a string representation of the corridor."""

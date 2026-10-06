@@ -358,6 +358,8 @@ def compute_segment_between_two_circles_objects(
     circ2,
     vehicle,
     overlap=False,
+    start_circle_index=None,
+    end_circle_index=None,
 ):
     x1, y1, theta1, x2, y2, _ = compute_extreme_poses_arc_line(
         circ1.xc,
@@ -381,4 +383,6 @@ def compute_segment_between_two_circles_objects(
         t0=0,
         **model,
         samples_number=10,
+        start_circle_index=start_circle_index,
+        end_circle_index=end_circle_index,
     )
