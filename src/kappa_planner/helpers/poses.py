@@ -8,6 +8,41 @@ reference frames (e.g., corridor frame and world frame).
 from math import sin, cos, pi
 
 
+def compute_axis_aligned_boundary_pose(corridor, neighbor, bicycle, initial=True):
+    """Place a disk-safe endpoint at the corridor end furthest from its overlap.
+
+    The overlap determines the heading, including corridors whose stored tilt
+    points opposite to traversal. Ambiguous symmetric geometry requires an
+    explicit pose. Placement alone does not guarantee a feasible connection.
+    """
+    import numpy as np
+    from .baseline_construction import (
+        compute_overlap_two_axis_aligned_corridors, compute_safe_overlap,
+        compute_boundary_corridor_direction,
+    )
+
+    overlap = compute_overlap_two_axis_aligned_corridors(corridor, neighbor)
+    safe_overlap = None if overlap is None else compute_safe_overlap(overlap, bicycle.width / 2)
+    if safe_overlap is None:
+        raise ValueError("Cannot place a default pose without a nonempty safe corridor overlap.")
+    direction = compute_boundary_corridor_direction(
+        corridor, safe_overlap, corridor.center, initial=initial
+    )
+    if direction is None:
+        raise ValueError("Ambiguous endpoint traversal direction; provide an explicit boundary pose.")
+    direction = np.round(direction)
+    axis = int(np.argmax(np.abs(direction)))
+    corners = np.asarray(corridor.corners)
+    lower, upper = corners.min(axis=0), corners.max(axis=0)
+    radius = bicycle.width / 2
+    # A small additional inset avoids placing the disk exactly on the wall.
+    inset = radius + min(radius, 0.05 * (upper[axis] - lower[axis] - 2 * radius))
+    outer_sign = -direction[axis] if initial else direction[axis]
+    position = np.asarray(corridor.center, dtype=float).copy()
+    position[axis] = upper[axis] - inset if outer_sign > 0 else lower[axis] + inset
+    return [float(position[0]), float(position[1]), float(np.arctan2(direction[1], direction[0]))]
+
+
 def relative_to_absolute_pose(corridor, relative_pose):
     '''
     Convert a pose expressed in the corridor frame to an absolute pose.

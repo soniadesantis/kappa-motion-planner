@@ -75,8 +75,35 @@ This means that modifications to the source files are immediately reflected with
 ## Running an example
 After installation, you can run one of the example scripts: 
 ```bash
-python examples/hello_world.py
+python examples/example_multiple_corridors_unicycle.py
+python examples/example_bicycle.py
 ```                                          
+
+Select the planner through `MotionPlanner(..., assumptions="standing")` for
+the unicycle pipeline (the default), or `assumptions="axis-aligned"` for the
+bicycle baseline and refinement pipeline. Other model/planner combinations
+are currently unsupported. The former checks the standing assumptions; the
+latter checks axis alignment, circular-footprint containment, safe overlaps,
+passage directions, and the absence of reversals before constructing a baseline.
+Geometrically valid inputs can still fail trajectory construction.
+
+Both accept optional `start_pose` and `end_pose` in world coordinates. Standing
+defaults use the corridor tilt. Axis-aligned defaults lie toward the outer ends
+of the first and last corridors, with headings inferred from their overlaps;
+ambiguous geometry requires explicit poses. Default placement does not guarantee
+a feasible boundary connection. Normalized `relative_start_pose` and
+`relative_end_pose` retain the existing shrunken-corridor frame convention:
+positions in `[-1, 1]`, with heading in radians relative to the frame's x axis.
+Each endpoint accepts either an absolute or a relative pose.
+
+For the bicycle planner, `compute_trajectory_analytical()` attempts refinement
+and returns the complete baseline when refinement fails. If neither produces
+a complete boundary-connected trajectory, it raises `ValueError`.
+Inspect `baseline`, `refinement_result`, `refinement_failure_reason`, and
+`solution_source` (`"refined"` or `"baseline"`) for the outcome.
+`traversal_time` is the returned trajectory's duration in seconds;
+`comp_time_analytical_sol` includes baseline construction, boundary attachment,
+assembly, and the refinement attempt, excluding constructor validation and plotting.
 
 ## Submitting an issue
 

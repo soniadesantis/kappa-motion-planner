@@ -1,21 +1,23 @@
 import warnings
-from .vehicle import Unicycle, Bicycle, Bicycle_Acceleration
-from .geometry import IntermediateCircle, IntermediateCirclesSequence
-from .helpers.poses import compute_end_pose, compute_start_pose, pose_from_shrunken_corridor_relative_frame
-from .helpers.inputs_check import check_standing_assumptions, check_core_assumptions, check_inputs_analytical_planner, compute_minimum_widths, check_position_out_of_circles_assumption
+from time import perf_counter
+import numpy as np
+from .vehicle import Unicycle, Bicycle
+from .geometry import IntermediateCirclesSequence
+from .helpers.poses import compute_end_pose, compute_start_pose, pose_from_shrunken_corridor_relative_frame, compute_axis_aligned_boundary_pose
+from .helpers.inputs_check import check_standing_assumptions, check_core_assumptions, compute_minimum_widths, check_position_out_of_circles_assumption
 from .helpers.helper_functions import Timer
 from .helpers.plot_helpers import plot_planner_inputs
 from .helpers.corridor_geometry import shrink_corridor_list
 from .helpers.trajectory_unicycle import compute_trajectory_unicycle_two_corridors, compute_trajectory_unicycle_multiple_corridors_optimal
 
 
-from .helpers.trajectory_bicycle import compute_trajectory_bicycle_multiple_corridors_optimal, compute_trajectory_bicycle_two_corridors_optimal
-from .helpers.trajectory_unicycle_core import compute_trajectory_unicycle_multiple_corridors_core, compute_trajectory_unicycle_two_corridors_core
-
-from .helpers.intermediate_circles_choice import (
-    not_ambiguous_circle_choices,
-    create_intermediate_circle_choice_sequence,
+from .helpers.intermediate_circles_choice import not_ambiguous_circle_choices
+from .helpers.baseline_construction import (
+    validate_baseline_corridor_sequence, compute_bicycle_baseline,
+    compute_baseline_boundary_connections, assemble_baseline_trajectory,
+    compute_trajectory_traversal_time,
 )
+from .helpers.refinement import refine_bicycle_baseline
 
 
 class MotionPlanner:
@@ -30,7 +32,7 @@ class MotionPlanner:
                  relative_start_pose = None,
                  relative_end_pose = None,
                  waypoints = None,
-                 assumptions = "core"):
+                 assumptions = "standing"):
         """Constructor.
 
         :param vehicle: Vehicle model used for planning.
@@ -38,16 +40,18 @@ class MotionPlanner:
         :param corridor_list: Ordered sequence of corridors.
         :type corridor_list: list[CorridorWorld]
         :param start_pose: Initial pose included in the first corridor. If not provided, it is computed automatically
-            at a distance of 1.3 times the vehicle length from the midpoint of the back edge of the first corridor.
+            using the selected planner's default placement rule.
         :type start_pose: list[float] | numpy.ndarray
         :param end_pose: Goal pose included in the last corridor. If not provided, it is computed automatically
-            at a distance of 1.3 times the vehicle length from the midpoint of the front edge of the last corridor.
+            using the selected planner's default placement rule.
         :type end_pose: list[float] | numpy.ndarray
         :param waypoints: List of waypoints to make the trajectory pass through (used only if provided).
         :type waypoints: list[list[float]] | numpy.ndarray
-        :param assumptions: Which set of assumptions to check for the analytical planner. Options are "core" (default) and "standing".
+        :param assumptions: Which set of assumptions to check for the analytical planner. Options are "standing" (default, unicycle) and "axis-aligned" (bicycle).
         :type assumptions: str
         """
+        # Standing defaults use corridor tilt; axis-aligned defaults use overlap
+        # geometry. Relative inputs always retain the normalized corridor frame.
         # Core inputs
         self.vehicle = vehicle
         self.corridor_list = corridor_list
@@ -57,6 +61,9 @@ class MotionPlanner:
         self.relative_end_pose = relative_end_pose
         self.waypoints = waypoints
         self.assumptions = assumptions
+        self._validate_planner_selection(vehicle, assumptions, corridor_list)
+        self._default_start_pose = start_pose is None and relative_start_pose is None
+        self._default_end_pose = end_pose is None and relative_end_pose is None
         # Validate mutually exclusive inputs
         self._validate_pose_inputs()
 
@@ -104,6 +111,12 @@ class MotionPlanner:
         new_relative_end_pose = valid_updates.get(
             "relative_end_pose", self.relative_end_pose
         )
+        # Stored absolute poses derived from relative inputs are not a second
+        # user-supplied representation.
+        if new_relative_start_pose is not None and "start_pose" not in valid_updates:
+            new_start_pose = None
+        if new_relative_end_pose is not None and "end_pose" not in valid_updates:
+            new_end_pose = None
 
         # If one pose representation is updated, it overrides the other
         if "start_pose" in valid_updates and "relative_start_pose" not in valid_updates:
@@ -122,6 +135,15 @@ class MotionPlanner:
         if new_end_pose is not None and new_relative_end_pose is not None:
             raise ValueError("Provide either end_pose or relative_end_pose, not both.")
 
+        self._validate_planner_selection(
+            valid_updates.get("vehicle", self.vehicle),
+            valid_updates.get("assumptions", self.assumptions),
+            valid_updates.get("corridor_list", self.corridor_list),
+        )
+        if "start_pose" in changed or "relative_start_pose" in changed:
+            self._default_start_pose = new_start_pose is None and new_relative_start_pose is None
+        if "end_pose" in changed or "relative_end_pose" in changed:
+            self._default_end_pose = new_end_pose is None and new_relative_end_pose is None
         # Apply validated updates
         for key, value in valid_updates.items():
             setattr(self, key, value)
@@ -144,6 +166,7 @@ class MotionPlanner:
         start_changed = "start_pose" in changed
         end_changed = "end_pose" in changed
         waypoints_changed = "waypoints" in changed
+        assumptions_changed = "assumptions" in changed
 
         # Recompute shrunken corridors when corridor geometry or vehicle geometry changed
         if corridors_changed or vehicle_changed:
@@ -154,18 +177,19 @@ class MotionPlanner:
             )
 
         # If relative poses are the source of truth, force recomputation of absolute poses
-        if relative_start_changed or (corridors_changed and self.relative_start_pose is not None):
+        geometry_changed = corridors_changed or vehicle_changed or assumptions_changed
+        if relative_start_changed or (geometry_changed and self.relative_start_pose is not None):
             self.start_pose = None
 
-        if relative_end_changed or (corridors_changed and self.relative_end_pose is not None):
+        if relative_end_changed or (geometry_changed and self.relative_end_pose is not None):
             self.end_pose = None
 
-        # If a vehicle change affects default pose placement, allow recomputation
-        if vehicle_changed and self.relative_start_pose is None and "start_pose" not in changed:
-            self.start_pose = None
-
-        if vehicle_changed and self.relative_end_pose is None and "end_pose" not in changed:
-            self.end_pose = None
+        # Only automatically placed endpoints are regenerated after geometry changes.
+        if corridors_changed or vehicle_changed or assumptions_changed:
+            if self._default_start_pose:
+                self.start_pose = None
+            if self._default_end_pose:
+                self.end_pose = None
 
         # Resolve absolute poses again when needed
         if (
@@ -175,6 +199,7 @@ class MotionPlanner:
             or relative_end_changed
             or corridors_changed
             or vehicle_changed
+            or assumptions_changed
         ):
             self._resolve_start_and_end_poses()
 
@@ -187,6 +212,7 @@ class MotionPlanner:
             or relative_start_changed
             or relative_end_changed
             or waypoints_changed
+            or assumptions_changed
         ):
             self._refresh_analytical_planner_state()
 
@@ -267,7 +293,7 @@ class MotionPlanner:
 
     def compute_trajectory_analytical(self, obstacle_center=None, obstacle_radius=None):
         """
-        Compute the time-optimal trajectory from the start pose to the end pose.
+        Compute a trajectory using the selected planner assumptions.
 
         Uses the analytical planner to generate a trajectory constrained within
         the specified corridors or waypoints.
@@ -282,7 +308,7 @@ class MotionPlanner:
             else None
         )
 
-        if isinstance(vehicle, Unicycle) and waypoints is None:
+        if self.assumptions == "standing" and waypoints is None:
             return self._compute_unicycle_trajectory(
                 corridors,
                 vehicle,
@@ -290,8 +316,8 @@ class MotionPlanner:
                 end_pose,
             )
 
-        if isinstance(vehicle, Bicycle) and waypoints is None:
-            return self._compute_bicycle_trajectory(
+        if self.assumptions == "axis-aligned" and waypoints is None:
+            return self._compute_axis_aligned_trajectory(
                 corridors,
                 vehicle,
                 start_pose,
@@ -316,12 +342,16 @@ class MotionPlanner:
         default_pose_margin = 1.3 * self.vehicle.length
         if self.start_pose is None:
             if self.relative_start_pose is None:
-                margin = default_pose_margin
-                self.start_pose = compute_start_pose(
-                    self.corridor_list[0],
-                    self.vehicle,
-                    margin,
-                )
+                if self.assumptions == "axis-aligned":
+                    self.start_pose = compute_axis_aligned_boundary_pose(
+                        self.corridor_list[0], self.corridor_list[1], self.vehicle, initial=True
+                    )
+                else:
+                    self.start_pose = compute_start_pose(
+                        self.corridor_list[0],
+                        self.vehicle,
+                        default_pose_margin,
+                    )
             else:
                 self.start_pose = pose_from_shrunken_corridor_relative_frame(
                     self.relative_start_pose,
@@ -330,12 +360,16 @@ class MotionPlanner:
 
         if self.end_pose is None:
             if self.relative_end_pose is None:
-                margin = default_pose_margin
-                self.end_pose = compute_end_pose(
-                    self.corridor_list[-1],
-                    self.vehicle,
-                    margin,
-                )
+                if self.assumptions == "axis-aligned":
+                    self.end_pose = compute_axis_aligned_boundary_pose(
+                        self.corridor_list[-1], self.corridor_list[-2], self.vehicle, initial=False
+                    )
+                else:
+                    self.end_pose = compute_end_pose(
+                        self.corridor_list[-1],
+                        self.vehicle,
+                        default_pose_margin,
+                    )
             else:
                 self.end_pose = pose_from_shrunken_corridor_relative_frame(
                     self.relative_end_pose,
@@ -343,7 +377,15 @@ class MotionPlanner:
                 )
 
     def _refresh_analytical_planner_state(self):
-        if not isinstance(self.vehicle, (Unicycle, Bicycle, Bicycle_Acceleration)):
+        self.baseline = None
+        self.baseline_failure = None
+        self.refinement_result = None
+        self.refinement_failure_reason = None
+        self.solution_source = None
+        self.traversal_time = None
+        self.comp_time_analytical_sol = 0.0
+        if self.assumptions == "axis-aligned":
+            self._refresh_axis_aligned_state()
             return
 
         (
@@ -377,15 +419,6 @@ class MotionPlanner:
 
             self.warn_msgs += wrn_msgs_standing_assumptions
 
-        # Extension version
-        elif self.assumptions == "core":
-            self.intermediate_circles_choice_sequence = create_intermediate_circle_choice_sequence(
-            self.corridor_list,
-            self.vehicle,
-            self.start_pose,
-            self.end_pose,
-                )
-            
         if self.inputs_check:
             (
                 self.position_out_of_circles_assumption_check,
@@ -401,36 +434,6 @@ class MotionPlanner:
 
         self.exit_trajectory_start = []
         self.exit_trajectory_end = []
-
-        # if self.position_out_of_circles_assumption_check is False:
-        #     (
-        #         self.exit_trajectory_start,
-        #         self.exit_trajectory_end
-        #     ) = compute_circle_exit_trajectory(
-        #         self.inside_first_circle,
-        #         self.inside_last_circle,
-        #         self.vehicle,
-        #         self.start_pose, 
-        #         self.end_pose,
-        #         self.intermediate_circles_choice_sequence)
-            
-            # if self.inside_first_circle and self.inside_last_circle:
-            #     new_start_pose = self.exit_trajectory_start[-1].end_pose 
-            #     new_end_pose = self.exit_trajectory_end[0].start_pose
-            #     # self.update(start_pose = new_start_pose, end_pose = new_end_pose)
-            #     self.start_pose = new_start_pose
-            #     self.end_pose = new_end_pose
-            # elif self.inside_first_circle:
-            #     new_start_pose = self.exit_trajectory_start[-1].end_pose 
-            #     self.start_pose = new_start_pose
-            #     # self.update(start_pose = new_start_pose)
-            # elif self.inside_last_circle:
-            #     new_end_pose = self.exit_trajectory_end[0].start_pose
-            #     self.end_pose = new_end_pose
-            #     # self.update(end_pose = new_end_pose)
-
-        if isinstance(self.vehicle, Bicycle):
-            self.inputs_check = self.inputs_check and self.position_out_of_circles_assumption_check
 
         self.warn_msgs += warn_msgs_position_out_of_circles_assumption
 
@@ -492,81 +495,108 @@ class MotionPlanner:
             else:
                 self.intermediate_circles = IntermediateCirclesSequence([intermediate_circles])
 
-        elif self.assumptions == "core":
-            if len(corridors) == 2:
-                with Timer() as timer:
-                    trajectory = compute_trajectory_unicycle_two_corridors_core(
-                        corridors[0],
-                        corridors[1],
-                        start_pose,
-                        end_pose,
-                        vehicle,
-                        self.intermediate_circles_choice_sequence,
-                        self.exit_trajectory_start,
-                        self.exit_trajectory_end
-                    )
-            elif len(corridors) > 2:
-                with Timer() as timer:
-                    trajectory = compute_trajectory_unicycle_multiple_corridors_core(
-                    corridors,
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles_choice_sequence,
-                    self.inside_first_circle,
-                    self.inside_last_circle,
-                )
-            elif len(corridors) == 1:
-                raise NotImplementedError(
-                    "Analytical unicycle trajectory computation is not implemented for one corridor."
-                )
-            self.comp_time_analytical_sol = timer()
-
-
-        
         return trajectory
     
 
-    def _compute_bicycle_trajectory(
-        self,
-        corridors,
-        vehicle,
-        start_pose,
-        end_pose,
-    ):
-        """
-        Compute an analytical trajectory for a bicycle model.
-        """
-        if not self.inputs_check:
-            raise ValueError(
-                "Invalid inputs for analytical motion planner.\n"
-                "Check warning messages for details:\n"
-                + "\n".join(self.warn_msgs)
-            )
-
-        if len(corridors) == 2:
-            with Timer() as timer:
-                trajectory = compute_trajectory_bicycle_two_corridors_optimal(
-                    corridors[0],
-                    corridors[1],
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles_choice_sequence,
-                )
-        elif len(corridors) > 2:
-            with Timer() as timer:
-                trajectory = compute_trajectory_bicycle_multiple_corridors_optimal(
-                    corridors,
-                    start_pose,
-                    end_pose,
-                    vehicle,
-                    self.intermediate_circles_choice_sequence,
-                )
-        elif len(corridors) == 1:
+    @staticmethod
+    def _validate_planner_selection(vehicle, assumptions, corridors):
+        if assumptions not in ("standing", "axis-aligned"):
+            raise ValueError('assumptions must be "standing" or "axis-aligned".')
+        model = Unicycle if assumptions == "standing" else Bicycle
+        if not isinstance(vehicle, model):
             raise NotImplementedError(
-                "Analytical bicycle trajectory computation is not implemented for one corridor."
+                f'The {assumptions} planner currently supports only {model.__name__}.'
             )
-        
-        self.comp_time_analytical_sol = timer()
-        return trajectory
+        if len(corridors) < 2:
+            raise ValueError("Provide at least two corridors.")
+        if assumptions == "axis-aligned":
+            for corridor in corridors:
+                axis = np.asarray(corridor.unit_vector)
+                if not np.allclose(axis, np.round(axis), atol=1e-9, rtol=0):
+                    raise ValueError("The axis-aligned planner requires axis-aligned rectangles.")
+                if min(corridor.width, corridor.height) <= vehicle.width:
+                    raise ValueError("Corridors must be wider than the bicycle's circular footprint.")
+
+    def _refresh_axis_aligned_state(self):
+        self.warn_msgs = []
+        self.intermediate_circles = None
+        self.intermediate_circles_choice_sequence = None
+        self.intermediate_circle_centers = []
+        for side, pose, corridor in (
+            ("start", self.start_pose, self.corridor_list[0]),
+            ("end", self.end_pose, self.corridor_list[-1]),
+        ):
+            coordinates = np.asarray(pose, dtype=float)
+            if coordinates.shape != (3,) or not np.all(np.isfinite(coordinates)):
+                raise ValueError(f"The {side} pose must contain three finite numbers.")
+            corners = np.asarray(corridor.corners)
+            lower = corners.min(axis=0) + self.vehicle.width / 2
+            upper = corners.max(axis=0) - self.vehicle.width / 2
+            if np.any(coordinates[:2] < lower - 1e-9) or np.any(coordinates[:2] > upper + 1e-9):
+                self.warn_msgs.append(f"The {side} circular footprint must fit inside its corridor.")
+        if not validate_baseline_corridor_sequence(
+            self.corridor_list, self.vehicle, self.start_pose, self.end_pose
+        ):
+            self.warn_msgs.append(
+                "Invalid axis-aligned sequence: check safe overlaps, passage directions, and reversals."
+            )
+        self.inputs_check = not self.warn_msgs
+        if not self.inputs_check:
+            warnings.warn("Invalid inputs for axis-aligned planner.\n" + "\n".join(self.warn_msgs))
+        self.vehicle.update(state=self.start_pose)
+
+    def _compute_axis_aligned_trajectory(self, corridors, vehicle, start_pose, end_pose):
+        if not self.inputs_check:
+            raise ValueError("Invalid inputs for axis-aligned planner.\n" + "\n".join(self.warn_msgs))
+        # Store the independent baseline and refinement outcomes for inspection.
+        self.refinement_result = None
+        self.refinement_failure_reason = None
+        self.solution_source = None
+        self.traversal_time = None
+        started = perf_counter()
+        try:
+            self.baseline, self.baseline_failure = compute_bicycle_baseline(
+                corridors, vehicle, start_pose, end_pose, return_failure=True
+            )
+            if self.baseline is None:
+                raise ValueError(f"Baseline construction failed: {self.baseline_failure.reason}.")
+            initial, final = compute_baseline_boundary_connections(
+                corridors, self.baseline, vehicle, start_pose, end_pose
+            )
+            self.baseline.initial_maneuvers = initial
+            self.baseline.final_maneuvers = final
+            baseline_trajectory = None
+            if initial is not None and final is not None:
+                baseline_trajectory = assemble_baseline_trajectory(corridors, self.baseline, vehicle)
+            self.baseline.trajectory = baseline_trajectory
+            if baseline_trajectory is not None:
+                self.baseline.traversal_time = compute_trajectory_traversal_time(baseline_trajectory)
+            try:
+                self.refinement_result, failure = refine_bicycle_baseline(
+                    corridors, vehicle, self.baseline, start_pose, end_pose, return_failure=True
+                )
+                if failure is not None:
+                    self.refinement_failure_reason = failure.reason
+            except Exception as error:
+                # A failed refinement must not discard a complete baseline.
+                self.refinement_failure_reason = f"{type(error).__name__}: {error}"
+            if self.refinement_result is not None and self.refinement_result.trajectory is not None:
+                trajectory = self.refinement_result.trajectory
+                self.solution_source = "refined"
+            elif baseline_trajectory is not None:
+                trajectory = baseline_trajectory
+                self.solution_source = "baseline"
+                if self.refinement_failure_reason is None:
+                    self.refinement_failure_reason = "complete_refinement_failed"
+            else:
+                raise ValueError(
+                    "No complete boundary-connected trajectory: baseline boundary connection "
+                    f"or assembly failed; refinement: {self.refinement_failure_reason}."
+                )
+            self.traversal_time = compute_trajectory_traversal_time(trajectory)
+            self.intermediate_circle_centers = [
+                fillet.center for fillet in self.baseline.fillets if fillet is not None
+            ]
+            return trajectory
+        finally:
+            self.comp_time_analytical_sol = perf_counter() - started

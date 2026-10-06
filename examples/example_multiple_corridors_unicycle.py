@@ -89,7 +89,7 @@ vehicle_vmax = 1
 vehicle_deltamax = 0.5
 
 ### Define Motion Planner ###
-mp = MotionPlanner(unicycle, corridor_list, start_pose=initial_pose, end_pose=final_pose)
+mp = MotionPlanner(unicycle, corridor_list, start_pose=initial_pose, end_pose=final_pose, assumptions="standing")
 
 ### Compute analytical trajectory ###
 analytical_trajectory = mp.compute_trajectory_analytical()
