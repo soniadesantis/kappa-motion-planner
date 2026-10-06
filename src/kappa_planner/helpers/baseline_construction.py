@@ -1535,97 +1535,49 @@ def compute_trajectory_traversal_time(
     )
 
 
-def compute_boundary_corridor_direction(
+def axis_aligned_boundary_axis(corridor, safe_overlap, tol=1e-9):
+    """Infer the endpoint corridor's traversal axis from rectangle geometry.
 
-    corridor, safe_overlap, boundary_position, initial=True, tol=1e-9
-
-):
-
+    A centered overlap in the transverse coordinate identifies the axis
+    directly. Otherwise use the rectangle's longer dimension. Symmetric
+    square geometry with no unique offset remains ambiguous.
     """
-
-
-
-    Determine the traversal direction of the first or last corridor
-
-
-
-    from the prescribed boundary position.
-
-
-
-
-
-
-
-    initial=True:
-
-
-
-        boundary position -> first safe overlap
-
-
-
-
-
-
-
-    initial=False:
-
-
-
-        last safe overlap -> boundary position
-
-
-
-    """
-
-
-
-    (x_min, x_max), (y_min, y_max) = safe_overlap
-
-
-
-    overlap_midpoint = np.array([0.5 * (x_min + x_max), 0.5 * (y_min + y_max)])
-
-
-
-    boundary_position = np.asarray(boundary_position, dtype=float)
-
-
-
-    corridor_axis = np.asarray(corridor.unit_vector, dtype=float)
-
-
-
-    if initial:
-
-        reference_vector = overlap_midpoint - boundary_position
-
+    corners = np.asarray(corridor.corners, dtype=float)
+    lower, upper = corners.min(axis=0), corners.max(axis=0)
+    midpoint = np.array([np.mean(interval) for interval in safe_overlap])
+    offsets = midpoint - np.asarray(corridor.center, dtype=float)
+    shifted_axes = np.flatnonzero(np.abs(offsets) > tol)
+    if len(shifted_axes) == 1:
+        axis_index = int(shifted_axes[0])
     else:
+        extents = upper - lower
+        if abs(extents[0] - extents[1]) <= tol:
+            return None
+        axis_index = int(np.argmax(extents))
+    axis = np.zeros(2)
+    axis[axis_index] = 1.0
+    return axis
 
-        reference_vector = boundary_position - overlap_midpoint
 
+def compute_boundary_corridor_direction(
+    corridor, safe_overlap, boundary_position, initial=True, tol=1e-9
+):
+    """Infer cardinal traversal from geometry and a boundary position.
 
-
-    projection = np.dot(reference_vector, corridor_axis)
-
-
-
-    if abs(projection) <= tol:
-
+    The corridor's stored tilt does not prescribe its traversal direction.
+    """
+    corridor_axis = axis_aligned_boundary_axis(corridor, safe_overlap, tol)
+    if corridor_axis is None:
         return None
-
-
-
-    if projection > 0:
-
-        return corridor_axis
-
-
-
-    return -corridor_axis
-
-
+    overlap_midpoint = np.array([np.mean(interval) for interval in safe_overlap])
+    boundary_position = np.asarray(boundary_position, dtype=float)
+    reference_vector = overlap_midpoint - boundary_position
+    if not initial:
+        reference_vector = -reference_vector
+    projection = np.dot(reference_vector, corridor_axis)
+    if abs(projection) <= tol:
+        return None
+    return corridor_axis if projection > 0 else -corridor_axis
 
 
 

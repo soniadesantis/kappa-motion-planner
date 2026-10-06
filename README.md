@@ -88,6 +88,13 @@ latter checks axis alignment, circular-footprint containment, safe overlaps,
 passage directions, and the absence of reversals before constructing a baseline.
 Geometrically valid inputs can still fail trajectory construction.
 
+Axis-aligned rectangles can omit `tilt`, which defaults to zero. With the
+existing `CorridorWorld` convention at zero tilt, `height` is the extent along
+x and `width` is the extent along y. For example, a vertical rectangle with
+x extent 4 and y extent 12 is `CorridorWorld(width=12, height=4, center=[4, 4])`.
+The axis-aligned planner infers travel directions and lateral walls from
+rectangle geometry; the stored tilt does not prescribe traversal.
+
 Both accept optional `start_pose` and `end_pose` in world coordinates. Standing
 defaults use the corridor tilt. Axis-aligned defaults lie toward the outer ends
 of the first and last corridors, with headings inferred from their overlaps;

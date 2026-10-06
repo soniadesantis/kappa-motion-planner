@@ -7,10 +7,12 @@ from kappa_planner import Bicycle, CorridorWorld, MotionPlanner
 from kappa_planner.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
 
 
+# At the default tilt=0, height is the x extent and width is the y extent.
+# The planner infers traversal directions from the rectangles and overlaps.
 corridors = [
-    CorridorWorld(width=4, height=12, center=[0, 0], tilt=0),
-    CorridorWorld(width=4, height=12, center=[4, 4], tilt=pi/2),
-    CorridorWorld(width=4, height=12, center=[8, 8], tilt=0),
+    CorridorWorld(width=4, height=12, center=[0, 0]),
+    CorridorWorld(width=12, height=4, center=[4, 4]),
+    CorridorWorld(width=4, height=12, center=[8, 8]),
 ]
 bicycle = Bicycle(width=1, length=1, wheelbase=1, delta_max=pi/4, delta_min=-pi/4)
 planner = MotionPlanner(bicycle, corridors, assumptions="axis-aligned")

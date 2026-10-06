@@ -86,17 +86,29 @@ def compute_traj_to_circle_bicycle_circular(
     tau1 = circ1.turn_direction
     corner_point1 = circ1.corner_point
 
-    side_walls = (
-        corridor1.LFT,
-        corridor1.RGT,
-    )
-
     # Build the local collision-free reference-point region once.
     #
     # Important:
     #     union first, then erode by the footprint radius.
     if admissible_corridors is None:
         admissible_corridors = [corridor1, corridor2]
+
+    # Wall roles follow inferred traversal, including vertical rectangles
+    # expressed with dimensions alone and the default zero tilt.
+    from .baseline_construction import (
+        axis_aligned_boundary_axis, compute_overlap_two_axis_aligned_corridors,
+    )
+    neighbor = admissible_corridors[1] if len(admissible_corridors) > 1 else corridor2
+    overlap = compute_overlap_two_axis_aligned_corridors(corridor1, neighbor)
+    if overlap is None:
+        return None
+    corridor_axis = axis_aligned_boundary_axis(corridor1, overlap)
+    if corridor_axis is None:
+        return None
+    side_walls = tuple(
+        wall for wall, normal in corridor1.outward_normals.items()
+        if abs(np.dot(normal, corridor_axis)) < 1e-9
+    )
 
     safe_union = compute_safe_corridor_union(
         corridor_list=admissible_corridors,
