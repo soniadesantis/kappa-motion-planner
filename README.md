@@ -111,6 +111,26 @@ a feasible boundary connection. Normalized `relative_start_pose` and
 positions in `[-1, 1]`, with heading in radians relative to the frame's x axis.
 Each endpoint accepts either an absolute or a relative pose.
 
+Specify a circular robot footprint directly by its radius in meters:
+
+```python
+from math import pi
+from kappa_planner import Unicycle, Bicycle
+
+unicycle = Unicycle(footprint_radius=0.2, v_max=0.8, omega_max=1.0)
+bicycle = Bicycle(footprint_radius=0.5, wheelbase=1.0,
+                  delta_max=pi/4, delta_min=-pi/4)
+```
+
+The circle is centered at the vehicle's pose position and does not depend on
+heading. `footprint_radius` sets the compatibility `width` and `length` to its
+diameter, overriding those dimensions even when loading a library model.
+It must be finite and positive. Turning radius and wheelbase are independent
+of the footprint radius. Existing constructors using width/length still work;
+omitting the new argument keeps their previous behavior.
+To resize the footprint, call `vehicle.update(footprint_radius=...)` and then
+`planner.update(vehicle=vehicle)` to refresh corridor clearance and validation.
+
 For the bicycle planner, `compute_trajectory_analytical()` attempts refinement
 and returns the complete baseline when refinement fails. If neither produces
 a complete boundary-connected trajectory, it raises `ValueError`.

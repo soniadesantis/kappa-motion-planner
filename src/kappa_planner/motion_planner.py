@@ -266,18 +266,23 @@ class MotionPlanner:
 
         # Format vehicle definition
         v = self.vehicle
+        dimensions = (
+            f"footprint_radius={v.footprint_radius}, "
+            if getattr(v, "_explicit_circular_footprint", False)
+            else f"width={v.width}, length={v.length}, "
+        )
 
         if isinstance(v, Unicycle):
             vehicle_str = (
                 "vehicle = Unicycle("
-                f"width={v.width}, length={v.length}, v_max={v.v_max}, "
+                f"{dimensions}v_max={v.v_max}, "
                 f"v_min=0, omega_max={v.omega_max}, omega_min={-v.omega_max})"
             )
 
         elif isinstance(v, Bicycle):
             vehicle_str = (
                 "vehicle = Bicycle([0, 0, 0], "
-                f"width={v.width}, length={v.length}, wheelbase={v.wheelbase}, "
+                f"{dimensions}wheelbase={v.wheelbase}, "
                 f"v_max={v.v_max}, v_min={v.v_min}, "
                 f"delta_max={v.delta_max}, delta_min={v.delta_min})"
             )

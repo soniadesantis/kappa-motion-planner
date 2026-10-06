@@ -71,7 +71,7 @@ corridor5 = get_corridor_from_vector(tail_vector5, head_vector5, width5, add_hei
 corridor_list = [corridor1, corridor2, corridor3, corridor4, corridor5]
 
 ### Define Unicycle vehicle ###
-unicycle = Unicycle(model = 'Rosbot circular')
+unicycle = Unicycle(model='Rosbot circular', footprint_radius=0.1185)
 # Modify vehicle parameters
 unicycle.update(v_max = 0.8)
 unicycle.update(omega_max = 1)

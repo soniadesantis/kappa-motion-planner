@@ -18,6 +18,47 @@ class Vehicle:
     def __str__(self):
         return 'Vehicle object'
 
+    @staticmethod
+    def _validate_footprint_radius(value):
+        try:
+            radius = float(value)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError("footprint_radius must be a finite positive number.") from error
+        if isinstance(value, (bool, np.bool_)) or not m.isfinite(radius) or radius <= 0 or not m.isfinite(2 * radius):
+            raise ValueError("footprint_radius must be a finite positive number.")
+        return radius
+
+    @property
+    def footprint_radius(self):
+        """Circular collision footprint radius, centered at the vehicle pose.
+
+        Legacy dimensions retain the planner convention ``radius = width / 2``.
+        Assigning a radius explicitly makes both dimensions equal to its diameter.
+        """
+        return self.width / 2
+
+    @footprint_radius.setter
+    def footprint_radius(self, value):
+        radius = self._validate_footprint_radius(value)
+        self.width = self.length = 2 * radius
+        self._explicit_circular_footprint = True
+
+    def _apply_attribute_updates(self, updates):
+        # Validate before modifying state. An explicit footprint radius takes
+        # precedence over legacy dimensions regardless of keyword order.
+        radius = None
+        if "footprint_radius" in updates:
+            radius = self._validate_footprint_radius(updates["footprint_radius"])
+        for key, value in updates.items():
+            if key == "footprint_radius":
+                continue
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                warnings.warn(f"Ignoring unknown attribute '{key}' in update().")
+        if radius is not None:
+            self.footprint_radius = radius
+
     def copy(self):
         """Generate a copy of the vehicle object.
 
@@ -112,6 +153,7 @@ class Unicycle(Vehicle):
         omega_max=0.5,
         omega_min=-0.5,
         model=None,
+        footprint_radius=None,
     ):
         """
         Initialize a Unicycle object.
@@ -137,6 +179,11 @@ class Unicycle(Vehicle):
         :param model: Name of the model defined in ``unicycle_library.yaml``.
                       If provided, the parameters are loaded from that file.
         :type model: str, optional
+        :param footprint_radius: Circular footprint radius in meters, centered at
+            the pose position. Overrides width and length (also for library
+            models), setting both to the diameter. Must be finite and positive.
+            Omit to retain the legacy dimensions.
+        :type footprint_radius: float, optional
         """
         if model is not None:
             # Load parameters from YAML model library
@@ -179,6 +226,9 @@ class Unicycle(Vehicle):
             self.omega_max = omega_max
             self.omega_min = -omega_max
 
+        if footprint_radius is not None:
+            self.footprint_radius = footprint_radius
+
         # Derived property
         self.max_radius = abs(self.v_max / self.omega_max)
 
@@ -199,6 +249,7 @@ class Unicycle(Vehicle):
 
         Keyword arguments correspond to existing attributes of the object.
         Attributes not found in the instance are ignored with a warning.
+        ``footprint_radius`` sets a circular footprint and overrides width/length.
         If either v_max or omega_max is updated, max_radius is
         automatically recalculated as abs(v_max / omega_max).
 
@@ -209,11 +260,7 @@ class Unicycle(Vehicle):
         vmax_updated = "v_max" in kwargs
         omegamax_updated = "omega_max" in kwargs
 
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-            else:
-                warnings.warn(f"Ignoring unknown attribute '{key}' in update().")
+        self._apply_attribute_updates(kwargs)
 
         # Update derived parameter if needed
         if vmax_updated or omegamax_updated:
@@ -284,6 +331,7 @@ class Bicycle(Vehicle):
         delta_max=0.5,
         delta_min=-0.5,
         model=None,
+        footprint_radius=None,
     ):
         """
         Initialize a Bicycle object.
@@ -310,6 +358,11 @@ class Bicycle(Vehicle):
         :param model: Name of the model defined in ``bicycle_library.yaml``.
                       If provided, the parameters are loaded from that file.
         :type model: str, optional
+        :param footprint_radius: Circular footprint radius in meters, centered at
+            the pose position. Overrides width and length (also for library
+            models), setting both to the diameter. Must be finite and positive.
+            Omit to retain the legacy dimensions.
+        :type footprint_radius: float, optional
         """
         if model is not None:
             # Load parameters from YAML model library
@@ -355,6 +408,9 @@ class Bicycle(Vehicle):
             self.delta_max = delta_max
             self.delta_min = delta_min
 
+        if footprint_radius is not None:
+            self.footprint_radius = footprint_radius
+
         # Derived parameters
         self.omega_max = self.v_max * m.tan(self.delta_max) / self.wheelbase
         self.omega_min = -self.omega_max
@@ -381,6 +437,7 @@ class Bicycle(Vehicle):
 
         Keyword arguments correspond to existing attributes of the object.
         Attributes not found in the instance are ignored with a warning.
+        ``footprint_radius`` sets a circular footprint and overrides width/length.
 
         If any of the following attributes are updated:
             - ``v_max``
@@ -402,11 +459,7 @@ class Bicycle(Vehicle):
         delta_updated = "delta_max" in kwargs
         wheelbase_updated = "wheelbase" in kwargs
 
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-            else:
-                warnings.warn(f"Ignoring unknown attribute '{key}' in update().")
+        self._apply_attribute_updates(kwargs)
 
         # Recompute derived parameters if needed
         if v_updated or delta_updated or wheelbase_updated:

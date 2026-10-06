@@ -32,15 +32,13 @@ corridor2 = CorridorWorld(
 corridor_list = [corridor1, corridor2]
 
 ### Define Unicycle vehicle ###
-vehicle_width = 0.430
-vehicle_length = 0.430
+footprint_radius = 0.215
 vehicle_vmax = 0.5
 vehicle_omegamax = 0.5
 
 unicycle = Unicycle(
     state = [0,0,0],
-    width = vehicle_width,
-    length = vehicle_length,
+    footprint_radius = footprint_radius,
     v_max = vehicle_vmax,
     v_min = -vehicle_vmax,
     omega_max = vehicle_omegamax,

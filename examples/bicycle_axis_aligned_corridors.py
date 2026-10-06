@@ -38,7 +38,7 @@ def main(save_path=None):
         for xmin, xmax, ymin, ymax in CORRIDOR_BOUNDS
     ]
     # Circular footprint radius 0.5 m; turning radius R = wheelbase/tan(delta) = 1 m.
-    bicycle = Bicycle(width=1, length=1, wheelbase=1, delta_max=pi/4, delta_min=-pi/4)
+    bicycle = Bicycle(footprint_radius=0.5, wheelbase=1, delta_max=pi/4, delta_min=-pi/4)
     planner = MotionPlanner(bicycle, corridors, start_pose=START_POSE,
                             end_pose=END_POSE, assumptions="axis-aligned")
     trajectory = planner.compute_trajectory_analytical()

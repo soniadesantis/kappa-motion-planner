@@ -77,12 +77,20 @@ def plot_corridors(corridor_list,
     ax.set_aspect('equal')
     return figure
 
-def vehic_to_plot(figure, x, y, theta, w_left, w_right, l_front, l_back, color='b'):
+def vehic_to_plot(figure, x, y, theta, w_left, w_right, l_front, l_back,
+                  color='b', footprint_radius=None):
     import matplotlib.pylab as plt
     import matplotlib as mlt
 
-    if figure is None: figure = plt.figure()
+    if figure is None:
+        figure = plt.figure()
+        figure.add_subplot(111)
     ax = figure if isinstance(figure, mlt.axes._axes.Axes) else figure.axes[0]
+
+    if footprint_radius is not None:
+        ax.add_patch(plt.Circle((x, y), footprint_radius, fill=False, color=color))
+        ax.set_aspect('equal', adjustable='box')
+        return figure
 
     vertices_veh = get_vehicle_vertices_no_casadi(x, y, theta, w_left, w_right, l_front, l_back)
     vertices_veh_ext = np.append(vertices_veh, np.array([[vertices_veh[0][0]],[ vertices_veh[1][0]]]), axis=1)
@@ -92,24 +100,34 @@ def vehic_to_plot(figure, x, y, theta, w_left, w_right, l_front, l_back, color='
 
 
 def plot_vehicle_rotating_on_the_spot(figure, maneuver, unicycle):
-    for i in range(maneuver.samples_number):
-        figure = vehic_to_plot(figure, maneuver.path_coordinates[i,0], maneuver.path_coordinates[i,1], maneuver.theta_trajectory[i], unicycle.width/2, unicycle.width/2, unicycle.length/2, unicycle.length/2, color='g')
-    return figure
+    return plot_unicycle_along_trajectory(
+        figure, unicycle, maneuver.path_coordinates, maneuver.theta_trajectory
+    )
+
 
 def plot_vehicle_curvilinear_arc(figure, maneuver, unicycle):
-    for i in range(maneuver.samples_number):
-        figure = vehic_to_plot(figure, maneuver.path_coordinates[i,0], maneuver.path_coordinates[i,1], maneuver.theta_trajectory[i], unicycle.width/2, unicycle.width/2, unicycle.length/2, unicycle.length/2, color='g')
-    return figure
+    return plot_unicycle_along_trajectory(
+        figure, unicycle, maneuver.path_coordinates, maneuver.theta_trajectory
+    )
+
 
 def plot_vehicle_linear_segment(figure, maneuver, unicycle):
-    for i in range(maneuver.samples_number):
-        figure = vehic_to_plot(figure, maneuver.path_coordinates[i,0], maneuver.path_coordinates[i,1], maneuver.theta_trajectory[i], unicycle.width/2, unicycle.width/2, unicycle.length/2, unicycle.length/2, color='g')
-    return figure
+    return plot_unicycle_along_trajectory(
+        figure, unicycle, maneuver.path_coordinates, maneuver.theta_trajectory
+    )
+
 
 def plot_unicycle_along_trajectory(figure, unicycle, path_coordinates, theta_vector, color='g'):
+    radius = (unicycle.footprint_radius
+              if getattr(unicycle, '_explicit_circular_footprint', False) else None)
     for i in range(theta_vector.shape[0]):
-        figure = vehic_to_plot(figure, path_coordinates[i,0], path_coordinates[i,1], theta_vector[i], unicycle.width/2, unicycle.width/2, unicycle.length/2, unicycle.length/2, color='g')
+        figure = vehic_to_plot(
+            figure, path_coordinates[i, 0], path_coordinates[i, 1], theta_vector[i],
+            unicycle.width/2, unicycle.width/2, unicycle.length/2, unicycle.length/2,
+            color=color, footprint_radius=radius,
+        )
     return figure
+
 
 def plot_vehicle(vehicle, figure, color='b', plot_vector=False):
     import matplotlib.pylab as plt
@@ -128,7 +146,11 @@ def plot_vehicle(vehicle, figure, color='b', plot_vector=False):
         # ax = plt.gca()
         ax = figure.axes[0]
 
-    ax.plot(vertices_veh_ext[0,:],vertices_veh_ext[1,:], color=color)
+    if getattr(vehicle, "_explicit_circular_footprint", False):
+        ax.add_patch(plt.Circle(state[:2], vehicle.footprint_radius, fill=False, color=color))
+        ax.set_aspect('equal', adjustable='box')
+    else:
+        ax.plot(vertices_veh_ext[0,:],vertices_veh_ext[1,:], color=color)
     if plot_vector:
         ax.quiver(state[0], state[1], cos(state[2]), sin(state[2]), color=color, angles='xy', scale_units='xy', scale=2/length) 
 
