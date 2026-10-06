@@ -28,7 +28,7 @@ from .primitives import (
 )
 
 from ..geometry import Point, IntermediateCirclesSequence
-from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpot
+from ..trajectory import BackwardArcBicycle, CurvilinearArcUnicycle, LinearSegmentUnicycle, TurnOnTheSpotUnicycle
 from .pose_to_circle_unicycle import compute_three_maneuvers_compact
 
 import matplotlib.pyplot as plt
@@ -705,7 +705,7 @@ def compute_circle_exit_trajectory_start(
         theta_segment = theta_end_tots
 
         # Primitive 1: turn on the spot
-        tots = TurnOnTheSpot(
+        tots = TurnOnTheSpotUnicycle(
             x=x0,
             y=y0,
             theta0=theta0,
@@ -795,7 +795,7 @@ def compute_circle_exit_trajectory_end(
         )
 
         # Primitive 2: turn on the spot
-        tots = TurnOnTheSpot(
+        tots = TurnOnTheSpotUnicycle(
             x=xf,
             y=yf,
             theta0=theta_segment,

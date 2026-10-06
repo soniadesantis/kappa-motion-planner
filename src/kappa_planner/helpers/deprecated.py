@@ -1118,7 +1118,7 @@ def compute_trajectory_multiple_corridors_with_waypoints(corridor_list,
     #         trajectory_piece.plot_circle(figure)
 
     # for trajectory_piece in maneuvers:
-    #     if isinstance(trajectory_piece, TurnOnTheSpot):
+    #     if isinstance(trajectory_piece, TurnOnTheSpotUnicycle):
     #         print(f'\n\nTurn {trajectory_piece.turn_direction} for {trajectory_piece.maneuver_time}s of {trajectory_piece.delta_angle * 180 / pi} degrees ')
     #     # print(trajectory_piece.theta_trajectory)
     #     print(f'\nPrimitive type: {trajectory_piece.label}')
@@ -2184,7 +2184,7 @@ def compute_trajectory_multiple_corridors(corridor_list,
     #         trajectory_piece.plot_circle(figure)
 
     # for trajectory_piece in maneuvers:
-    #     if isinstance(trajectory_piece, TurnOnTheSpot):
+    #     if isinstance(trajectory_piece, TurnOnTheSpotUnicycle):
     #         print(f'\n\nTurn {trajectory_piece.turn_direction} for {trajectory_piece.maneuver_time}s of {trajectory_piece.delta_angle * 180 / pi} degrees ')
     #     # print(trajectory_piece.theta_trajectory)
     #     print(f'\nPrimitive type: {trajectory_piece.label}')

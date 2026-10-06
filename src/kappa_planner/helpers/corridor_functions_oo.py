@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from copy import copy
 from ..geometry import Point, Circle, Pose, IntermediateCircle, IntermediateCirclesSequence
 from ..corridor import CorridorWorld
-from ..trajectory import BackwardArc, LinearSegmentUnicycle, CurvilinearArcUnicycle, UnicycleTrajectory, UnicycleTrajectoryOptimal, TurnOnTheSpot
+from ..trajectory import BackwardArcBicycle, LinearSegmentUnicycle, CurvilinearArcUnicycle, UnicycleTrajectory, UnicycleTrajectoryOptimal, TurnOnTheSpotUnicycle
 from .helper_functions import compute_initial_turn_direction
 from .poses import absolute_to_relative_pose, relative_to_absolute_pose
 from .plot_helpers import plot_corridors, plot_analytical_trajectory

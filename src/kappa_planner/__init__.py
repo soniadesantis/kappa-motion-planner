@@ -5,15 +5,19 @@ from .motion_planner import MotionPlanner
 from .vehicle import Unicycle, Bicycle
 
 from .trajectory import(
+    CurvilinearArcBicycle,
+    LinearSegmentBicycle,
+    BackwardArc,
+    TurnOnTheSpot,
     Trajectory,
     UnicycleTrajectory,
     UnicycleTrajectoryOptimal,
     BicycleTrajectory,
     BicycleTrajectoryOptimal,
-    BackwardArc,
+    BackwardArcBicycle,
     LinearSegmentUnicycle,
     CurvilinearArcUnicycle,
-    TurnOnTheSpot,
+    TurnOnTheSpotUnicycle,
 )
 
 from .helpers.poses import(
@@ -53,6 +57,10 @@ from .helpers.plot_helpers import(
 )
 
 __all__ = [
+    "CurvilinearArcBicycle",
+    "LinearSegmentBicycle",
+    "BackwardArc",
+    "TurnOnTheSpot",
     "CorridorWorld",
     "Point",
     "Circle",           
@@ -65,10 +73,10 @@ __all__ = [
     "UnicycleTrajectoryOptimal",
     "BicycleTrajectory",
     "BicycleTrajectoryOptimal",
-    "BackwardArc",
+    "BackwardArcBicycle",
     "LinearSegmentUnicycle",
     "CurvilinearArcUnicycle",
-    "TurnOnTheSpot",
+    "TurnOnTheSpotUnicycle",
     "compute_start_pose",
     "compute_end_pose",
     "relative_to_absolute_pose",

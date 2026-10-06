@@ -243,15 +243,15 @@ class UnicycleTrajectoryOptimal(UnicycleTrajectory):
     #     plt.legend()
     #     return figure
 
-class CurvilinearArcUnicycle(Trajectory):
-    """ Curvilinear arc trajectory segment for a unicycle-type vehicle. 
+class _CircularArcTrajectory(Trajectory):
+    """Shared geometry and timing for circular motion primitives.
     """
 
     def __init__(self, xc, yc,
                  x0, y0, theta0,
                  xf, yf, thetaf,
                  radius, turn_direction,
-                 v, omega, unicycle,
+                 v, omega,
                  t0 = 0, samples_number = 50):
         # Initialize attributes
         self.xc     = xc
@@ -267,7 +267,6 @@ class CurvilinearArcUnicycle(Trajectory):
         self.turn_direction = turn_direction
         self.v  = v
         self.omega  = omega
-        self.unicycle   = unicycle
         self.t0     = t0
         self.samples_number = samples_number
         self.label = 'arc'
@@ -468,11 +467,56 @@ class CurvilinearArcUnicycle(Trajectory):
         )
 
 
-class LinearSegmentUnicycle(Trajectory):
-    """ Linear segment trajectory segment for a unicycle-type vehicle. 
+class CurvilinearArcUnicycle(_CircularArcTrajectory):
+    """Circular arc with unicycle velocity controls."""
+
+    def __init__(self, xc, yc, x0, y0, theta0, xf, yf, thetaf,
+                 radius, turn_direction, v, omega, unicycle,
+                 t0=0, samples_number=50):
+        from .vehicle import Unicycle
+        if unicycle is not None and not isinstance(unicycle, Unicycle):
+            raise TypeError("CurvilinearArcUnicycle requires a Unicycle.")
+        self.unicycle = unicycle
+        super().__init__(xc, yc, x0, y0, theta0, xf, yf, thetaf,
+                         radius, turn_direction, v, omega, t0, samples_number)
+
+
+class CurvilinearArcBicycle(_CircularArcTrajectory):
+    """Circular arc with bicycle speed and steering profiles."""
+
+    def __init__(self, xc, yc, x0, y0, theta0, xf, yf, thetaf,
+                 radius, turn_direction, v, omega, bicycle,
+                 t0=0, samples_number=50):
+        _check_bicycle_model(bicycle)
+        self.bicycle = bicycle
+        super().__init__(xc, yc, x0, y0, theta0, xf, yf, thetaf,
+                         radius, turn_direction, v, omega, t0, samples_number)
+        self._update_steering_profile()
+
+    def _update_steering_profile(self):
+        self.delta = atan2(self.bicycle.wheelbase * self.omega / self.v, 1.0)
+        self.steering_angle = np.full(self.samples_number, self.delta)
+
+    def resample(self, new_samples_number):
+        super().resample(new_samples_number)
+        self._update_steering_profile()
+
+    def reverse(self):
+        super().reverse()
+        self._update_steering_profile()
+
+
+def _check_bicycle_model(bicycle):
+    from .vehicle import Bicycle, Bicycle_Acceleration
+    if not isinstance(bicycle, (Bicycle, Bicycle_Acceleration)):
+        raise TypeError("A bicycle primitive requires a Bicycle.")
+
+
+class _LinearSegmentTrajectory(Trajectory):
+    """Shared geometry and timing for straight motion primitives.
     """
 
-    def __init__(self, x0, y0, xf, yf, theta, v, unicycle=None, t0=0, samples_number=10):
+    def __init__(self, x0, y0, xf, yf, theta, v, t0=0, samples_number=10):
         """ Initialize attributes of the linear segment.
         :param x0: initial x position
         :type x0: float
@@ -500,7 +544,6 @@ class LinearSegmentUnicycle(Trajectory):
         self.yf = yf
         self.theta  = theta
         self.v  = v
-        self.unicycle   = unicycle
         self.t0 = t0
         self.samples_number = samples_number
         self.radius = -100000 # For consistency with other trajectory types
@@ -610,7 +653,35 @@ class LinearSegmentUnicycle(Trajectory):
         self.theta_trajectory = self.theta * np.ones((self.samples_number))
 
 
-class TurnOnTheSpot(Trajectory):
+class LinearSegmentUnicycle(_LinearSegmentTrajectory):
+    """Straight segment with unicycle velocity controls."""
+
+    def __init__(self, x0, y0, xf, yf, theta, v, unicycle=None,
+                 t0=0, samples_number=10):
+        from .vehicle import Unicycle
+        if unicycle is not None and not isinstance(unicycle, Unicycle):
+            raise TypeError("LinearSegmentUnicycle requires a Unicycle.")
+        self.unicycle = unicycle
+        super().__init__(x0, y0, xf, yf, theta, v, t0, samples_number)
+
+
+class LinearSegmentBicycle(_LinearSegmentTrajectory):
+    """Straight bicycle segment with zero steering."""
+
+    def __init__(self, x0, y0, xf, yf, theta, v, bicycle,
+                 t0=0, samples_number=10):
+        _check_bicycle_model(bicycle)
+        self.bicycle = bicycle
+        self.delta = 0.0
+        super().__init__(x0, y0, xf, yf, theta, v, t0, samples_number)
+        self.steering_angle = np.zeros(self.samples_number)
+
+    def resample(self, new_samples_number):
+        super().resample(new_samples_number)
+        self.steering_angle = np.zeros(new_samples_number)
+
+
+class TurnOnTheSpotUnicycle(Trajectory):
     """ Turn on-the-spot trajectory segment for a unicycle-type vehicle.
     """
     def __init__(self, x, y, theta0, thetaf, omega,
@@ -634,6 +705,9 @@ class TurnOnTheSpot(Trajectory):
         :param samples_number: number of samples
         :type samples_number: int
         """
+        from .vehicle import Unicycle
+        if unicycle is not None and not isinstance(unicycle, Unicycle):
+            raise TypeError("TurnOnTheSpotUnicycle requires a Unicycle.")
         self.x0 = x
         self.y0 = y
         self.xf = x
@@ -689,7 +763,7 @@ class TurnOnTheSpot(Trajectory):
         self.path_length = 0.0  # TODO: verify if this should include rotational arc length
 
     def __str__(self):
-        return 'TurnOnTheSpot object'
+        return 'TurnOnTheSpotUnicycle object'
 
     def add_time_offset(self, offset):
         """ Add a time offset to the trajectory.
@@ -796,8 +870,8 @@ class TurnOnTheSpot(Trajectory):
         )
 
     
-class BackwardArc(Trajectory):
-    """ Backward curvilinear arc trajectory segment for a unicycle-type vehicle.
+class BackwardArcBicycle(Trajectory):
+    """Backward circular-arc primitive for a bicycle vehicle.
     """ 
 
     def __init__(self, xc, yc, 
@@ -838,6 +912,7 @@ class BackwardArc(Trajectory):
         :param samples_number: number of samples
         :type samples_number: int
         """
+        _check_bicycle_model(bicycle)
         self.xc     = xc
         self.yc     = yc
         self.x0     = x0
@@ -851,6 +926,8 @@ class BackwardArc(Trajectory):
         self.v  = v
         self.omega  = omega
         self.bicycle   = bicycle
+        self.delta = atan2(bicycle.wheelbase * omega / v, 1.0)
+        self.steering_angle = np.full(samples_number, self.delta)
         self.t0     = t0
         self.samples_number = samples_number
 
@@ -910,7 +987,7 @@ class BackwardArc(Trajectory):
         ) #linspace because includes automatically the last point
 
     def __str__(self): 
-        return 'BackwardArc object'
+        return 'BackwardArcBicycle object'
 
     def add_time_offset(self, offset):
         """ Add a time offset to the trajectory.
@@ -961,7 +1038,7 @@ class BackwardArc(Trajectory):
         """
         self.samples_number = new_samples_number
         angles = np.linspace(self.epsilon,
-                            self.epsilon + self.turn_direction * self.iota,
+                            self.epsilon - self.turn_direction * self.iota,
                             new_samples_number)
         self.path_coordinates = np.column_stack((
             self.xc + self.radius * np.cos(angles),
@@ -970,6 +1047,7 @@ class BackwardArc(Trajectory):
 
         self.forward_velocity = self.v * np.ones((new_samples_number))
         self.angular_velocity = self.omega * np.ones((new_samples_number))
+        self.steering_angle = np.full(new_samples_number, self.delta)
         self.theta_trajectory = np.linspace(
             self.theta0,
             self.thetaf,
@@ -993,6 +1071,8 @@ class BackwardArc(Trajectory):
         self.turn_direction = - self.turn_direction
         self.v  = -self.v
         self.omega  = -self.omega
+        self.delta = atan2(self.bicycle.wheelbase * self.omega / self.v, 1.0)
+        self.steering_angle = np.full(self.samples_number, self.delta)
         self.wrapped_theta0 = wrapPositiveAngle(self.theta0)
         self.wrapped_thetaf = wrapPositiveAngle(self.thetaf)
         self.delta_angle    = atan2(
@@ -1021,6 +1101,11 @@ class BackwardArc(Trajectory):
             linestyle=linestyle,
             linewidth=linewidth,
         )
+
+
+# Compatibility names for existing callers. New code uses model-specific names.
+TurnOnTheSpot = TurnOnTheSpotUnicycle
+BackwardArc = BackwardArcBicycle
 
 
 class BicycleTrajectory(Trajectory):

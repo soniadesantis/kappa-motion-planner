@@ -27,7 +27,7 @@ from .primitives import (
 )
 
 from ..geometry import Point, Pose, Circle
-from ..trajectory import BackwardArc, CurvilinearArcUnicycle, LinearSegmentUnicycle
+from ..trajectory import BackwardArcBicycle, CurvilinearArcBicycle, LinearSegmentBicycle
 import matplotlib.pyplot as plt
 import numpy as np
 from math import sin, cos, pi, sqrt, atan2, asin
@@ -107,7 +107,7 @@ def compute_backward_arc_optimal(pose, tau1, tau2, circ2, bicycle):
     # plt.plot(pose.x, pose.y, 'bo')
     # plt.plot(final_bw_pose.x, final_bw_pose.y, 'go')
     # plt.show(block = True)
-    backward_arc =BackwardArc(xc=bw_circle.xc, yc=bw_circle.yc, x0 = pose.x, y0 = pose.y,
+    backward_arc =BackwardArcBicycle(xc=bw_circle.xc, yc=bw_circle.yc, x0 = pose.x, y0 = pose.y,
                                         theta0 = pose.theta, xf = final_bw_pose.x, yf = final_bw_pose.y,
                                         thetaf = final_bw_pose.theta, radius = circ2.radius,
                                         turn_direction = -tau1, v = -bicycle.v_max,
@@ -329,9 +329,9 @@ def compute_two_maneuvers_bicycle(start_pose, bicycle, circ2, tau2, t0 = 0, tau1
     :type tau1: float
 
     :return: primitive1, arc
-    :rtype: CurvilinearArcUnicycle
+    :rtype: CurvilinearArcBicycle
     :return: primitive2, segment
-    :rtype: LinearSegmentUnicycle 
+    :rtype: LinearSegmentBicycle
     '''
     #Extract variables
     x0, y0, theta0  = start_pose
@@ -369,14 +369,14 @@ def compute_two_maneuvers_bicycle(start_pose, bicycle, circ2, tau2, t0 = 0, tau1
     omega1 = omega_max if tau1 > 0 else omega_min
 
     # Primitive 1: arc
-    primitive1 = CurvilinearArcUnicycle(xc=circ1.xc, yc=circ1.yc, x0 = x0, y0 = y0,
+    primitive1 = CurvilinearArcBicycle(xc=circ1.xc, yc=circ1.yc, x0 = x0, y0 = y0,
                                         theta0 = theta0_p1, xf = pose1.x, yf = pose1.y,
                                         thetaf = thetaf_p1, radius = circ1.radius,
                                         turn_direction = tau1, v = v_max,
-                                        omega = omega1, unicycle = bicycle,
+                                        omega = omega1, bicycle=bicycle,
                                         t0 = t0, samples_number = 100)
     # Primitive 2: segment
-    primitive2 = LinearSegmentUnicycle(x0=pose1.x, y0=pose1.y, xf=pose2.x, yf=pose2.y, theta=theta_p2, v=v_max, t0 = primitive1.tf, unicycle = bicycle, samples_number=10)
+    primitive2 = LinearSegmentBicycle(x0=pose1.x, y0=pose1.y, xf=pose2.x, yf=pose2.y, theta=theta_p2, v=v_max, t0 = primitive1.tf, bicycle=bicycle, samples_number=10)
 
     return primitive1, primitive2
 
@@ -449,7 +449,7 @@ def compute_backward_arc(corridor, pose, bicycle, tau, R, wall, corner_point):
 
     final_bw_pose, bw_circle = backward_maneuver(corridor.shrink(bicycle.width*0.5), pose, tau, R, wall, corner_point)
     final_bw_theta = pose.theta + compute_angular_difference_with_turn_direction(pose.theta, final_bw_pose.theta, -tau)
-    backward_arc =BackwardArc(xc=bw_circle.xc, yc=bw_circle.yc, x0 = pose.x, y0 = pose.y,
+    backward_arc =BackwardArcBicycle(xc=bw_circle.xc, yc=bw_circle.yc, x0 = pose.x, y0 = pose.y,
                                         theta0 = pose.theta, xf = final_bw_pose.x, yf = final_bw_pose.y,
                                         thetaf = final_bw_theta, radius = R,
                                         turn_direction = -tau, v = -bicycle.v_max,

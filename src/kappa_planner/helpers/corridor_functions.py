@@ -8,7 +8,7 @@
 # import matplotlib.pyplot as plt
 # from .plot_helpers import plot_corridors, plot_analytical_trajectory
 # from ..Corridor import CorridorWorld
-# from ..Trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, UnicycleTrajectoryOptimal, TurnOnTheSpot, BackwardArc
+# from ..Trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, UnicycleTrajectoryOptimal, TurnOnTheSpotUnicycle, BackwardArcBicycle
 # from .helper_functions import compute_distance_two_points, compute_center_coordinates_second_circle_R_smaller_than_r, compute_extreme_poses_arc_line_two_radii, compute_intersection_two_segments, circ_center_narrow_corridors, fit_new_circle, compute_angular_difference_with_turn_direction, wrapPositiveAngle, compute_turn_direction, get_intersection, get_vehicle_vertices, compute_path_coordinates_curvilinear_arc, efficient_sign, compute_angular_difference, compute_direction, include_search, compute_initial_turn_direction, compute_center_coordinates_second_circle, compute_center_coordinates_first_circle, check_point_inside_segment, check_intersection_two_segments, compute_extreme_poses_arc_line
 # from ..Geometry import IntermediateCircle, Point, IntermediateCirclesSequence
 # from .corridor_prepocessing import plot_intermediate_circle_choices, create_intermediate_circle_choices_sequence, compute_turn_direction_choices, compute_corner_point_choices_and_intersecting_edges, compute_center_coordinate_choices_according_to_edges, compute_center_coordinates_second_circle_according_to_edges, get_corner_point_and_intersecting_edges
@@ -236,7 +236,7 @@
 #             x0 = trajectory_piece.x0 + ds_init * cos(trajectory_piece.theta0)
 #             y0 = trajectory_piece.y0 + ds_init * sin(trajectory_piece.theta0)
 #             # thetas_analytical_traj_piece[0] = trajectory_piece.theta0
-#         elif isinstance(trajectory_piece, CurvilinearArcUnicycle) or isinstance(trajectory_piece, BackwardArc):
+#         elif isinstance(trajectory_piece, CurvilinearArcUnicycle) or isinstance(trajectory_piece, BackwardArcBicycle):
 #             dtheta_init = ds_init / trajectory_piece.radius
 #             epsilon0 = trajectory_piece.epsilon + trajectory_piece.turn_direction * dtheta_init
 #             theta0 = trajectory_piece.theta0 + trajectory_piece.turn_direction * dtheta_init
@@ -252,7 +252,7 @@
 #                                                                  sample_number_int + 1)
 #             thetas_analytical_traj_piece[0:sample_number_int  + 1]  = trajectory_piece.theta0 * np.ones(sample_number_int + 1)
             
-#         elif isinstance(trajectory_piece, CurvilinearArcUnicycle) or isinstance(trajectory_piece, BackwardArc):
+#         elif isinstance(trajectory_piece, CurvilinearArcUnicycle) or isinstance(trajectory_piece, BackwardArcBicycle):
 #             dtheta = ds / trajectory_piece.radius
 #             radius = trajectory_piece.radius
 #             if isinstance(trajectory_piece, CurvilinearArcUnicycle):

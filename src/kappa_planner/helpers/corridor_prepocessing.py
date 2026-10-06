@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from .plot_helpers import plot_corridors, plot_vehicle, plot_analytical_trajectory
 from copy import copy
 from ..corridor import CorridorWorld
-from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, UnicycleTrajectory, UnicycleTrajectoryOptimal, TurnOnTheSpot, BackwardArc
+from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, UnicycleTrajectory, UnicycleTrajectoryOptimal, TurnOnTheSpotUnicycle, BackwardArcBicycle
 from ..geometry import Circle, IntermediateCircle, Point, Pose, IntermediateCirclesSequence, IntermediateCircleChoice, IntermediateCircleChoicesSequence
 from .geometry_operations import compute_angular_difference, wrapPositiveAngle, compute_angular_difference_with_turn_direction, efficient_sign, check_point_inside_segment
 from dataclasses import dataclass

@@ -7,7 +7,7 @@ They are kept for reproducibility but are not part of the main analytical planne
 
 import casadi as cs
 
-from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpot
+from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpotUnicycle
 
 ### Optimization problem to solve intersection case
 def set_OCP():
@@ -151,7 +151,7 @@ def solve_OCP_function(start_pose, end_pose, vehicle, turn1, turn3):
     :type turn3: float [-1,1]
 
     :return: list of five maneuvers that all connected are the time optimal trajectory
-    :rtype: list of trajectory pieces [TurnOnTheSpot, CurvilinearArcUnicycle, LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpot]
+    :rtype: list of trajectory pieces [TurnOnTheSpotUnicycle, CurvilinearArcUnicycle, LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpotUnicycle]
     :return: total motion time in seconds
     :rtype: float
     '''
@@ -172,7 +172,7 @@ def solve_OCP_function(start_pose, end_pose, vehicle, turn1, turn3):
     x1, y1, theta1, x2, y2, theta2 = compute_extreme_poses_arc_line(center_circle1[0], center_circle1[1], center_circle3[0], center_circle3[1], turn1, turn3, vehicle.max_radius)
 
     # Primitive 1: turn-on-the-spot
-    primitive1 = TurnOnTheSpot(x=start_pose[0], y=start_pose[1], theta0=start_pose[2], thetaf=start_pose[2] + turn1*psi1, omega=turn1*vehicle.omega_max, unicycle = vehicle, t0 = 0, samples_number=5)
+    primitive1 = TurnOnTheSpotUnicycle(x=start_pose[0], y=start_pose[1], theta0=start_pose[2], thetaf=start_pose[2] + turn1*psi1, omega=turn1*vehicle.omega_max, unicycle = vehicle, t0 = 0, samples_number=5)
     # Primitive 2: arc
     primitive2 = CurvilinearArcUnicycle(xc=center_circle1[0], yc=center_circle1[1], x0 = start_pose[0], y0 = start_pose[1], theta0 = primitive1.thetaf, xf = x1, yf = y1, thetaf = primitive1.thetaf + turn1*iota1, radius = vehicle.max_radius, turn_direction = turn1, v = vehicle.v_max, omega = turn1*vehicle.omega_max, unicycle = vehicle, t0 = primitive1.tf, samples_number = 10)
     # Primitive 3: segment
@@ -180,7 +180,7 @@ def solve_OCP_function(start_pose, end_pose, vehicle, turn1, turn3):
     # Primitive 4: arc
     primitive4 = CurvilinearArcUnicycle(xc=center_circle3[0], yc=center_circle3[1], x0 = x2, y0 = y2, theta0 = primitive3.thetaf, xf = end_pose[0], yf = end_pose[1], thetaf = primitive3.thetaf + turn3*iota3, radius = vehicle.max_radius, turn_direction = turn3, v = vehicle.v_max, omega = turn3*vehicle.omega_max, unicycle = vehicle, t0 = primitive3.tf, samples_number = 10)
     # Primitive 5: turn-on-the-spot
-    primitive5 = TurnOnTheSpot(x=end_pose[0], y=end_pose[1], theta0=primitive4.thetaf, thetaf=primitive4.thetaf + turn3*psi3, omega= turn3*vehicle.omega_max, unicycle = vehicle, t0 = primitive4.tf, samples_number=5)
+    primitive5 = TurnOnTheSpotUnicycle(x=end_pose[0], y=end_pose[1], theta0=primitive4.thetaf, thetaf=primitive4.thetaf + turn3*psi3, omega= turn3*vehicle.omega_max, unicycle = vehicle, t0 = primitive4.tf, samples_number=5)
 
     maneuvers = [primitive1, primitive2, primitive3, primitive4, primitive5]
     return maneuvers, T

@@ -9,10 +9,12 @@ from math import asin, atan2, cos, pi, sin, sqrt
 import numpy as np
 
 from kappa_planner.trajectory import (
-    BackwardArc,
+    CurvilinearArcBicycle,
+    LinearSegmentBicycle,
+    BackwardArcBicycle,
     CurvilinearArcUnicycle,
     LinearSegmentUnicycle,
-    TurnOnTheSpot,
+    TurnOnTheSpotUnicycle,
 )
 
 from .geometry_operations import (
@@ -21,6 +23,15 @@ from .geometry_operations import (
     wrapPositiveAngle,
 )
 from .intersections import circle_intersection
+
+
+def _model_primitive_types(vehicle):
+    from ..vehicle import Bicycle, Bicycle_Acceleration, Unicycle
+    if isinstance(vehicle, (Bicycle, Bicycle_Acceleration)):
+        return CurvilinearArcBicycle, LinearSegmentBicycle, {"bicycle": vehicle}
+    if isinstance(vehicle, Unicycle):
+        return CurvilinearArcUnicycle, LinearSegmentUnicycle, {"unicycle": vehicle}
+    raise TypeError("Motion primitives require a Unicycle or Bicycle.")
 
 
 def compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, R, overlap = False):
@@ -127,7 +138,8 @@ def compute_arc_from_two_tangents(segment1, segment2, turn, xc2, yc2, unicycle):
     radius = unicycle.max_radius
     omega = unicycle.omega_max if turn > 0 else unicycle.omega_min
 
-    arc = CurvilinearArcUnicycle(
+    arc_type, _, model = _model_primitive_types(unicycle)
+    arc = arc_type(
         xc=xc2,
         yc=yc2,
         x0=x0,
@@ -140,7 +152,7 @@ def compute_arc_from_two_tangents(segment1, segment2, turn, xc2, yc2, unicycle):
         turn_direction=turn,
         v=unicycle.v_max,
         omega=omega,
-        unicycle=unicycle,
+        **model,
         t0=t0,
         samples_number=10,
     )
@@ -152,7 +164,7 @@ def invert_maneuvers(maneuvers_list, t0 = 0):
     """Given a list of maneuvers, invert their order, and the orientation at the beginning and at the end of each maneuver, and the turn directions.
 
     :param maneuvers_list: list of maneuvers
-    :type maneuvers_list: list of trajectory pieces (TurnOnTheSpot, CurvilinearArcUnicycle, LinearSegmentUnicycle)
+    :type maneuvers_list: list of trajectory pieces (TurnOnTheSpotUnicycle, CurvilinearArcUnicycle, LinearSegmentUnicycle)
     :param t0: initial time
     :type t0: float
 
@@ -163,14 +175,30 @@ def invert_maneuvers(maneuvers_list, t0 = 0):
     ind = 0
     for i in np.arange(len(maneuvers_list)-1, -1, -1):
         man = maneuvers_list[i]
-        if isinstance(man, TurnOnTheSpot):
-            new_maneuver    = TurnOnTheSpot(x=man.x0, y=man.y0, theta0=man.thetaf - pi, thetaf=man.theta0 - pi, omega=-man.omega, unicycle=man.unicycle, t0=t0, samples_number=man.samples_number)
+        if isinstance(man, TurnOnTheSpotUnicycle):
+            new_maneuver    = TurnOnTheSpotUnicycle(x=man.x0, y=man.y0, theta0=man.thetaf - pi, thetaf=man.theta0 - pi, omega=-man.omega, unicycle=man.unicycle, t0=t0, samples_number=man.samples_number)
         elif isinstance(man, CurvilinearArcUnicycle):
             new_maneuver    = CurvilinearArcUnicycle(xc=man.xc, yc=man.yc, x0=man.xf, y0=man.yf, theta0=man.thetaf - pi, xf=man.x0, yf=man.y0, thetaf=man.theta0 - pi, radius=man.radius, turn_direction=-man.turn_direction,  v=man.v, omega=-man.omega, unicycle=man.unicycle, t0=t0, samples_number=man.samples_number)
         elif isinstance(man, LinearSegmentUnicycle):
             new_maneuver    = LinearSegmentUnicycle(x0=man.xf, y0=man.yf, xf=man.x0, yf=man.y0, theta=man.theta0 - pi, v=man.v, unicycle = man.unicycle, t0 = t0, samples_number=man.samples_number)
-        elif isinstance(man, BackwardArc):
-            new_maneuver    =  BackwardArc(xc = man.xc, yc = man.yc, x0 = man.xf, y0 = man.yf, theta0 = man.thetaf - pi, xf = man.x0, yf = man.y0, thetaf = man.theta0 - pi, radius = man.radius, turn_direction=-man.turn_direction, v = man.v, omega = -man.omega, bicycle = man.bicycle, t0 = t0, samples_number = man.samples_number)
+        elif isinstance(man, BackwardArcBicycle):
+            new_maneuver    =  BackwardArcBicycle(xc = man.xc, yc = man.yc, x0 = man.xf, y0 = man.yf, theta0 = man.thetaf - pi, xf = man.x0, yf = man.y0, thetaf = man.theta0 - pi, radius = man.radius, turn_direction=-man.turn_direction, v = man.v, omega = -man.omega, bicycle = man.bicycle, t0 = t0, samples_number = man.samples_number)
+        elif isinstance(man, CurvilinearArcBicycle):
+            new_maneuver = CurvilinearArcBicycle(
+                xc=man.xc, yc=man.yc, x0=man.xf, y0=man.yf,
+                theta0=man.thetaf - pi, xf=man.x0, yf=man.y0,
+                thetaf=man.theta0 - pi, radius=man.radius,
+                turn_direction=-man.turn_direction, v=man.v, omega=-man.omega,
+                bicycle=man.bicycle, t0=t0, samples_number=man.samples_number,
+            )
+        elif isinstance(man, LinearSegmentBicycle):
+            new_maneuver = LinearSegmentBicycle(
+                x0=man.xf, y0=man.yf, xf=man.x0, yf=man.y0,
+                theta=man.theta0 - pi, v=man.v, bicycle=man.bicycle,
+                t0=t0, samples_number=man.samples_number,
+            )
+        else:
+            raise TypeError(f"Unsupported primitive: {type(man).__name__}")
 
         t0 = new_maneuver.tf
         maneuvers_list_inv[ind] = new_maneuver
@@ -180,7 +208,8 @@ def invert_maneuvers(maneuvers_list, t0 = 0):
 
 def compute_segment_between_two_circles(xc1, yc1, xc2, yc2, turn1, turn2, unicycle, overlap = False):
     x1, y1, theta1, x2, y2, _ = compute_extreme_poses_arc_line(xc1, yc1, xc2, yc2, turn1, turn2, unicycle.max_radius, overlap = overlap)
-    return LinearSegmentUnicycle(x0=x1, y0=y1, xf=x2, yf=y2, theta=theta1, v=unicycle.v_max, t0 = 0, unicycle = unicycle, samples_number=10)
+    _, segment_type, model = _model_primitive_types(unicycle)
+    return segment_type(x0=x1, y0=y1, xf=x2, yf=y2, theta=theta1, v=unicycle.v_max, t0=0, samples_number=10, **model)
 
 
 def reverse_maneuvers(maneuvers):
@@ -235,7 +264,7 @@ def is_it_u_turn(corridor1, corridor3, turn1, turn2):
 
 def correct_angles(maneuver_list):
     for i in range(1, len(maneuver_list)):
-        if isinstance(maneuver_list[i], LinearSegmentUnicycle):
+        if isinstance(maneuver_list[i], (LinearSegmentUnicycle, LinearSegmentBicycle)):
             maneuver_list[i].change_theta(maneuver_list[i-1].thetaf)
         else:
             maneuver_list[i].change_theta0(maneuver_list[i-1].thetaf)
@@ -269,7 +298,8 @@ def compute_arc_from_two_tangents_objects(segment1, segment2, circ, vehicle):
 
     omega = vehicle.omega_max if circ.turn_direction > 0 else vehicle.omega_min
 
-    arc = CurvilinearArcUnicycle(
+    arc_type, _, model = _model_primitive_types(vehicle)
+    arc = arc_type(
         xc=circ.xc,
         yc=circ.yc,
         x0=x2,
@@ -282,7 +312,7 @@ def compute_arc_from_two_tangents_objects(segment1, segment2, circ, vehicle):
         turn_direction=circ.turn_direction,
         v=vehicle.v_max,
         omega=omega,
-        unicycle=vehicle,
+        **model,
         t0=t0,
         samples_number=10,
     )
@@ -340,7 +370,8 @@ def compute_segment_between_two_circles_objects(
         overlap=overlap,
     )
 
-    return LinearSegmentUnicycle(
+    _, segment_type, model = _model_primitive_types(vehicle)
+    return segment_type(
         x0=x1,
         y0=y1,
         xf=x2,
@@ -348,6 +379,6 @@ def compute_segment_between_two_circles_objects(
         theta=theta1,
         v=vehicle.v_max,
         t0=0,
-        unicycle=vehicle,
+        **model,
         samples_number=10,
     )

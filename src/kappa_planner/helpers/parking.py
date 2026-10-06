@@ -156,7 +156,7 @@ def parking_maneuver(corridor1, corridor2, turn, start_pose, end_pose, vehicle, 
                                   turn_direction=turn, v=vehicle.v_max, omega= turn* vehicle.omega_max,
                                   unicycle=vehicle, t0=0, samples_number=10)
     
-    arc2 = BackwardArc(xc=xc2, yc=yc2, x0 = xs, y0 = ys,
+    arc2 = BackwardArcBicycle(xc=xc2, yc=yc2, x0 = xs, y0 = ys,
                                         theta0 = thetas, xf = xp, yf = yp,
                                         thetaf = thetap, radius = R,
                                         turn_direction = -turn, v = -vehicle.v_max,
@@ -215,7 +215,7 @@ def compute_three_maneuvers_compact_siemens(corridor, corridor2, start_pose, uni
     :type turn1: float
 
     :return: primitive 1, turn on-the-spot
-    :rtype: TurnOnTheSpot 
+    :rtype: TurnOnTheSpotUnicycle
     :return: primitive2, arc
     :rtype: CurvilinearArcUnicycle
     :return: primitive3, segment

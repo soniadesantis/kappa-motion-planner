@@ -1,7 +1,7 @@
 from math import cos, sin, pi, atan2, sqrt, asin
 from ..geometry import Point, Pose, Circle
 from ..vehicle import Unicycle
-from ..trajectory import TurnOnTheSpot, LinearSegmentUnicycle, CurvilinearArcUnicycle
+from ..trajectory import TurnOnTheSpotUnicycle, LinearSegmentUnicycle, CurvilinearArcUnicycle
 from .geometry_operations import compute_angular_difference_with_turn_direction, compute_distance_two_points, select_tangency_point_from_point_circle
 from .primitives import compute_extreme_poses_arc_line, invert_maneuvers
 
@@ -131,7 +131,7 @@ def compute_TCSC_trajectory(start_pose, end_pose, tau0, tauf, unicycle):
     theta_start_C4 = theta_end_S3
     theta_end_C4 = theta_start_C4 + delta_theta_C3
 
-    T1 = TurnOnTheSpot(
+    T1 = TurnOnTheSpotUnicycle(
         x=x0,
         y=y0,
         theta0=theta_start_T1,
@@ -272,7 +272,7 @@ def compute_TCSCT_trajectory(start_pose, end_pose, tau0, tauf, unicycle):
     theta_end_T5 = theta_start_T5 + delta_theta_T5
 
 
-    T1 = TurnOnTheSpot(
+    T1 = TurnOnTheSpotUnicycle(
         x=x0,
         y=y0,
         theta0=theta_start_T1,
@@ -332,7 +332,7 @@ def compute_TCSCT_trajectory(start_pose, end_pose, tau0, tauf, unicycle):
         samples_number=30,
     )
 
-    T5 = TurnOnTheSpot(
+    T5 = TurnOnTheSpotUnicycle(
         x=xf,
         y=yf,
         theta0=theta_start_T5,

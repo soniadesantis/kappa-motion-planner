@@ -1,5 +1,5 @@
 from .geometry_operations import compute_angular_difference_with_turn_direction, wrapPositiveAngle, efficient_sign, compute_angular_difference, compute_turn_direction
-from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpot
+from ..trajectory import LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpotUnicycle
 from .collision_avoidance import collision_avoidance_check, collision_avoidance_check_tb, collision_avoidance_check_after_overlap
 from .initial_turn_on_the_spot import compute_initial_turn_on_the_spot_time_optimality, compute_initial_turn_direction_exact_rule
 from .intersections import circle_intersection
@@ -82,7 +82,7 @@ def compute_three_maneuvers_compact(
     :param turn1: initial turn direction
 
     :return: turn-on-the-spot, arc, and segment primitives
-    :rtype: list (TurnOnTheSpot, CurvilinearArcUnicycle, LinearSegmentUnicycle)
+    :rtype: list (TurnOnTheSpotUnicycle, CurvilinearArcUnicycle, LinearSegmentUnicycle)
     """
     # Normalize initial heading
     start_pose[2] = wrapPositiveAngle(start_pose[2])
@@ -269,7 +269,7 @@ def compute_three_maneuvers_compact(
     omega1 = omega_max if turn1 > 0 else omega_min
 
     # Primitive 1: turn-on-the-spot
-    primitive1 = TurnOnTheSpot(
+    primitive1 = TurnOnTheSpotUnicycle(
         x=x0,
         y=y0,
         theta0=theta0_p1,
@@ -336,7 +336,7 @@ def compute_three_maneuvers_no_collision_avoidance(start_pose, unicycle, xc2, yc
     :type turn1: float
 
     :return: primitive 1, turn on-the-spot
-    :rtype: TurnOnTheSpot 
+    :rtype: TurnOnTheSpotUnicycle
     :return: primitive2, arc
     :rtype: CurvilinearArcUnicycle
     :return: primitive3, segment
@@ -397,7 +397,7 @@ def compute_three_maneuvers_no_collision_avoidance(start_pose, unicycle, xc2, yc
     omega1 = omega_max if turn1 > 0 else omega_min
 
     # Primitive 1: turn-on-the-spot
-    primitive1 = TurnOnTheSpot(x=x0, y=y0, theta0=theta0_p1, thetaf=thetaf_p1, omega=omega_turn_on_the_spot, unicycle = unicycle, t0 = t0, samples_number=5)
+    primitive1 = TurnOnTheSpotUnicycle(x=x0, y=y0, theta0=theta0_p1, thetaf=thetaf_p1, omega=omega_turn_on_the_spot, unicycle = unicycle, t0 = t0, samples_number=5)
     # Primitive 2: arc
     primitive2 = CurvilinearArcUnicycle(xc=xc1, yc=yc1, x0 = x0, y0 = y0, theta0 = theta0_p2, xf = x1, yf = y1, thetaf = thetaf_p2, radius = R, turn_direction = turn1, v = v_max, omega = omega1, unicycle = unicycle, t0 = primitive1.tf, samples_number = 10)
     # Primitive 3: segment

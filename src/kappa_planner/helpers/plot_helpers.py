@@ -303,7 +303,7 @@ def plot_analytical_trajectory(
     """
     Plot an analytical trajectory composed of multiple trajectory segments.
     """
-    from ..trajectory import CurvilinearArcUnicycle, BackwardArc
+    from ..trajectory import CurvilinearArcUnicycle, CurvilinearArcBicycle, BackwardArcBicycle
 
     if figure is None:
         fig, ax = plt.subplots()
@@ -322,7 +322,8 @@ def plot_analytical_trajectory(
         for trajectory_piece in trajectory:
             if (
                 isinstance(trajectory_piece, CurvilinearArcUnicycle)
-                or isinstance(trajectory_piece, BackwardArc)
+                or isinstance(trajectory_piece, CurvilinearArcBicycle)
+                or isinstance(trajectory_piece, BackwardArcBicycle)
             ):
                 trajectory_piece.plot_circle(ax)
 
@@ -346,7 +347,7 @@ def plot_velocity_profiles(trajectory, vehicle=None):
     If the vehicle is a Unicycle:
         Plots v(t) and ω(t).
     If the vehicle is a Bicycle:
-        Plots v(t) and δ(t), where δ is inferred from ω by sign.
+        Plots v(t) and δ(t), using the primitive's steering profile.
 
     Parameters
     ----------
@@ -379,12 +380,19 @@ def plot_velocity_profiles(trajectory, vehicle=None):
     v_global = np.concatenate(v_global)
     omega_global = np.concatenate(omega_global)
 
-    # If bicycle, convert ω → δ
+    # Bicycle primitives provide steering directly; older samples use ω/v.
     if vehicle is not None and isinstance(vehicle, Bicycle):
-        delta_global = np.zeros_like(omega_global)
-        delta_global[omega_global > 0] = vehicle.delta_max
-        delta_global[omega_global < 0] = vehicle.delta_min
-        # when omega == 0 -> 0 (already set)
+        if all(hasattr(segment, "steering_angle") for segment in trajectory):
+            delta_global = np.concatenate([
+                segment.steering_angle for segment in trajectory
+            ])
+        else:
+            # Compatibility for sampled trajectories without steering profiles.
+            curvature = np.divide(
+                omega_global, v_global, out=np.zeros_like(omega_global),
+                where=v_global != 0,
+            )
+            delta_global = np.arctan(vehicle.wheelbase * curvature)
 
     # Set up figure
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
@@ -671,7 +679,7 @@ def plot_turning_front_corner_path(
     If turn_direction == -1, plot the front-right corner.
     """
 
-    from ..trajectory import CurvilinearArcUnicycle
+    from ..trajectory import CurvilinearArcUnicycle, CurvilinearArcBicycle
 
     if ax is None:
         fig, ax = plt.subplots()
@@ -679,7 +687,7 @@ def plot_turning_front_corner_path(
     half_width = width / 2.0
 
     for trajectory_piece in trajectory:
-        if not isinstance(trajectory_piece, CurvilinearArcUnicycle):
+        if not isinstance(trajectory_piece, (CurvilinearArcUnicycle, CurvilinearArcBicycle)):
             continue
 
         path_coordinates = trajectory_piece.path_coordinates
