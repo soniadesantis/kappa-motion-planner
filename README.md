@@ -80,6 +80,13 @@ python examples/standing_unicycle.py
 python examples/axis_aligned_bicycle.py
 ```                                          
 
+The bicycle example uses a fixed ten-corridor sequence from the random
+benchmark, with explicit endpoint poses and turning radius `R=1`. It plots
+the complete baseline and refined trajectories, highlights both boundary
+connections, and reports traversal times, percentage improvement, and total
+planning computation time. No experiment files or random generation are needed.
+Optionally save the plot with `--save /tmp/axis_aligned_bicycle.png`.
+
 Select the planner through `MotionPlanner(..., assumptions="standing")` for
 the unicycle pipeline (the default), or `assumptions="axis-aligned"` for the
 bicycle baseline and refinement pipeline. Other model/planner combinations
