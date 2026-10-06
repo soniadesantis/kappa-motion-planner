@@ -6,7 +6,6 @@ from kappa_planner.corridor import CorridorWorld
 from kappa_planner.motion_planner import MotionPlanner
 from kappa_planner.vehicle import Unicycle
 from kappa_planner.helpers.corridor_geometry import get_corridor_from_vector
-from kappa_planner.helpers.poses import compute_end_pose, compute_start_pose
 from kappa_planner.helpers.plot_helpers import plot_analytical_trajectory, plot_velocity_profiles
 
 """
@@ -16,7 +15,7 @@ This example demonstrates:
   • How to construct multiple corridors using `get_corridor_from_vector`.
   • How to load a unicycle vehicle model from the `unicycle_library`.
   • How to modify vehicle parameters after instantiation.
-  • How to compute start and end poses using `compute_start_pose` and `compute_end_pose`.
+  • How to specify offset start and end poses in normalized corridor frames.
   • How to generate and visualize the resulting analytical trajectory.
 """
 
@@ -78,8 +77,11 @@ unicycle.update(v_max = 0.8)
 unicycle.update(omega_max = 1)
 
 ### Define initial pose and final pose ###
-initial_pose = compute_start_pose(corridor1, unicycle, 0.5)
-final_pose = compute_end_pose(corridor5, unicycle, 0.5)
+# Positions are fractions of the shrunken corridor dimensions in [-1, 1].
+# Both poses are off-center, and their headings differ from corridor traversal.
+# Heading is measured from the corridor frame's x axis (across its width).
+relative_start_pose = [0.7, -0.65, 5*pi/4]
+relative_end_pose = [-0.7, 0.65, pi]
 
 ### Define Bicycle vehicle ###
 vehicle_width = 0.430 
@@ -89,7 +91,10 @@ vehicle_vmax = 1
 vehicle_deltamax = 0.5
 
 ### Define Motion Planner ###
-mp = MotionPlanner(unicycle, corridor_list, start_pose=initial_pose, end_pose=final_pose, assumptions="standing")
+mp = MotionPlanner(unicycle, corridor_list,
+                   relative_start_pose=relative_start_pose,
+                   relative_end_pose=relative_end_pose,
+                   assumptions="standing")
 
 ### Compute analytical trajectory ###
 analytical_trajectory = mp.compute_trajectory_analytical()
