@@ -1185,4 +1185,150 @@ def check_segment_collision_corridor_union(
             return True, float(fraction)
 
     return False, None
-    
+
+
+def corridor_to_axis_aligned_polygon(
+    corridor,
+):
+    """
+    Convert an axis-aligned corridor to a Shapely rectangle.
+
+    The Chapter 5 construction assumes axis-aligned corridors, so the
+    rectangle is recovered directly from the extrema of its corner points.
+    """
+
+    from shapely.geometry import box
+
+    corners = np.asarray(
+        corridor.corners,
+        dtype=float,
+    )
+
+    x_min = np.min(corners[:, 0])
+    x_max = np.max(corners[:, 0])
+    y_min = np.min(corners[:, 1])
+    y_max = np.max(corners[:, 1])
+
+    return box(
+        x_min,
+        y_min,
+        x_max,
+        y_max,
+    )
+
+
+def compute_safe_corridor_union(
+    corridor_list,
+    r,
+    quad_segs=32,
+):
+    """
+    Compute the collision-free region for the robot reference point,
+
+        W_free = (union_j C_j) erosion B_r.
+
+    The corridors are unioned *before* erosion. This is important: it
+    preserves the rounded collision-free regions that appear at corridor
+    junctions and that would be lost by eroding every corridor separately.
+
+    Shapely represents the circular erosion arcs by a polygonal
+    approximation. ``quad_segs`` controls the number of segments per
+    quarter circle.
+    """
+
+    from shapely.ops import unary_union
+
+    if len(corridor_list) == 0:
+        return None
+
+    corridor_polygons = [
+        corridor_to_axis_aligned_polygon(corridor)
+        for corridor in corridor_list
+    ]
+
+    corridor_union = unary_union(
+        corridor_polygons
+    )
+
+    if corridor_union.is_empty:
+        return None
+
+    if r <= 0.0:
+        return corridor_union
+
+    # Shapely >= 2 uses quad_segs. The fallback keeps compatibility
+    # with older Shapely versions, where the same parameter is called
+    # resolution.
+    try:
+        safe_union = corridor_union.buffer(
+            -r,
+            quad_segs=quad_segs,
+        )
+    except TypeError:
+        safe_union = corridor_union.buffer(
+            -r,
+            resolution=quad_segs,
+        )
+
+    if safe_union.is_empty:
+        return None
+
+    return safe_union
+
+
+def segment_inside_safe_corridor_union(
+    start_point,
+    end_point,
+    safe_union,
+    tol=1e-9,
+):
+    """
+    Check whether the complete finite segment lies inside the eroded
+    corridor union.
+
+    This is stronger than checking only the two tangency points. It
+    rejects a tangent whose endpoints are collision-free but whose
+    interior leaves W_free.
+    """
+
+    from shapely.geometry import LineString, Point
+
+    if safe_union is None:
+        return False
+
+    start_point = np.asarray(
+        start_point,
+        dtype=float,
+    )
+
+    end_point = np.asarray(
+        end_point,
+        dtype=float,
+    )
+
+    if np.linalg.norm(
+        end_point - start_point
+    ) <= tol:
+        geometry = Point(
+            start_point[0],
+            start_point[1],
+        )
+    else:
+        geometry = LineString([
+            tuple(start_point),
+            tuple(end_point),
+        ])
+
+    # ``covers`` includes the boundary. The tiny positive buffer is only
+    # a numerical tolerance and should remain much smaller than all
+    # geometric modelling tolerances used by the planner.
+    if tol > 0.0:
+        safe_union_for_test = safe_union.buffer(
+            tol
+        )
+    else:
+        safe_union_for_test = safe_union
+
+    return safe_union_for_test.covers(
+        geometry
+    )

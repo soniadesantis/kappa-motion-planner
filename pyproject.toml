@@ -3,7 +3,7 @@ name = "kappa_planner"
 version = "0.1.0"
 description = "Kappa Motion Planner for Corridor Navigation"
 readme = { file = "README.md", content-type = "text/markdown" }
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 license = { text = "GNU LGPLv3" }
 
 authors = [
@@ -21,6 +21,7 @@ dependencies = [
 "matplotlib>=3.7",
 "PyYAML>=6.0",
 "sympy>=1.12",
+"shapely>=2.0",
 ]
 
 [tool.setuptools]

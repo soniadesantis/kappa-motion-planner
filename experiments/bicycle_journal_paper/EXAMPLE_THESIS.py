@@ -18,11 +18,17 @@ from kappa_planner.baseline_construction_new import (
 
     compute_bicycle_baseline,
 
+    compute_baseline_boundary_connections,
+
+    assemble_baseline_trajectory,
+
+    compute_trajectory_traversal_time,
+
 )
 
-from kappa_planner.refinement_new import (
+from kappa_planner.helpers.collision_avoidance import compute_safe_corridor_union
 
-    compute_safe_corridor_union,
+from kappa_planner.refinement_new import (
 
     refine_bicycle_baseline,
 
@@ -34,9 +40,190 @@ from kappa_planner.refinement_new import (
 
 # ===================================================================
 
-EXAMPLE_NUM = 5
+EXAMPLE_NUM = 35
 
 PLOT_RESULTS = True
+
+# ===================================================================
+# Optional boundary-connection attachment
+# ===================================================================
+
+def try_attach_baseline_boundary_connections(
+
+    corridors,
+
+    baseline,
+
+    bicycle,
+
+    start_pose,
+
+    end_pose,
+
+):
+
+    """
+    Try to attach the prescribed boundary poses to an already computed
+    internal baseline.
+
+    Boundary-connection failure does not invalidate the internal baseline.
+    If the complete trajectory cannot be assembled, the baseline is left
+    available for plotting and refinement.
+
+    :return:
+        (success, reason)
+    """
+
+    if start_pose is None or end_pose is None:
+
+        return False, "missing_boundary_poses"
+
+    if baseline.fillets[0] is None:
+
+        return False, "unsupported_initial_straight_boundary"
+
+    if baseline.fillets[-1] is None:
+
+        return False, "unsupported_final_straight_boundary"
+
+    (
+        initial_maneuvers,
+        final_maneuvers,
+    ) = compute_baseline_boundary_connections(
+
+        corridor_list=corridors,
+
+        baseline=baseline,
+
+        bicycle=bicycle,
+
+        initial_pose=start_pose,
+
+        final_pose=end_pose,
+
+    )
+
+    if initial_maneuvers is None:
+
+        return False, "initial_boundary_connection_failed"
+
+    if final_maneuvers is None:
+
+        return False, "final_boundary_connection_failed"
+
+    baseline.initial_maneuvers = initial_maneuvers
+
+    baseline.final_maneuvers = final_maneuvers
+
+    trajectory = assemble_baseline_trajectory(
+
+        corridor_list=corridors,
+
+        baseline=baseline,
+
+        bicycle=bicycle,
+
+    )
+
+    if trajectory is None:
+
+        # Keep the internal baseline as the valid fallback result.
+        baseline.initial_maneuvers = None
+
+        baseline.final_maneuvers = None
+
+        baseline.trajectory = None
+
+        baseline.traversal_time = None
+
+        return False, "baseline_trajectory_assembly_failed"
+
+    baseline.trajectory = trajectory
+
+    baseline.traversal_time = (
+        compute_trajectory_traversal_time(
+            trajectory
+        )
+    )
+
+    return True, None
+
+
+def plot_maneuver_sequence(
+
+    ax,
+
+    trajectory,
+
+    label,
+
+    linewidth=3.0,
+
+    alpha=1.0,
+
+    zorder=5,
+
+    color=None,
+
+):
+
+    """
+    Plot an assembled primitive sequence using the sampled coordinates
+    already stored in the existing motion-primitive classes.
+    """
+
+    label_used = False
+
+    for maneuver in trajectory:
+
+        coordinates = np.asarray(
+
+            maneuver.path_coordinates,
+
+            dtype=float,
+
+        )
+
+        if (
+
+            coordinates.ndim != 2
+
+            or coordinates.shape[0] == 0
+
+            or coordinates.shape[1] < 2
+
+        ):
+
+            continue
+
+        ax.plot(
+
+            coordinates[:, 0],
+
+            coordinates[:, 1],
+
+            linewidth=linewidth,
+
+            alpha=alpha,
+
+            color=color,
+
+            zorder=zorder,
+
+            label=(
+
+                label
+
+                if not label_used
+
+                else None
+
+            ),
+
+        )
+
+        label_used = True
+
 
 # ===================================================================
 
@@ -45,18 +232,28 @@ PLOT_RESULTS = True
 # ===================================================================
 
 def plot_baseline_and_refinement(
+
     corridors,
+
     baseline,
+
     circle_groups,
+
     straight_passage_groups,
+
     active_circle_indices,
+
     tangents,
+
     example_number,
+
     robot_radius,
 
     start_pose=None,
 
     end_pose=None,
+
+    refinement_result=None,
 
 ):
 
@@ -74,11 +271,17 @@ def plot_baseline_and_refinement(
 
         - straight-passage groups containing aligned transitions,
 
-        - baseline straight segments and fillets,
+        - complete baseline including boundary connections, when available,
+
+        - internal baseline only when the boundary connection is unavailable,
 
         - refinement circles at genuine turns, distinguishing retained
+
           and skipped circles,
-        - accepted circle-to-circle tangents after chain simplification.
+
+        - accepted circle-to-circle tangents after chain simplification,
+
+        - refined trajectory and its initial/final boundary connections.
 
     """
 
@@ -181,11 +384,17 @@ def plot_baseline_and_refinement(
         )
 
     # ---------------------------------------------------------------
+
     # 3. Eroded corridor union W_free
+
     # ---------------------------------------------------------------
+
     safe_union = compute_safe_corridor_union(
+
         corridor_list=corridors,
+
         r=robot_radius,
+
     )
 
     safe_union_label_used = False
@@ -193,27 +402,43 @@ def plot_baseline_and_refinement(
     if safe_union is not None:
 
         if safe_union.geom_type == "Polygon":
+
             safe_polygons = [safe_union]
+
         else:
+
             safe_polygons = list(safe_union.geoms)
 
         for polygon in safe_polygons:
 
             exterior = np.asarray(
+
                 polygon.exterior.coords,
+
                 dtype=float,
+
             )
 
             ax.plot(
+
                 exterior[:, 0],
+
                 exterior[:, 1],
+
                 linewidth=1.8,
+
                 alpha=0.8,
+
                 label=(
+
                     "Eroded corridor union"
+
                     if not safe_union_label_used
+
                     else None
+
                 ),
+
             )
 
             safe_union_label_used = True
@@ -221,15 +446,23 @@ def plot_baseline_and_refinement(
             for interior in polygon.interiors:
 
                 interior_points = np.asarray(
+
                     interior.coords,
+
                     dtype=float,
+
                 )
 
                 ax.plot(
+
                     interior_points[:, 0],
+
                     interior_points[:, 1],
+
                     linewidth=1.2,
+
                     alpha=0.8,
+
                 )
 
     # ---------------------------------------------------------------
@@ -388,125 +621,166 @@ def plot_baseline_and_refinement(
 
     # ---------------------------------------------------------------
 
-    # 5. Trimmed baseline straight portions
+    # 5. Baseline path
 
     # ---------------------------------------------------------------
 
-    for j in range(len(waypoints) - 1):
+    if baseline.trajectory is not None:
 
-        if baseline.fillets[j] is None:
+        # Complete trajectory:
+        #
+        #     prescribed initial pose
+        #         -> initial boundary connection
+        #         -> internal baseline
+        #         -> final boundary connection
+        #         -> prescribed final pose
 
-            start = waypoints[j]
+        plot_maneuver_sequence(
 
-        else:
+            ax=ax,
 
-            start = baseline.fillets[j].end_point
+            trajectory=baseline.trajectory,
 
-        if baseline.fillets[j + 1] is None:
+            label="Complete baseline trajectory",
 
-            end = waypoints[j + 1]
+            linewidth=3.0,
 
-        else:
+            alpha=1.0,
 
-            end = baseline.fillets[j + 1].start_point
-
-        ax.plot(
-
-            [start[0], end[0]],
-
-            [start[1], end[1]],
-
-            linewidth=2.5,
-
-            label=(
-
-                "Baseline path"
-
-                if j == 0
-
-                else None
-
-            ),
+            zorder=5,
 
         )
 
-    # ---------------------------------------------------------------
+    else:
 
-    # 6. Baseline radius-R fillets
+        # Boundary connection was not available. Plot the internal
+        # baseline exactly as before.
 
-    # ---------------------------------------------------------------
+        baseline_label_used = False
 
-    for fillet in baseline.fillets:
+        # -----------------------------------------------------------
 
-        if fillet is None:
+        # 5a. Trimmed internal straight portions
 
-            continue
+        # -----------------------------------------------------------
 
-        radial_start = (
+        for j in range(len(waypoints) - 1):
 
-            fillet.start_point
+            if baseline.fillets[j] is None:
 
-            - fillet.center
+                start = waypoints[j]
 
-        )
+            else:
 
-        start_angle = np.arctan2(
+                start = baseline.fillets[j].end_point
 
-            radial_start[1],
+            if baseline.fillets[j + 1] is None:
 
-            radial_start[0],
+                end = waypoints[j + 1]
 
-        )
+            else:
 
-        angles = (
+                end = baseline.fillets[j + 1].start_point
 
-            start_angle
+            ax.plot(
 
-            + fillet.turn_direction
+                [start[0], end[0]],
 
-            * np.linspace(
+                [start[1], end[1]],
 
-                0.0,
+                linewidth=2.5,
 
-                np.pi / 2.0,
+                label=(
 
-                100,
+                    "Internal baseline only"
+
+                    if not baseline_label_used
+
+                    else None
+
+                ),
 
             )
 
-        )
+            baseline_label_used = True
 
-        radius = np.linalg.norm(
+        # -----------------------------------------------------------
 
-            radial_start
+        # 5b. Internal radius-R fillets
 
-        )
+        # -----------------------------------------------------------
 
-        arc = (
+        for fillet in baseline.fillets:
 
-            fillet.center
+            if fillet is None:
 
-            + radius
+                continue
 
-            * np.column_stack([
+            radial_start = (
 
-                np.cos(angles),
+                fillet.start_point
 
-                np.sin(angles),
+                - fillet.center
 
-            ])
+            )
 
-        )
+            start_angle = np.arctan2(
 
-        ax.plot(
+                radial_start[1],
 
-            arc[:, 0],
+                radial_start[0],
 
-            arc[:, 1],
+            )
 
-            linewidth=2.5,
+            angles = (
 
-        )
+                start_angle
+
+                + fillet.turn_direction
+
+                * np.linspace(
+
+                    0.0,
+
+                    np.pi / 2.0,
+
+                    100,
+
+                )
+
+            )
+
+            radius = np.linalg.norm(
+
+                radial_start
+
+            )
+
+            arc = (
+
+                fillet.center
+
+                + radius
+
+                * np.column_stack([
+
+                    np.cos(angles),
+
+                    np.sin(angles),
+
+                ])
+
+            )
+
+            ax.plot(
+
+                arc[:, 0],
+
+                arc[:, 1],
+
+                linewidth=2.5,
+
+            )
 
     # ---------------------------------------------------------------
 
@@ -515,16 +789,23 @@ def plot_baseline_and_refinement(
     # ---------------------------------------------------------------
 
     angle_array = np.linspace(
+
         0.0,
+
         2.0 * np.pi,
+
         200,
+
     )
 
     active_circle_indices = set(
+
         active_circle_indices
+
     )
 
     active_label_used = False
+
     skipped_label_used = False
 
     for j, group in enumerate(circle_groups):
@@ -532,167 +813,308 @@ def plot_baseline_and_refinement(
         for tau, circle in group.items():
 
             center = np.asarray(
+
                 circle.center,
+
                 dtype=float,
+
             )
 
             radius = circle.radius
+
             is_active = (
+
                 j in active_circle_indices
+
             )
 
             x_circle = (
+
                 center[0]
+
                 + radius * np.cos(angle_array)
+
             )
 
             y_circle = (
+
                 center[1]
+
                 + radius * np.sin(angle_array)
+
             )
 
             if is_active:
+
                 label = (
+
                     "Retained refinement circles"
+
                     if not active_label_used
+
                     else None
+
                 )
+
                 active_label_used = True
+
                 linestyle = "-."
+
                 linewidth = 1.7
+
                 alpha = 1.0
+
                 center_marker = "x"
+
                 center_size = 65
+
             else:
+
                 label = (
+
                     "Skipped refinement circles"
+
                     if not skipped_label_used
+
                     else None
+
                 )
+
                 skipped_label_used = True
+
                 linestyle = ":"
+
                 linewidth = 1.2
+
                 alpha = 0.30
+
                 center_marker = "o"
+
                 center_size = 30
 
             ax.plot(
+
                 x_circle,
+
                 y_circle,
+
                 linestyle,
+
                 linewidth=linewidth,
+
                 alpha=alpha,
+
                 label=label,
+
             )
 
             ax.scatter(
+
                 center[0],
+
                 center[1],
+
                 marker=center_marker,
+
                 s=center_size,
+
                 alpha=alpha,
+
                 zorder=8,
+
             )
 
             if circle.corner_point is not None:
 
                 corner = np.asarray(
+
                     circle.corner_point,
+
                     dtype=float,
+
                 )
 
                 ax.scatter(
+
                     corner[0],
+
                     corner[1],
+
                     marker="+",
+
                     s=50,
+
                     alpha=alpha,
+
                     zorder=7,
+
                 )
 
                 ax.plot(
+
                     [corner[0], center[0]],
+
                     [corner[1], center[1]],
+
                     ":",
+
                     linewidth=0.8,
+
                     alpha=alpha,
+
                 )
 
             status = (
+
                 "active"
+
                 if is_active
+
                 else "skipped"
+
             )
 
             ax.annotate(
+
                 (
+
                     f"O{j + 1}, "
+
                     f"tau={tau}\n"
+
                     f"{circle.placement_rule}\n"
+
                     f"{status}"
+
                 ),
+
                 center,
+
                 xytext=(7, 7),
+
                 textcoords="offset points",
+
                 fontsize=8,
+
                 alpha=alpha,
+
             )
 
     # ---------------------------------------------------------------
+
     # 8. Accepted refinement tangents
+
     # ---------------------------------------------------------------
+
     tangent_label_used = False
 
     for tangent_index, tangent in enumerate(
+
         tangents,
+
         start=1,
+
     ):
 
         start_point = np.asarray(
+
             tangent.start_point,
+
             dtype=float,
+
         )
 
         end_point = np.asarray(
+
             tangent.end_point,
+
             dtype=float,
+
         )
 
         ax.plot(
+
             [start_point[0], end_point[0]],
+
             [start_point[1], end_point[1]],
+
             linewidth=2.8,
+
             label=(
+
                 "Accepted refinement tangents"
+
                 if not tangent_label_used
+
                 else None
+
             ),
+
         )
 
         tangent_label_used = True
 
         ax.scatter(
+
             [start_point[0], end_point[0]],
+
             [start_point[1], end_point[1]],
+
             s=28,
+
             zorder=9,
+
         )
 
         midpoint = 0.5 * (
+
             start_point
+
             + end_point
+
         )
 
         ax.annotate(
+
             f"T{tangent_index}",
+
             midpoint,
+
             xytext=(5, 5),
+
             textcoords="offset points",
+
             fontsize=8,
+
         )
 
     # ---------------------------------------------------------------
-    # 9. Initial and final positions
+
+    # 9. Complete refined path and boundary connections
+
+    if refinement_result is not None:
+        initial = refinement_result.initial_maneuvers or []
+        final = refinement_result.final_maneuvers or []
+        trajectory = refinement_result.trajectory
+        if trajectory is not None:
+            middle = trajectory[len(initial):len(trajectory) - len(final)]
+            plot_maneuver_sequence(
+                ax, middle, "Refined internal trajectory",
+                color="#7c3aed", linewidth=3.2, zorder=10,
+            )
+        if initial:
+            plot_maneuver_sequence(
+                ax, initial, "Refined initial connection",
+                color="#16a34a", linewidth=3.2, zorder=10,
+            )
+        if final:
+            plot_maneuver_sequence(
+                ax, final, "Refined final connection",
+                color="#dc2626", linewidth=3.2, zorder=10,
+            )
+
+    # 10. Initial and final positions
+
     # ---------------------------------------------------------------
 
     if start_pose is not None:
@@ -773,9 +1195,20 @@ def plot_baseline_and_refinement(
 
     ax.set_ylabel("y [m]")
 
+    baseline_status = (
+
+        "complete baseline"
+
+        if baseline.trajectory is not None
+
+        else "internal baseline only"
+
+    )
+
     ax.set_title(
 
-        f"Bicycle baseline, refinement circles, and accepted tangents "
+        f"Bicycle {baseline_status}, "
+        f"{'complete refinement' if refinement_result is not None and refinement_result.trajectory is not None else 'internal refinement'} "
 
         f"— example {example_number}"
 
@@ -901,11 +1334,44 @@ def print_baseline_information(
 
     )
 
+    print()
+
+    if baseline.trajectory is not None:
+
+        print("Boundary-connected baseline: available")
+
+        print(
+
+            f"Number of trajectory primitives: "
+
+            f"{len(baseline.trajectory)}"
+
+        )
+
+        print(
+
+            f"Baseline traversal time: "
+
+            f"{baseline.traversal_time:.6f} s"
+
+        )
+
+    else:
+
+        print("Boundary-connected baseline: unavailable")
+
+        print("Using the internal baseline only.")
+
 def print_refinement_information(
+
     circle_groups,
+
     straight_passage_groups,
+
     active_circle_indices,
+
     tangents,
+
     refinement_time_ms,
 
 ):
@@ -949,33 +1415,51 @@ def print_refinement_information(
     )
 
     active_circle_indices = list(
+
         active_circle_indices
+
     )
 
     active_set = set(
+
         active_circle_indices
+
     )
 
     all_circle_indices = [
+
         j
+
         for j, group in enumerate(circle_groups)
+
         if group
+
     ]
 
     skipped_circle_indices = [
+
         j
+
         for j in all_circle_indices
+
         if j not in active_set
+
     ]
 
     print(
+
         "Active circle transitions: ",
+
         [j + 1 for j in active_circle_indices],
+
     )
 
     print(
+
         "Skipped circle transitions: ",
+
         [j + 1 for j in skipped_circle_indices],
+
     )
 
     print()
@@ -1083,13 +1567,19 @@ def print_refinement_information(
         for tau, circle in group.items():
 
             status = (
+
                 "active"
+
                 if (j - 1) in active_set
+
                 else "skipped"
+
             )
 
             print(
+
                 f"  status = {status}"
+
             )
 
             print(
@@ -1147,48 +1637,72 @@ def print_refinement_information(
             )
 
     print()
+
     print("Accepted tangents:")
 
     if not tangents:
+
         print("  none")
 
     else:
+
         for tangent_index, tangent in enumerate(
+
             tangents,
+
             start=1,
+
         ):
 
             length = np.linalg.norm(
+
                 tangent.end_point
+
                 - tangent.start_point
+
             )
 
             print(
+
                 f"  T{tangent_index}: "
+
                 f"transition {tangent.start_circle_index + 1}"
+
                 f" -> {tangent.end_circle_index + 1}"
+
             )
 
             print(
+
                 f"    start point = "
+
                 f"{np.asarray(tangent.start_point)}"
+
             )
 
             print(
+
                 f"    end point = "
+
                 f"{np.asarray(tangent.end_point)}"
+
             )
 
             print(
+
                 f"    length = "
+
                 f"{length:.6f}"
+
             )
 
             print(
-                f"    heading = "
-                f"{tangent.start_heading:.6f} rad"
-            )
 
+                f"    heading = "
+
+                f"{tangent.start_heading:.6f} rad"
+
+            )
 
 # ===================================================================
 
@@ -1320,6 +1834,39 @@ def main():
 
         return
 
+    # ---------------------------------------------------------------
+
+    # 2. Try to attach the boundary poses
+
+    # ---------------------------------------------------------------
+
+    start_time = perf_counter_ns()
+
+    (
+        boundary_connections_found,
+        boundary_failure_reason,
+    ) = try_attach_baseline_boundary_connections(
+
+        corridors=corridors,
+
+        baseline=baseline,
+
+        bicycle=bicycle,
+
+        start_pose=start_pose,
+
+        end_pose=end_pose,
+
+    )
+
+    boundary_time_ms = (
+
+        perf_counter_ns()
+
+        - start_time
+
+    ) / 1e6
+
     print_baseline_information(
 
         baseline=baseline,
@@ -1328,9 +1875,37 @@ def main():
 
     )
 
+    print()
+
+    if boundary_connections_found:
+
+        print(
+
+            f"Boundary connections assembled in "
+
+            f"{boundary_time_ms:.3f} ms"
+
+        )
+
+    else:
+
+        print(
+
+            "Boundary connections not available: "
+
+            f"{boundary_failure_reason}"
+
+        )
+
+        print(
+
+            "Continuing with the internal baseline."
+
+        )
+
     # ---------------------------------------------------------------
 
-    # 2. Compute independent refinement circles
+    # 3. Compute independent refinement circles
 
     # ---------------------------------------------------------------
 
@@ -1343,6 +1918,10 @@ def main():
         bicycle=bicycle,
 
         baseline=baseline,
+
+        initial_pose=start_pose,
+
+        final_pose=end_pose,
 
     )
 
@@ -1371,10 +1950,15 @@ def main():
         return
 
     (
+
         circle_groups,
+
         straight_passage_groups,
+
         active_circle_indices,
+
         tangents,
+
     ) = refinement_result
 
     print_refinement_information(
@@ -1382,21 +1966,26 @@ def main():
         circle_groups=circle_groups,
 
         straight_passage_groups=straight_passage_groups,
+
         active_circle_indices=active_circle_indices,
+
         tangents=tangents,
+
         refinement_time_ms=refinement_time_ms,
 
     )
 
     # ---------------------------------------------------------------
 
-    # 3. Total time so far
+    # 4. Total time so far
 
     # ---------------------------------------------------------------
 
     total_time_ms = (
 
         baseline_time_ms
+
+        + boundary_time_ms
 
         + refinement_time_ms
 
@@ -1412,7 +2001,7 @@ def main():
 
     print(
 
-        f"Baseline:   "
+        f"Baseline:            "
 
         f"{baseline_time_ms:.3f} ms"
 
@@ -1420,7 +2009,15 @@ def main():
 
     print(
 
-        f"Refinement: "
+        f"Boundary connection: "
+
+        f"{boundary_time_ms:.3f} ms"
+
+    )
+
+    print(
+
+        f"Refinement:          "
 
         f"{refinement_time_ms:.3f} ms"
 
@@ -1428,7 +2025,7 @@ def main():
 
     print(
 
-        f"Total:      "
+        f"Total:               "
 
         f"{total_time_ms:.3f} ms"
 
@@ -1436,7 +2033,7 @@ def main():
 
     # ---------------------------------------------------------------
 
-    # 4. Plot
+    # 5. Plot
 
     # ---------------------------------------------------------------
 
@@ -1457,14 +2054,20 @@ def main():
             circle_groups=circle_groups,
 
             straight_passage_groups=straight_passage_groups,
+
             active_circle_indices=active_circle_indices,
+
             tangents=tangents,
+
             example_number=args.example,
+
             robot_radius=bicycle.width / 2,
 
             start_pose=start_pose,
 
             end_pose=end_pose,
+
+            refinement_result=refinement_result,
 
         )
 

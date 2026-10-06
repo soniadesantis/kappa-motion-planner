@@ -81,3 +81,48 @@ python examples/hello_world.py
 ## Submitting an issue
 
 Please submit an issue if you want to report a bug or propose new features.
+
+## Reproducing the random bicycle baseline/refinement experiment
+
+Use Python 3.10 or newer (the reference run used Python 3.12.3). After pulling
+`develop`, activate your virtual environment and run `python -m pip install -e .`
+to install the dependencies, including Shapely.
+
+Run from the repository root:
+
+```bash
+MPLBACKEND=Agg python experiments/bicycle_journal_paper/benchmark_new_bicycle_baseline.py \
+    --seed 7 --cases 100 --corridors 10 20 30 40 50 \
+    --output experiments/bicycle_journal_paper/results/new_bicycle_baseline/short_corridors_R1_500.json \
+    --figure-output experiments/bicycle_journal_paper/figures/new_bicycle_baseline/short_corridors_R1_500.png
+```
+
+The run generates 100 valid scenarios per corridor count. Turning radius is
+`R = 1.0`, footprint radius is `0.5`, and interior nominal lengths are sampled
+from `2–8`, subject to connection geometry. Longitudinal end extensions are
+added separately. Endpoint corridors reserve maneuvering space. Nonconsecutive
+corridors cannot overlap in area; boundary touching is allowed. Blocked
+construction backtracks over 1–3 recent corridors before restarting.
+
+Both methods use the same corridors and endpoint poses. An unsuccessful
+refinement retains the complete baseline when available. The JSON report stores
+each scenario, timings, outcomes, and fallback use. Each group contains:
+
+- `comparison`: paired complete solutions, including baseline fallbacks.
+- `successful_refinement_comparison`: paired cases that actually produced a
+  refined trajectory, excluding fallbacks. Its
+  `traversal_time_reduction_percent.median` is the median of the per-case
+  percentage improvements against each case's baseline.
+
+Computation times exclude generation, validation, and plotting. Fallback totals
+include the unsuccessful refinement attempt and baseline boundary attachment.
+The figure command saves trajectory examples and a separate `_comparison.png`
+plot. The seed reproduces scenario generation with the same numerical software;
+computation times vary with the PC. Reference versions: NumPy 2.3.2, SciPy 1.16.1,
+Matplotlib 3.10.3, Shapely 2.1.2.
+
+To run the focused checks:
+
+```bash
+python -m unittest discover -s tests -p test_random_baseline_boundary_benchmark.py
+```

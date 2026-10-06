@@ -7,7 +7,15 @@ from .primitives import (
     compute_extreme_poses_arc_line,
 )
 from .poses import absolute_to_relative_pose, relative_to_absolute_pose
-from .collision_avoidance import collision_avoidance_check_bicycle, check_arc_collision, compute_wall_tangent_circle_centers, check_segment_collision_corridor_union, check_arc_collision_corridor_union
+from .collision_avoidance import (
+    collision_avoidance_check_bicycle,
+    check_arc_collision,
+    compute_wall_tangent_circle_centers,
+    check_segment_collision_corridor_union,
+    check_arc_collision_corridor_union,
+    compute_safe_corridor_union,
+    segment_inside_safe_corridor_union,
+)
 from .intersections import circle_intersection
 from ..geometry import Point, Pose, Circle
 from .helper_functions import (
@@ -32,17 +40,18 @@ def compute_traj_to_circle_bicycle(
     bicycle,
     circ1,
     tau0=0,
-    figure = None,
+    figure=None,
+    admissible_corridors=None,
 ):
-    # if getattr(bicycle, "rectangular_footprint", False):
-    #     return compute_traj_to_circle_bicycle_rectangular(
-    #         corridor1=corridor1,
-    #         start_pose=start_pose,
-    #         bicycle=bicycle,
-    #         circ1=circ1,
-    #         tau0=tau0,
-    #     )
+    """
+    Public wrapper for the circular-footprint bicycle pose-to-circle
+    construction.
 
+    ``admissible_corridors`` is optional and preserves the original behavior
+    when omitted. It is needed when the refinement skips the first or last
+    intermediate circle and the boundary tangent consequently traverses more
+    than two corridors.
+    """
     return compute_traj_to_circle_bicycle_circular(
         corridor1=corridor1,
         corridor2=corridor2,
@@ -50,7 +59,8 @@ def compute_traj_to_circle_bicycle(
         bicycle=bicycle,
         circ1=circ1,
         tau0=tau0,
-        figure = figure,
+        figure=figure,
+        admissible_corridors=admissible_corridors,
     )
 
 
@@ -418,27 +428,69 @@ def compute_traj_to_circle_bicycle_circular(
     bicycle,
     circ1,
     tau0=0,
-    figure = None,
+    figure=None,
+    admissible_corridors=None,
 ):
     """
-    Build a trajectory from ``start_pose`` to ``circ1``.
+    Build a collision-free trajectory from ``start_pose`` to ``circ1``.
 
-    Candidate families:
+    The considered boundary-connection structures are
 
         CS
         C_back CS
 
-    If the free-space solution is infeasible, the function attempts to build
-    one corrective backward arc. If no feasible trajectory can be constructed,
-    the function returns ``None``.
+    where the backward arc may either be introduced by the free-space
+    candidate-selection rule or as one corrective maneuver to avoid a
+    collision with a lateral wall of the first corridor.
 
-    :return: list of trajectory primitives, or ``None`` if no feasible
-             trajectory can be constructed
+    Collision checks:
+        - backward arcs must remain inside corridor1;
+        - the forward arc must remain inside corridor1;
+        - the tangent segment must remain inside
+          the admissible corridor union eroded by the robot radius.
+
+    When ``admissible_corridors`` is omitted, the tangent is checked against
+    corridor1 union corridor2. A supplied subsequence allows the tangent to
+    cross additional corridors when refinement skips boundary circles.
+
+    Only lateral-wall collisions of the nominal circular part are repaired.
+    Collisions with unsupported walls, an unsafe tangent segment, or failure
+    of the single corrective construction cause the function to return None.
+
+    :return:
+        List of trajectory primitives, or None.
     """
+
+    # ---------------------------------------------------------------
+    # 0. Target-circle geometry
+    # ---------------------------------------------------------------
     tau1 = circ1.turn_direction
     corner_point1 = circ1.corner_point
 
+    side_walls = (
+        corridor1.LFT,
+        corridor1.RGT,
+    )
+
+    # Build the local collision-free reference-point region once.
+    #
+    # Important:
+    #     union first, then erode by the footprint radius.
+    if admissible_corridors is None:
+        admissible_corridors = [corridor1, corridor2]
+
+    safe_union = compute_safe_corridor_union(
+        corridor_list=admissible_corridors,
+        r=0.5 * bicycle.width,
+    )
+
+    if safe_union is None:
+        return None
+
+    # Determine the turn direction of the first forward arc
+    # if it has not been prescribed.
     if tau0 == 0:
+
         tau0 = compute_initial_turn_direction(
             circ1.xc,
             circ1.yc,
@@ -450,129 +502,241 @@ def compute_traj_to_circle_bicycle_circular(
         )
 
     original_pose = Pose(
-        position=Point(start_pose[0], start_pose[1]),
+        position=Point(
+            start_pose[0],
+            start_pose[1],
+        ),
         theta=start_pose[2],
     )
 
     # ---------------------------------------------------------------
-    # 1. Build the free-space candidate
+    # Small local helpers
     # ---------------------------------------------------------------
-    free_space_maneuvers = []
-    current_pose = list(start_pose)
+    def build_forward_connection(
+        pose,
+        t0,
+    ):
+        """
+        Build the forward C-S connection from ``pose`` to circ1.
+        """
+        return compute_two_maneuvers_bicycle(
+            start_pose=pose,
+            bicycle=bicycle,
+            circ2=circ1,
+            tau2=tau1,
+            t0=t0,
+            tau1=tau0,
+            figure=figure,
+        )
+
+    def tangent_segment_is_safe(
+        segment,
+    ):
+        """
+        Check the complete finite tangent segment in the eroded
+        admissible corridor union.
+        """
+        return segment_inside_safe_corridor_union(
+            start_point=np.array(
+                [
+                    segment.x0,
+                    segment.y0,
+                ],
+                dtype=float,
+            ),
+            end_point=np.array(
+                [
+                    segment.xf,
+                    segment.yf,
+                ],
+                dtype=float,
+            ),
+            safe_union=safe_union,
+        )
+
+    def classify_forward_connection(
+        arc,
+        segment,
+    ):
+        """
+        Classify one forward C-S connection.
+
+        Returns
+        -------
+        status:
+            "safe"
+            "repair"
+            "unsupported"
+
+        wall:
+            Colliding lateral wall for status == "repair",
+            otherwise the detected wall or None.
+        """
+
+        # Exact geometric check against the first shrunken corridor.
+        arc_collision, wall = check_arc_collision(
+            arc,
+            corridor1,
+        )
+
+        if arc_collision:
+
+            if wall in side_walls:
+                return "repair", wall
+
+            # No correction rule is introduced for front/back-wall
+            # collisions.
+            return "unsupported", wall
+
+        # The tangent may legitimately pass through both corridors,
+        # therefore check it against the eroded corridor union.
+        if not tangent_segment_is_safe(
+            segment
+        ):
+            return "unsupported", None
+
+        return "safe", None
+
+    # ---------------------------------------------------------------
+    # 1. Optional backward arc from the free-space rule
+    # ---------------------------------------------------------------
+    backward_is_better, _, _, _ = (
+        rule_initial_backward_maneuver(
+            start_pose,
+            circ1,
+            tau0,
+        )
+    )
+
+    initial_maneuvers = []
+
+    current_pose = list(
+        start_pose
+    )
+
     next_t0 = 0.0
 
-    backward_is_better, _, _, _ = rule_initial_backward_maneuver(
-        start_pose,
-        circ1,
-        tau0,
-    )
-
-    optimal_backward_arc = None
+    # If this becomes non-None, discard the nominal candidate and
+    # construct one corrective backward arc from the original pose.
+    repair_wall = None
 
     if backward_is_better:
-        optimal_backward_arc = compute_backward_arc_optimal(
-            original_pose,
-            tau0,
-            tau1,
-            circ1,
-            bicycle,
+
+        backward_arc = compute_backward_arc_optimal(
+            pose=original_pose,
+            tau1=tau0,
+            tau2=tau1,
+            circ2=circ1,
+            bicycle=bicycle,
         )
 
-        free_space_maneuvers.append(optimal_backward_arc)
-
-        current_pose = [
-            optimal_backward_arc.xf,
-            optimal_backward_arc.yf,
-            optimal_backward_arc.thetaf,
-        ]
-
-        next_t0 = optimal_backward_arc.tf
-    # figure = plot_corridors([corridor1, corridor2])
-    forward_arc, tangent_segment = compute_two_maneuvers_bicycle(
-        current_pose,
-        bicycle,
-        circ1,
-        tau1,
-        t0=next_t0,
-        tau1=tau0,
-        figure = figure,
-    )
-    if forward_arc is None or tangent_segment is None:
-        raise ValueError("Failed to compute forward arc and tangent segment due to overlapping circles.")
-
-    free_space_maneuvers.extend([
-        forward_arc,
-        tangent_segment,
-    ])
-
-    # plot_analytical_trajectory(
-    #     free_space_maneuvers, figure=figure)
-    # plt.show(block = True)
-    
-
-    # ---------------------------------------------------------------
-    # 2. Check the optional time-optimal backward arc
-    # ---------------------------------------------------------------
-    colliding_wall = None
-
-    if optimal_backward_arc is not None:
-        collision, wall = check_arc_collision(
-            optimal_backward_arc,
-            corridor1,
-        )
-
-        if collision:
-            if wall == corridor1.FWD:
-                return None
-
-            # Discard the optional backward arc and construct one
-            # corrective backward arc from the original pose.
-            colliding_wall = wall
-
-    # ---------------------------------------------------------------
-    # 3. Check the free-space forward arc
-    # ---------------------------------------------------------------
-    if colliding_wall is None:
-        collision, wall = check_arc_collision(
-            forward_arc,
-            corridor1,
-        )
-
-        if not collision:
-            _finalize_maneuver_sequence(free_space_maneuvers)
-            return free_space_maneuvers
-
-        if wall == corridor1.FWD:
+        if backward_arc is None:
             return None
 
-        colliding_wall = wall
+        backward_collision, wall = (
+            check_arc_collision(
+                backward_arc,
+                corridor1,
+            )
+        )
+
+        if backward_collision:
+
+            # Only lateral-wall collisions are corrected.
+            if wall not in side_walls:
+                return None
+
+            repair_wall = wall
+
+        else:
+
+            initial_maneuvers.append(
+                backward_arc
+            )
+
+            current_pose = [
+                backward_arc.xf,
+                backward_arc.yf,
+                backward_arc.thetaf,
+            ]
+
+            next_t0 = backward_arc.tf
 
     # ---------------------------------------------------------------
-    # 4. Build exactly one corrective backward arc
+    # 2. Try the nominal forward C-S connection
+    # ---------------------------------------------------------------
+    if repair_wall is None:
+
+        forward_arc, tangent_segment = (
+            build_forward_connection(
+                pose=current_pose,
+                t0=next_t0,
+            )
+        )
+
+        if (
+            forward_arc is None
+            or tangent_segment is None
+        ):
+            return None
+
+        status, wall = (
+            classify_forward_connection(
+                forward_arc,
+                tangent_segment,
+            )
+        )
+
+        if status == "safe":
+
+            maneuvers = (
+                initial_maneuvers
+                + [
+                    forward_arc,
+                    tangent_segment,
+                ]
+            )
+
+            _finalize_maneuver_sequence(
+                maneuvers
+            )
+
+            return maneuvers
+
+        if status == "unsupported":
+            return None
+
+        repair_wall = wall
+
+    # ---------------------------------------------------------------
+    # 3. Construct exactly one corrective backward arc
     # ---------------------------------------------------------------
     corrective_arc = compute_backward_arc(
         corridor=corridor1,
         pose=original_pose,
         bicycle=bicycle,
-        tau=forward_arc.turn_direction,
+        tau=tau0,
         radius=bicycle.max_radius,
-        wall=colliding_wall,
+        wall=repair_wall,
         corner_point=corner_point1,
     )
 
     if corrective_arc is None:
         return None
 
-    corrective_collision, _ = check_arc_collision(
-        corrective_arc,
-        corridor1,
+    # The corrective backward arc must remain entirely inside C1.
+    corrective_collision, _ = (
+        check_arc_collision(
+            corrective_arc,
+            corridor1,
+        )
     )
 
     if corrective_collision:
         return None
 
     # ---------------------------------------------------------------
-    # 5. Recompute CS after the corrective backward arc
+    # 4. Recompute the forward C-S connection
     # ---------------------------------------------------------------
     corrected_start_pose = [
         corrective_arc.xf,
@@ -580,35 +744,48 @@ def compute_traj_to_circle_bicycle_circular(
         corrective_arc.thetaf,
     ]
 
-    corrected_forward_arc, corrected_segment = (
-        compute_two_maneuvers_bicycle(
-            corrected_start_pose,
-            bicycle,
-            circ1,
-            tau1,
-            t0=corrective_arc.tf,
-            tau1=tau0,
+    (
+        corrected_forward_arc,
+        corrected_segment,
+    ) = build_forward_connection(
+        pose=corrected_start_pose,
+        t0=corrective_arc.tf,
+    )
+
+    if (
+        corrected_forward_arc is None
+        or corrected_segment is None
+    ):
+        return None
+
+    # ---------------------------------------------------------------
+    # 5. Validate the corrected forward connection
+    #
+    # Do not recurse into another correction. One corrective backward
+    # maneuver is the complete supported recovery rule.
+    # ---------------------------------------------------------------
+    corrected_status, _ = (
+        classify_forward_connection(
+            corrected_forward_arc,
+            corrected_segment,
         )
     )
 
-    if corrected_forward_arc is None or corrected_segment is None:
-        raise ValueError("Failed to compute corrected forward arc and tangent segment due to overlapping circles.")
-
-    forward_collision, _ = check_arc_collision(
-        corrected_forward_arc,
-        corridor1,
-    )
-
-    if forward_collision:
+    if corrected_status != "safe":
         return None
 
+    # ---------------------------------------------------------------
+    # 6. Successful corrected boundary connection
+    # ---------------------------------------------------------------
     corrected_maneuvers = [
         corrective_arc,
         corrected_forward_arc,
         corrected_segment,
     ]
 
-    _finalize_maneuver_sequence(corrected_maneuvers)
+    _finalize_maneuver_sequence(
+        corrected_maneuvers
+    )
 
     return corrected_maneuvers
 
