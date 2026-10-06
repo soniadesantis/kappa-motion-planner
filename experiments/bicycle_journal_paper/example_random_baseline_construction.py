@@ -46,6 +46,9 @@ WIDTH_RANGE = (1.1, 5.)  # Metres, transverse to the corridor's intended directi
 LENGTH_RANGE = (3., 14.)  # Metres between consecutive random-walk vertices.
 OVERHANG_RANGE = (0., 2.)  # Extra longitudinal extent at EACH corridor end.
 STRAIGHT_PROBABILITY = .15  # Other transitions split equally between left and right.
+ALIGNED_OFFSET_PROBABILITY = .25  # Conditional probability given a straight transition.
+ALIGNED_OFFSET_MARGIN = .05  # Metres retained inside the nonempty-safe-overlap bound.
+MIN_ALIGNED_OFFSET = .10  # Metres; offset cases are genuinely non-collinear.
 EXTEND_PERPENDICULAR_CORRIDORS = True
 MAX_BACKTRACKING_ATTEMPTS = 128
 BASELINE_RULE = 'heuristic'  # Use 'exact' for complete analytic fillet-set propagation.
@@ -81,12 +84,38 @@ def sample_corridors(rng):
     heading = int(rng.integers(4))
     point = np.zeros(2)
     bounds, headings = [], []
+    transition_types, transverse_offsets = [], []
     for j in range(NUMBER_OF_CORRIDORS):
+        transverse_offset = 0.0
         if j:
-            heading = (heading + int(rng.choice(
+            heading_change = int(rng.choice(
                 [0, 1, -1], p=[STRAIGHT_PROBABILITY,
                                (1-STRAIGHT_PROBABILITY)/2,
-                               (1-STRAIGHT_PROBABILITY)/2]))) % 4
+                               (1-STRAIGHT_PROBABILITY)/2]))
+            heading = (heading + heading_change) % 4
+
+            if heading_change == 0:
+                max_offset = (
+                    .5 * (widths[j - 1] + widths[j])
+                    - 2.0 * ROBOT_RADIUS
+                    - ALIGNED_OFFSET_MARGIN
+                )
+                use_offset = (
+                    max_offset >= MIN_ALIGNED_OFFSET
+                    and rng.random() < ALIGNED_OFFSET_PROBABILITY
+                )
+                if use_offset:
+                    magnitude = rng.uniform(MIN_ALIGNED_OFFSET, max_offset)
+                    transverse_offset = magnitude * rng.choice((-1.0, 1.0))
+                    normal = np.array([-axes[heading][1], axes[heading][0]])
+                    point = point + transverse_offset * normal
+                    transition_types.append('aligned_offset')
+                else:
+                    transition_types.append('aligned_collinear')
+            else:
+                transition_types.append('turn')
+
+            transverse_offsets.append(float(transverse_offset))
         direction = axes[heading]
         endpoint = point + lengths[j]*direction
         first = point - overhangs[j, 0]*direction
@@ -104,6 +133,8 @@ def sample_corridors(rng):
     spans = [(b-a, d-c) for a, b, c, d in bounds]
     return bounds, dict(widths=widths.tolist(), walk_lengths=lengths.tolist(),
                         overhangs=overhangs.tolist(), headings=headings,
+                        transition_types=transition_types,
+                        transverse_offsets=transverse_offsets,
                         original_bounds=original_bounds, edge_extensions=changes,
                         final_widths=[span[1-h % 2] for span, h in zip(spans, headings)],
                         final_lengths=[span[h % 2] for span, h in zip(spans, headings)])
@@ -120,6 +151,10 @@ def validate_configuration():
             raise ValueError(f'{name} must be positive.')
     if not 0 <= STRAIGHT_PROBABILITY <= 1:
         raise ValueError('STRAIGHT_PROBABILITY must lie in [0,1].')
+    if not 0 <= ALIGNED_OFFSET_PROBABILITY <= 1:
+        raise ValueError('ALIGNED_OFFSET_PROBABILITY must lie in [0,1].')
+    if ALIGNED_OFFSET_MARGIN < 0 or MIN_ALIGNED_OFFSET <= 0:
+        raise ValueError('Aligned-offset margin must be nonnegative and minimum positive.')
 
 
 def run_experiment(seed, count, max_generated, timing_repeats=7, *, baseline_rule=BASELINE_RULE):

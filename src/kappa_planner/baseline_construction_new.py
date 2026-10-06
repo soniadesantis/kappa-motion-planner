@@ -47,6 +47,12 @@ class BicycleBaselineResult:
     fillets: list
 
 
+@dataclass(frozen=True)
+class BicycleBaselineFailure:
+    reason: str
+    transition_index: int = None
+
+
 RIGHT = np.array([1, 0])
 LEFT  = np.array([-1, 0])
 UP    = np.array([0, 1])
@@ -58,11 +64,23 @@ def compute_bicycle_baseline(
     initial_pose=None,
     final_pose=None,
     boundary_connections=False,
+    return_failure=False,
 ):
+    """Construct a baseline.
+
+    When ``return_failure`` is false, preserve the original API and return a
+    baseline or ``None``.  When true, return ``(baseline, failure)``.  For a
+    geometrically valid corridor sequence, failure is either ``A_j_empty`` or
+    ``R_j_empty`` and carries the zero-based transition index ``j``.
+    """
+    def failed(reason, transition_index=None):
+        failure = BicycleBaselineFailure(reason, transition_index)
+        return (None, failure) if return_failure else None
+
     n = len(corridor_list)
 
     if n < 2:
-        return None
+        return failed("invalid_corridor_sequence")
 
     r = bicycle.width/2
     R = bicycle.max_radius
@@ -87,21 +105,21 @@ def compute_bicycle_baseline(
         )
 
         if overlap is None:
-            return None
+            return failed("invalid_corridor_sequence", j)
 
         corridor_overlaps.append(overlap)
 
     # 3. Safe overlaps D_j
     safe_overlaps = []
 
-    for corridor_overlap in corridor_overlaps:
+    for j, corridor_overlap in enumerate(corridor_overlaps):
         safe_overlap = compute_safe_overlap(
             corridor_overlap,
             r,
         )
 
         if safe_overlap is None:
-            return None
+            return failed("invalid_corridor_sequence", j)
 
         safe_overlaps.append(safe_overlap)
 
@@ -114,7 +132,7 @@ def compute_bicycle_baseline(
         )
 
         if direction is None:
-            return None
+            return failed("invalid_corridor_sequence", j)
 
         corridor_directions[j] = direction
 
@@ -132,7 +150,7 @@ def compute_bicycle_baseline(
     )
 
     if corridor_directions[0] is None or corridor_directions[-1] is None:
-        return None
+        return failed("invalid_corridor_sequence")
 
     # 6. Turn directions tau_j
     turn_directions = []
@@ -144,7 +162,7 @@ def compute_bicycle_baseline(
         )
 
         if tau is None:
-            return None
+            return failed("invalid_corridor_sequence", j)
 
         turn_directions.append(tau)
 
@@ -161,7 +179,7 @@ def compute_bicycle_baseline(
         )
 
         if corners is None:
-            return None
+            return failed("A_j_empty", j)
 
         candidate_corner_points.append(corners)
 
@@ -208,7 +226,7 @@ def compute_bicycle_baseline(
     )
 
     if bounds is None:
-        return None
+        return failed("A_j_empty", 0)
 
     x_bounds, y_bounds = bounds
 
@@ -223,6 +241,11 @@ def compute_bicycle_baseline(
     # R_2, ..., R_{n-1}
     for j in range(1, n - 1):
 
+        # Distinguish a locally empty A_j from an A_j that becomes empty only
+        # after intersecting it with the propagation constraints for R_j.
+        if compute_region_bounds(admissible_regions[j]) is None:
+            return failed("A_j_empty", j)
+
         region = compute_reachable_region(
             admissible_region=admissible_regions[j],
             previous_region=reachable_regions[j - 1],
@@ -231,7 +254,7 @@ def compute_bicycle_baseline(
         )
 
         if region is None:
-            return None
+            return failed("R_j_empty", j)
 
         reachable_regions.append(region)
 
@@ -243,7 +266,7 @@ def compute_bicycle_baseline(
     )
 
     if waypoints is None:
-        return None
+        return failed("R_j_empty", n - 2)
     
     # 11. Polyline + radius-R fillets
     fillets = [None] * (n - 1)
@@ -265,7 +288,7 @@ def compute_bicycle_baseline(
 
     # 12. Optional boundary connections
 
-    return BicycleBaselineResult(
+    result = BicycleBaselineResult(
         intersection_points=intersection_points,
         corridor_overlaps=corridor_overlaps,
         safe_overlaps=safe_overlaps,
@@ -277,6 +300,7 @@ def compute_bicycle_baseline(
         waypoints=waypoints,
         fillets=fillets,
     )
+    return (result, None) if return_failure else result
 
 
 def build_baseline_primitive_geometry(
@@ -1653,3 +1677,138 @@ def compute_passage_direction(safe_overlap1, safe_overlap2, tol=1e-9):
             return np.array([0, -1])      # down
 
     return None
+
+
+def validate_baseline_corridor_sequence(
+    corridor_list,
+    bicycle,
+    tol=1e-9,
+):
+    """
+    Check only the geometric assumptions imposed on the corridor
+    sequence before running the baseline construction.
+
+    This function does NOT test baseline feasibility.
+
+    In particular, it does not construct or check:
+        - candidate corner points,
+        - admissible waypoint regions A_j,
+        - reachable regions R_j,
+        - the terminal condition R_{n-1} != empty,
+        - baseline waypoints or fillets.
+
+    It does infer all corridor traversal directions and rejects a 180-degree
+    reversal between any adjacent pair.
+
+    Returns
+    -------
+    bool
+        True if the corridor sequence satisfies the assumptions
+        required before the baseline construction is attempted.
+    """
+
+    n = len(corridor_list)
+
+    # ---------------------------------------------------------------
+    # 0. Minimum number of corridors
+    # ---------------------------------------------------------------
+    if n < 2:
+        return False
+
+    r = bicycle.width / 2
+
+    # ---------------------------------------------------------------
+    # 1. Corridor overlaps I_j
+    # ---------------------------------------------------------------
+    corridor_overlaps = []
+
+    for j in range(n - 1):
+
+        overlap = compute_overlap_two_axis_aligned_corridors(
+            corridor_list[j],
+            corridor_list[j + 1],
+            tol=tol,
+        )
+
+        if overlap is None:
+            return False
+
+        corridor_overlaps.append(overlap)
+
+    # ---------------------------------------------------------------
+    # 2. Assumption: nonempty safe overlaps D_j
+    # ---------------------------------------------------------------
+    safe_overlaps = []
+
+    for overlap in corridor_overlaps:
+
+        safe_overlap = compute_safe_overlap(
+            overlap,
+            r,
+            tol=tol,
+        )
+
+        if safe_overlap is None:
+            return False
+
+        safe_overlaps.append(safe_overlap)
+
+    # ---------------------------------------------------------------
+    # 3. Assumptions on consecutive safe overlaps:
+    #
+    #    - D_{j-1} and D_j must be disjoint;
+    #    - an orthogonal passage must exist between them.
+    #
+    # compute_passage_direction() already checks both:
+    #
+    #    x overlap and y overlap -> regions intersect -> invalid
+    #    neither overlaps       -> no orthogonal passage -> invalid
+    #
+    # Exactly one overlap gives a unique horizontal/vertical passage.
+    # ---------------------------------------------------------------
+    corridor_directions = [None] * n
+
+    for j in range(1, n - 1):
+
+        passage_direction = compute_passage_direction(
+            safe_overlaps[j - 1],
+            safe_overlaps[j],
+            tol=tol,
+        )
+
+        if passage_direction is None:
+            return False
+
+        corridor_directions[j] = passage_direction
+
+    # ---------------------------------------------------------------
+    # 4. Assumption: no 180-degree reversal in the inferred traversal.
+    #
+    # Include the directions of the first and last corridors so reversals at
+    # either boundary transition are rejected as well.
+    # ---------------------------------------------------------------
+    corridor_directions[0] = compute_boundary_corridor_direction(
+        corridor_list[0],
+        safe_overlaps[0],
+        initial=True,
+        tol=tol,
+    )
+    corridor_directions[-1] = compute_boundary_corridor_direction(
+        corridor_list[-1],
+        safe_overlaps[-1],
+        initial=False,
+        tol=tol,
+    )
+
+    if corridor_directions[0] is None or corridor_directions[-1] is None:
+        return False
+
+    for j in range(n - 1):
+        if compute_corridor_turn_direction(
+            corridor_directions[j],
+            corridor_directions[j + 1],
+            tol=tol,
+        ) is None:
+            return False
+
+    return True
