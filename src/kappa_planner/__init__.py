@@ -18,6 +18,7 @@ from .trajectory import(
     LinearSegmentUnicycle,
     CurvilinearArcUnicycle,
     TurnOnTheSpotUnicycle,
+    resample_trajectory,
 )
 
 from .helpers.poses import(
@@ -77,6 +78,7 @@ __all__ = [
     "LinearSegmentUnicycle",
     "CurvilinearArcUnicycle",
     "TurnOnTheSpotUnicycle",
+    "resample_trajectory",
     "compute_start_pose",
     "compute_end_pose",
     "relative_to_absolute_pose",

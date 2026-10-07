@@ -1203,3 +1203,146 @@ class BicycleTrajectoryOptimal(BicycleTrajectory):
     #     plt.legend()
     #     return figure
     
+
+def resample_trajectory(primitives, samples_number=1000):
+    """Sample a complete analytical primitive sequence on a uniform time grid.
+
+    Parameters
+    ----------
+    primitives : sequence of motion primitives
+        A nonempty, contiguous sequence of unicycle or bicycle primitives.
+        All primitives must belong to the same model family. Zero-duration
+        primitives are permitted when they do not change the pose.
+    samples_number : int, optional
+        Total number of samples over the complete trajectory, including its
+        initial and final poses. Must be at least two.
+
+    Returns
+    -------
+    UnicycleTrajectory or BicycleTrajectory
+        A new sampled trajectory containing ``time_grid``,
+        ``path_coordinates``, ``theta_trajectory``, ``forward_velocity``, and
+        ``angular_velocity``. Bicycle results also contain ``steering_angle``.
+        Headings are continuous and unwrapped across primitive boundaries.
+        ``primitive_indices`` identifies the source primitive of each sample;
+        ``primitive_boundary_times`` retains every maneuver boundary time.
+
+    Notes
+    -----
+    The input primitives and their existing samples are not modified. Geometry
+    is evaluated analytically, independently of their sampling resolution.
+    Controls at a junction come from the following primitive; the final sample
+    uses the final primitive's controls. A uniform grid need not contain every
+    boundary time, so a very short maneuver can fall between samples.
+    """
+    if isinstance(samples_number, (bool, np.bool_)) or not isinstance(samples_number, (int, np.integer)):
+        raise ValueError("samples_number must be an integer of at least two.")
+    if samples_number < 2:
+        raise ValueError("samples_number must be an integer of at least two.")
+    primitives = list(primitives)
+    if not primitives:
+        raise ValueError("Cannot resample an empty primitive sequence.")
+
+    unicycle_types = (LinearSegmentUnicycle, CurvilinearArcUnicycle, TurnOnTheSpotUnicycle)
+    bicycle_types = (LinearSegmentBicycle, CurvilinearArcBicycle, BackwardArcBicycle)
+    if all(isinstance(primitive, unicycle_types) for primitive in primitives):
+        bicycle = False
+    elif all(isinstance(primitive, bicycle_types) for primitive in primitives):
+        bicycle = True
+    else:
+        raise TypeError("Use supported primitives from one vehicle model family.")
+
+    tolerance = 1e-7
+    heading_offsets = []
+    previous = None
+    for index, primitive in enumerate(primitives):
+        values = [primitive.t0, primitive.tf, primitive.maneuver_time,
+                  primitive.x0, primitive.y0, primitive.xf, primitive.yf,
+                  primitive.theta0, primitive.thetaf, primitive.v, primitive.omega]
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"Primitive {index} has nonfinite timing, pose, or controls.")
+        duration = primitive.tf - primitive.t0
+        if duration < 0 or not np.isclose(duration, primitive.maneuver_time, atol=tolerance, rtol=0):
+            raise ValueError(f"Primitive {index} has inconsistent timing.")
+        if isinstance(primitive, (_CircularArcTrajectory, BackwardArcBicycle)):
+            if (not np.all(np.isfinite([primitive.xc, primitive.yc, primitive.radius,
+                                       primitive.epsilon, primitive.iota]))
+                    or primitive.radius <= 0 or primitive.iota < 0
+                    or primitive.turn_direction not in (-1, 1)):
+                raise ValueError(f"Primitive {index} has invalid circular geometry.")
+        if bicycle and not np.isfinite(primitive.delta):
+            raise ValueError(f"Primitive {index} has a nonfinite steering angle.")
+        if previous is None:
+            offset = 0.0
+        else:
+            if not np.isclose(primitive.t0, previous.tf, atol=tolerance, rtol=0):
+                raise ValueError(f"Primitive {index} is not contiguous in time.")
+            if not np.allclose([primitive.x0, primitive.y0], [previous.xf, previous.yf],
+                               atol=tolerance, rtol=0):
+                raise ValueError(f"Primitive {index} is not contiguous in position.")
+            heading_difference = previous.thetaf + heading_offsets[-1] - primitive.theta0
+            offset = 2 * pi * np.rint(heading_difference / (2 * pi))
+            if abs(heading_difference - offset) > tolerance:
+                raise ValueError(f"Primitive {index} is not contiguous in heading.")
+        if duration == 0:
+            if (not np.allclose([primitive.x0, primitive.y0], [primitive.xf, primitive.yf],
+                                atol=tolerance, rtol=0)
+                    or abs(primitive.thetaf - primitive.theta0) > tolerance):
+                raise ValueError(f"Primitive {index} changes pose in zero time.")
+        heading_offsets.append(offset)
+        previous = primitive
+
+    start_time, end_time = primitives[0].t0, primitives[-1].tf
+    if end_time <= start_time:
+        raise ValueError("The complete trajectory must have positive duration.")
+    time_grid = np.linspace(start_time, end_time, samples_number)
+    if np.any(np.diff(time_grid) <= 0):
+        raise ValueError("The requested time grid exceeds floating-point time resolution.")
+    end_times = np.array([primitive.tf for primitive in primitives])
+    indices = np.minimum(np.searchsorted(end_times, time_grid, side="right"), len(primitives)-1)
+    x = np.empty(samples_number)
+    y = np.empty(samples_number)
+    theta = np.empty(samples_number)
+    velocity = np.empty(samples_number)
+    omega = np.empty(samples_number)
+    steering = np.empty(samples_number) if bicycle else None
+
+    for index, primitive in enumerate(primitives):
+        selected = indices == index
+        if not np.any(selected):
+            continue
+        duration = primitive.tf - primitive.t0
+        fraction = (np.clip((time_grid[selected] - primitive.t0) / duration, 0, 1)
+                    if duration > 0 else np.zeros(np.count_nonzero(selected)))
+        if isinstance(primitive, (_CircularArcTrajectory, BackwardArcBicycle)):
+            direction = (-primitive.turn_direction if isinstance(primitive, BackwardArcBicycle)
+                         else primitive.turn_direction)
+            angle = primitive.epsilon + direction * primitive.iota * fraction
+            x[selected] = primitive.xc + primitive.radius * np.cos(angle)
+            y[selected] = primitive.yc + primitive.radius * np.sin(angle)
+        else:
+            x[selected] = primitive.x0 + (primitive.xf - primitive.x0) * fraction
+            y[selected] = primitive.y0 + (primitive.yf - primitive.y0) * fraction
+        theta[selected] = (primitive.theta0 + heading_offsets[index]
+                          + (primitive.thetaf - primitive.theta0) * fraction)
+        velocity[selected] = primitive.v
+        omega[selected] = primitive.omega
+        if bicycle:
+            steering[selected] = primitive.delta
+
+    # Preserve the supplied endpoint coordinates exactly, including arcs.
+    x[0], y[0] = primitives[0].x0, primitives[0].y0
+    x[-1], y[-1] = primitives[-1].xf, primitives[-1].yf
+    if bicycle:
+        sampled = BicycleTrajectory(time_grid, x, y, theta, velocity, steering)
+    else:
+        sampled = UnicycleTrajectory(time_grid, x, y, theta, velocity, omega)
+    sampled.angular_velocity = omega
+    sampled.theta_trajectory = theta
+    sampled.samples_number = samples_number
+    sampled.maneuver_time = end_time - start_time
+    sampled.start_pose = [sampled.x0, sampled.y0, sampled.theta0]
+    sampled.end_pose = [sampled.xf, sampled.yf, sampled.thetaf]
+    sampled.primitive_indices = indices
+    sampled.primitive_boundary_times = np.array([start_time, *end_times])
+    return sampled

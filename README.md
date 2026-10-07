@@ -140,6 +140,25 @@ Inspect `baseline`, `refinement_result`, `refinement_failure_reason`, and
 `comp_time_analytical_sol` includes baseline construction, boundary attachment,
 assembly, and the refinement attempt, excluding constructor validation and plotting.
 
+Resample the complete primitive sequence on a uniform time grid:
+
+```python
+from kappa_planner import resample_trajectory
+
+primitives = planner.compute_trajectory_analytical()
+sampled = resample_trajectory(primitives, samples_number=1000)
+sampled.plot_path()
+```
+
+This returns a new `UnicycleTrajectory` or `BicycleTrajectory` with 1000 samples
+over the full duration, including both endpoints. It provides sampled positions,
+continuous unwrapped headings, and model-specific controls, while keeping the
+original primitives unchanged. To plot controls, use
+`plot_velocity_profiles([sampled], planner.vehicle)`. At a maneuver boundary,
+controls belong to the following primitive. All boundary times are retained in
+`sampled.primitive_boundary_times`; a short maneuver may fall between uniform
+grid samples, so select a resolution appropriate for the application.
+
 ## Submitting an issue
 
 Please submit an issue if you want to report a bug or propose new features.
