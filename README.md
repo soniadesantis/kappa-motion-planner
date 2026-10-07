@@ -78,6 +78,8 @@ After installation, you can run one of the example scripts:
 python examples/hello_world_unicycle.py
 python examples/unicycle_standing_assumptions.py
 python examples/bicycle_axis_aligned_corridors.py
+python examples/unicycle_standing_overlapping_circles.py
+python examples/unicycle_standing_overlapping_circles_close.py
 ```                                          
 
 The bicycle example uses a fixed ten-corridor sequence from the random
@@ -86,6 +88,15 @@ the complete baseline and refined trajectories, highlights both boundary
 connections, and reports traversal times, percentage improvement, and total
 planning computation time. No experiment files or random generation are needed.
 Optionally save the plot with `--save /tmp/bicycle_axis_aligned_corridors.png`.
+
+The two overlapping-circle examples use three equal-width corridors with tilts
+`0`, `pi/2`, and `0`, and short middle corridors of 2.2 m and 2.8 m. They
+demonstrate rejection by the standing planner: the intermediate circles turn
+in opposite directions and their centers are less than `2R` apart. Both
+scripts still plot the corridors, default endpoint poses, and nominal circles
+using the same geometry as the validation check. They also accept `--save`.
+This violates the planner's sufficient assumptions; it does not prove that
+every other possible trajectory is infeasible.
 
 Select the planner through `MotionPlanner(..., assumptions="standing")` for
 the unicycle pipeline (the default), or `assumptions="axis-aligned"` for the
