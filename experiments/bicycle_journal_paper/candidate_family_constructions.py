@@ -201,7 +201,7 @@ def draw_panel(ax, config, letter):
     direction = (qt-q0)/np.linalg.norm(qt-q0)
     supporting_circle(ax, o0, r'$\mathcal O_0$', r'$\mathbf o_0$',
                       (-0.60, 0.40) if tau0==taut else (0.60, -0.36))
-    supporting_circle(ax, ot, r'$\mathcal O_t$', r'$\mathbf o_1$', (-0.62, -0.37))
+    supporting_circle(ax, ot, r'$\mathcal O_1$', r'$\mathbf o_1$', (-0.62, -0.37))
     # Match the gray dotted radius guides in the eight-panel figure.
     # Each actual arc contributes its two endpoint poses; the reflected
     # circle is auxiliary geometry and receives no radius guides.
@@ -221,7 +221,7 @@ def draw_panel(ax, config, letter):
     heading(ax, qt, segment.theta0)
     initial_center = np.array([trajectory[0].xc, trajectory[0].yc])
     label_outside_circle(ax, START_POSITION, initial_center, r'$\mathbf p_0$', START_POSE_COLOR)
-    label_outside_circle(ax, END_POSITION, ot, r'$\mathbf p_t$', END_POSE_COLOR)
+    label_outside_circle(ax, END_POSITION, ot, r'$\mathbf p_1$', END_POSE_COLOR)
 
     if family == 'CbCSC':
         backward = trajectory[0]

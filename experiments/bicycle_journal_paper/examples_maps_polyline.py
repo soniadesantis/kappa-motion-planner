@@ -41,8 +41,8 @@ from kappa_planner.helpers.poses import compute_end_pose, compute_start_pose
 from kappa_planner.vehicle import Bicycle, Unicycle
 
 
-EXAMPLE_NUM = 1 # Choose any example from 1 through 35.
-EXAMPLE_NUMBERS = range(1, 36)
+EXAMPLE_NUM = 1 # Choose any example from 1 through 44.
+EXAMPLE_NUMBERS = range(1, 45)
 FILLET_RADIUS = None  # Radius in metres; None uses vehicle.max_radius.
 EROSION_PLOT_RESOLUTION = 900  # Grid samples along the longer plot dimension.
 PLOT_TANGENT_REFINEMENT = False  # Optional previous refinement experiment.
@@ -84,7 +84,19 @@ def plot_spacing_coupling(ax, nominal, points, door_offset=0, draw_segments=True
 
 def example_corridor_sequence(num):
     if num not in EXAMPLE_NUMBERS:
-        raise ValueError("Example number must be between 1 and 35.")
+        raise ValueError("Example number must be between 1 and 44.")
+
+    if num >= 36:
+        from benchmark_new_bicycle_baseline import corridor_worlds_from_bounds, make_fixed_bicycle
+        from refinement_failure_examples import REFINEMENT_FAILURE_EXAMPLES
+
+        record = REFINEMENT_FAILURE_EXAMPLES[num]
+        return (
+            corridor_worlds_from_bounds(record["bounds"], record["sampled"]["headings"]),
+            list(record["initial_pose"]["world"]),
+            list(record["final_pose"]["world"]),
+            make_fixed_bicycle(),
+        )
 
     if num == 1:
         corridor1 = CorridorWorld(1.5000000223517425, 12.000000178813934, [11.200000166893005, 6.550000097602606], 1.5707963267948966)

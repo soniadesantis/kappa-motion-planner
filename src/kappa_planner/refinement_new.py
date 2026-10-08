@@ -1,9 +1,11 @@
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import sqrt
 from types import SimpleNamespace
 
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle as PlotCircle
 
 from shapely.geometry import LineString, Point
 
@@ -167,6 +169,23 @@ class BicycleRefinementResult:
         return 4
 
 
+@dataclass
+class RefinementStageTrace:
+    """Snapshots of the INITIAL internal refinement pass, including failures.
+
+    Stage 2 is the consecutive tangent chain AFTER local baseline repairs,
+    before intersection simplification. Later boundary repairs do not overwrite it.
+    """
+    snapshots: dict = field(default_factory=dict)
+    events: list = field(default_factory=list)
+
+    def capture(self, key, circle_groups, active_indices, tangents=None, note=""):
+        self.snapshots[key] = (
+            deepcopy(circle_groups), list(active_indices),
+            deepcopy(list(tangents)) if tangents is not None else [], note
+        )
+
+
 @dataclass(frozen=True)
 class BicycleRefinementFailure:
     """Stage-specific reason why no complete refinement was produced."""
@@ -193,6 +212,7 @@ def refine_bicycle_baseline(
     initial_pose=None,
     final_pose=None,
     return_failure=False,
+    stage_trace=None,
 ):
     """
     Refine a validated bicycle baseline and, when boundary poses are available,
@@ -336,6 +356,9 @@ def refine_bicycle_baseline(
         circle_groups
     )
 
+    if stage_trace is not None:
+        stage_trace.capture("positioning", circle_groups, active_circle_indices)
+
     # At least one circle is required by the current complete-trajectory
     # construction.
     if len(active_circle_indices) == 0:
@@ -356,6 +379,7 @@ def refine_bicycle_baseline(
         r=r,
         active_circle_indices=active_circle_indices,
         safe_union_cache=safe_union_cache,
+        stage_trace=stage_trace,
     )
 
     if internal_state is None:
@@ -781,6 +805,7 @@ def rebuild_and_simplify_internal_chain(
     active_circle_indices,
     safe_union_cache=None,
     tol=1e-9,
+    stage_trace=None,
 ):
     """
     Rebuild the complete internal tangent chain after any circle replacement or
@@ -802,10 +827,14 @@ def rebuild_and_simplify_internal_chain(
         active_circle_indices=active_circle_indices,
         safe_union_cache=safe_union_cache,
         tol=tol,
+        stage_trace=stage_trace,
     )
 
     if tangents is None:
         return None
+
+    if stage_trace is not None:
+        stage_trace.capture("connections", circle_groups, active_circle_indices, tangents)
 
     simplification_result = simplify_tangent_chain(
         circle_groups=circle_groups,
@@ -817,10 +846,14 @@ def rebuild_and_simplify_internal_chain(
         tangents=tangents,
         safe_union_cache=safe_union_cache,
         tol=tol,
+        stage_trace=stage_trace,
     )
 
     if simplification_result is None:
         return None
+
+    if stage_trace is not None:
+        stage_trace.capture("intersections", circle_groups, *simplification_result)
 
     return simplification_result
 
@@ -3284,6 +3317,10 @@ def build_and_repair_tangent_chain(
     safe_union_cache=None,
 
     tol=1e-9,
+    stage_trace=None,
+
+    trace_stage="connections",
+    failure_info=None,
 
 ):
 
@@ -3407,6 +3444,19 @@ def build_and_repair_tangent_chain(
 
         )
 
+        if stage_trace is not None:
+            candidate = compute_correct_circle_tangent(
+                circle_1, circle_2, start_index, end_index, tol=tol,
+            )
+            stage_trace.events.append({
+                "stage": trace_stage,
+                "start_circle_index": start_index,
+                "end_circle_index": end_index,
+                "reason": "no_geometric_tangent" if candidate is None else "outside_safe_corridor_union",
+                "both_at_baseline": is_baseline_circle(circle_1) and is_baseline_circle(circle_2),
+                "tangent": deepcopy(candidate),
+            })
+
 
 
         # Both circles are already at baseline: this local repair has
@@ -3420,7 +3470,14 @@ def build_and_repair_tangent_chain(
             and is_baseline_circle(circle_2)
 
         ):
-
+            if stage_trace is not None:
+                stage_trace.capture(
+                    trace_stage, circle_groups, circle_indices, tangents,
+                    note=(f"Rejected {start_index+1} → {end_index+1}: "
+                          f"{stage_trace.events[-1]['reason']}; both circles at baseline"),
+                )
+            if failure_info is not None:
+                failure_info["pair"] = (start_index, end_index)
             return None
 
 
@@ -3766,6 +3823,7 @@ def find_longest_safe_skip_in_block(
     safe_union_cache=None,
 
     tol=1e-9,
+    protected_indices=None,
 
 ):
 
@@ -3872,6 +3930,13 @@ def find_longest_safe_skip_in_block(
             ]
 
 
+
+            # Baseline-repaired circles are no longer eligible for skipping.
+            if protected_indices and any(
+                j in protected_indices
+                for j in active_circle_indices[start_position + 1:end_position]
+            ):
+                continue
 
             tangent = compute_safe_circle_tangent_between_indices(
 
@@ -4042,300 +4107,169 @@ def restore_active_circle_block_to_baseline(
 
 
 def simplify_tangent_chain(
-
     circle_groups,
-
     corridor_list,
-
     baseline,
-
     R,
-
     r,
-
     active_circle_indices,
-
     tangents,
-
     safe_union_cache=None,
-
     tol=1e-9,
-
+    stage_trace=None,
 ):
+    """Simplify the tangent chain with reversible skipping.
 
+    Previously omitted genuine-turn circles are reinserted at baseline positions
+    if a subsequent circle repair invalidates their shortcut. Restored circles
+    are protected against future skipping, preventing skip/restore cycles.
+    The full baseline sequence is a bounded final internal-chain fallback.
     """
-
-    Remove self-intersections from the tangent chain through local circle
-
-    skipping.
-
-
-
-    For every detected tangent intersection:
-
-
-
-        1\. identify the active-circle block involved in the crossing;
-
-        2\. try the longest safe direct tangent inside that block, allowing
-
-           one or several intermediate circles to be skipped;
-
-        3\. if no safe skip exists, restore all active circles in the block
-
-           to their baseline positions and rebuild the local tangent chain;
-
-        4\. repeat until no tangent segments intersect.
-
-
-
-    The intermediate circles are not used as an additional "push direction"
-
-    criterion. Once they are skipped, the relevant requirement for the new
-
-    straight connection is directly tested: the ordered tangent must exist and
-
-    its complete finite segment must lie inside the eroded corridor union.
-
-
-
-    Note that final circular-arc validation between the retained tangency
-
-    points is a separate step and is not performed here.
-
-    """
-
-    active_circle_indices = list(
-
-        active_circle_indices
-
-    )
-
-    tangents = list(
-
-        tangents
-
-    )
-
-
-
+    active_circle_indices = list(active_circle_indices)
+    tangents = list(tangents)
     if safe_union_cache is None:
-
         safe_union_cache = {}
 
+    protected = set()
+    # Strictly bound the number of skip/rebuild attempts, including repeated
+    # intersections with otherwise identical circle configurations.
+    seen = set()
 
+    def log(operation, **details):
+        if stage_trace is not None:
+            stage_trace.events.append(dict(stage="intersections", operation=operation, **details))
 
-    while True:
-
-
-
-        intersection_pair = (
-
-            find_first_problematic_tangent_intersection(
-
-                tangents=tangents,
-
-                tol=tol,
-
+    def restore_interval(first_index, last_index):
+        """Restore every genuine turn in the inclusive interval, including skips."""
+        nonlocal active_circle_indices
+        changed = False
+        for j in range(first_index, last_index + 1):
+            if baseline.turn_directions[j] == 0:
+                continue
+            existing = get_single_circle(circle_groups[j])
+            if j not in active_circle_indices or not is_baseline_circle(existing):
+                changed = True
+            circle = compute_baseline_turn_circle(
+                baseline=baseline, transition_index=j, R=R,
+                placement_rule="baseline_repair", tol=tol,
             )
+            if circle is None:
+                return False, False
+            circle_groups[j] = {baseline.turn_directions[j]: circle}
+            protected.add(j)
+        active_circle_indices = sorted(set(active_circle_indices) | protected)
+        log("restore_baseline_block", block=(first_index + 1, last_index + 1), changed=changed)
+        return True, changed
 
-        )
-
-
-
-        if intersection_pair is None:
-
-            return (
-
-                active_circle_indices,
-
-                tangents,
-
-            )
-
-
-
-        first_tangent, second_tangent = (
-
-            intersection_pair
-
-        )
-
-
-
-        # Tangent i connects active circles i -> i+1. Therefore the
-
-        # crossing between tangent i and tangent j affects circle
-
-        # positions i through j+1.
-
-        block_start_position = first_tangent
-
-        block_end_position = second_tangent + 1
-
-
-
-        skip_result = find_longest_safe_skip_in_block(
-
-            active_circle_indices=active_circle_indices,
-
-            circle_groups=circle_groups,
-
-            corridor_list=corridor_list,
-
-            r=r,
-
-            block_start_position=block_start_position,
-
-            block_end_position=block_end_position,
-
-            safe_union_cache=safe_union_cache,
-
-            tol=tol,
-
-        )
-
-
-
-        # -----------------------------------------------------------
-
-        # A safe direct tangent exists: remove every active circle
-
-        # strictly between its two endpoint circles.
-
-        # -----------------------------------------------------------
-
-        if skip_result is not None:
-
-
-
-            (
-
-                skip_start_position,
-
-                skip_end_position,
-
-                _,
-
-            ) = skip_result
-
-
-
-            del active_circle_indices[
-
-                skip_start_position + 1 : skip_end_position
-
-            ]
-
-
-
+    def rebuild_with_reinstatement():
+        """Repair invalidated shortcuts before giving up on tangent rebuilding."""
+        nonlocal tangents
+        while True:
+            failure = {}
             tangents = build_and_repair_tangent_chain(
-
                 circle_groups=circle_groups,
-
                 corridor_list=corridor_list,
-
                 baseline=baseline,
-
                 R=R,
-
                 r=r,
-
                 active_circle_indices=active_circle_indices,
-
                 safe_union_cache=safe_union_cache,
-
                 tol=tol,
-
+                stage_trace=stage_trace,
+                trace_stage="intersections",
+                failure_info=failure,
             )
+            if tangents is not None:
+                return True
+            pair = failure.get("pair")
+            if pair is None:
+                return False
+            i, k = pair
+            # If no omitted genuine turn lies between i and k, this is not a
+            # reversible-skip failure. Do not keep retrying the same pair.
+            missing = [j for j in range(i + 1, k)
+                       if baseline.turn_directions[j] != 0
+                       and j not in active_circle_indices]
+            if not missing:
+                return False
+            log("invalidated_skip", pair=(i + 1, k + 1),
+                reinstated=[j + 1 for j in missing])
+            success, changed = restore_interval(i, k)
+            if not success or not changed:
+                return False
 
+    def configuration_signature():
+        positions = tuple(
+            (j, tuple(np.round(get_single_circle(circle_groups[j]).center, 9)))
+            for j in active_circle_indices
+        )
+        return (tuple(active_circle_indices), positions, tuple(sorted(protected)))
 
-
-            if tangents is None:
-
+    all_turns = [j for j, tau in enumerate(baseline.turn_directions) if tau != 0]
+    while True:
+        signature = configuration_signature()
+        if signature in seen:
+            # A deterministic fallback, rather than endlessly reapplying skips.
+            log("repeated_configuration_fallback")
+            success, _ = restore_interval(all_turns[0], all_turns[-1])
+            if not success or not rebuild_with_reinstatement():
                 return None
+            if find_first_problematic_tangent_intersection(tangents, tol=tol) is not None:
+                return None
+            return active_circle_indices, tangents
+        seen.add(signature)
 
-
-
+        intersection = find_first_problematic_tangent_intersection(
+            tangents=tangents, tol=tol,
+        )
+        if intersection is None:
+            return active_circle_indices, tangents
+        first, second = intersection
+        start, end = first, second + 1
+        skip = find_longest_safe_skip_in_block(
+            active_circle_indices=active_circle_indices,
+            circle_groups=circle_groups,
+            corridor_list=corridor_list,
+            r=r,
+            block_start_position=start,
+            block_end_position=end,
+            safe_union_cache=safe_union_cache,
+            tol=tol,
+            protected_indices=protected,
+        )
+        if skip is not None:
+            a, b, _ = skip
+            omitted = active_circle_indices[a + 1:b]
+            log("accept_skip", shortcut=(active_circle_indices[a] + 1,
+                                         active_circle_indices[b] + 1),
+                removed=[j + 1 for j in omitted])
+            del active_circle_indices[a + 1:b]
+            if not rebuild_with_reinstatement():
+                return None
             continue
 
-
-
-        # -----------------------------------------------------------
-
-        # No safe skip exists. Restore the affected active circles to
-
-        # their baseline positions and rebuild the tangent chain.
-
-        # -----------------------------------------------------------
-
-        success, changed = restore_active_circle_block_to_baseline(
-
-            active_circle_indices=active_circle_indices,
-
-            circle_groups=circle_groups,
-
-            baseline=baseline,
-
-            R=R,
-
-            block_start_position=block_start_position,
-
-            block_end_position=block_end_position,
-
-            tol=tol,
-
-        )
-
-
-
+        # A failed search for a shortcut is repaired by recovering the baseline
+        # block, including previously skipped circles in its interior.
+        first_index = active_circle_indices[start]
+        last_index = active_circle_indices[end]
+        success, changed = restore_interval(first_index, last_index)
         if not success:
-
             return None
-
-
-
-        # The same intersection persists even though every circle in
-
-        # the affected block is already at its baseline position. At
-
-        # this point the refinement is abandoned in favour of the full
-
-        # validated baseline.
-
         if not changed:
-
+            # The crossing survived baseline restoration of this block.
+            # Expand conservatively toward the neighbors (Case 68).
+            first_pos = active_circle_indices.index(first_index)
+            last_pos = active_circle_indices.index(last_index)
+            left = active_circle_indices[max(0, first_pos - 1)]
+            right = active_circle_indices[min(len(active_circle_indices) - 1, last_pos + 1)]
+            if left == first_index and right == last_index:
+                # Restore the entire baseline instead of cycling.
+                left, right = all_turns[0], all_turns[-1]
+            success, _ = restore_interval(left, right)
+            if not success:
+                return None
+        if not rebuild_with_reinstatement():
             return None
-
-
-
-        tangents = build_and_repair_tangent_chain(
-
-            circle_groups=circle_groups,
-
-            corridor_list=corridor_list,
-
-            baseline=baseline,
-
-            R=R,
-
-            r=r,
-
-            active_circle_indices=active_circle_indices,
-
-            safe_union_cache=safe_union_cache,
-
-            tol=tol,
-
-        )
-
-
-
-        if tangents is None:
-
-            return None
-
-
 
 
 
@@ -4744,3 +4678,79 @@ def compute_effective_junction_dimensions(
         d_y,
 
     )
+
+
+# ===================================================================
+# Diagnostic plot of the three internal-refinement stages
+# ===================================================================
+
+def plot_refinement_stages(corridor_list, baseline, stage_trace,
+                           *, example_number=None, figsize=(19, 7)):
+    """Plot independent circles, repaired consecutive tangents, and intersection resolution.
+
+    Use a RefinementStageTrace passed to refine_bicycle_baseline(stage_trace=...).
+    A snapshot is retained even when a stage fails; unavailable later stages
+    are indicated explicitly. No refinement decisions are recomputed for plotting.
+    """
+    names = [
+        ("positioning", "1. Independent circle positioning"),
+        ("connections", "2. Consecutive circle connections"),
+        ("intersections", "3. Tangent intersection resolution"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=figsize, sharex=True, sharey=True)
+    # Draw the same reference geometry in all panels.
+    for ax, (key, title) in zip(axes, names):
+        for index, corridor in enumerate(corridor_list, 1):
+            corners = np.asarray(corridor.corners, dtype=float)
+            outline = np.vstack((corners, corners[0]))
+            ax.fill(outline[:, 0], outline[:, 1], color="0.94", zorder=0)
+            ax.plot(outline[:, 0], outline[:, 1], color="0.65", lw=0.8, zorder=1)
+            center = np.asarray(corridor.center, dtype=float)
+            ax.annotate(str(index), center, fontsize=8, color="0.4")
+        for j in range(len(baseline.waypoints)-1):
+            p = np.asarray(baseline.waypoints[j], dtype=float)
+            q = np.asarray(baseline.waypoints[j+1], dtype=float)
+            ax.plot((p[0],q[0]),(p[1],q[1]), color="0.25", ls="--", lw=1.0)
+        if key not in stage_trace.snapshots:
+            ax.text(0.5, 0.5, "Stage not reached", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=11)
+        else:
+            groups, active, tangents, note = stage_trace.snapshots[key]
+            active_set = set(active)
+            for j, group in enumerate(groups):
+                for circle in group.values():
+                    center = np.asarray(circle.center, dtype=float)
+                    is_active = j in active_set
+                    at_baseline = is_baseline_circle(circle)
+                    color = "#0f766e" if at_baseline else "#7c3aed"
+                    ax.add_patch(PlotCircle(center, circle.radius, fill=False,
+                                            edgecolor=color, ls="-" if is_active else ":",
+                                            lw=1.45, alpha=1 if is_active else .35, zorder=4))
+                    ax.plot(center[0], center[1], marker="x", color=color, ms=4, zorder=5)
+                    ax.annotate(str(j+1), center, xytext=(4,4), textcoords="offset points",
+                                color=color, fontsize=8)
+            for tangent in tangents:
+                if tangent is None:
+                    continue
+                start = np.asarray(tangent.start_point, dtype=float)
+                end = np.asarray(tangent.end_point, dtype=float)
+                ax.plot((start[0],end[0]), (start[1],end[1]),
+                        color="#2563eb", lw=2.0, zorder=6)
+            rejected = next((event for event in reversed(stage_trace.events)
+                             if event.get("stage") == key and event.get("both_at_baseline")), None)
+            if note and rejected is not None and rejected.get("tangent") is not None:
+                tangent = rejected["tangent"]
+                ax.plot(*np.array([tangent.start_point, tangent.end_point]).T,
+                        color="#dc2626", lw=2.5, zorder=7)
+            if note:
+                ax.text(.02, .02, note, transform=ax.transAxes, fontsize=8,
+                        va="bottom", ha="left", color="#b91c1c", wrap=True)
+        ax.set_title(title)
+        ax.set_xlabel("x [m]")
+        ax.set_aspect("equal", adjustable="box")
+        ax.grid(alpha=.15)
+    axes[0].set_ylabel("y [m]")
+    title = "Refinement stages" + (f" — example {example_number}" if example_number is not None else "")
+    fig.suptitle(title)
+    fig.tight_layout()
+    return fig

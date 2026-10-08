@@ -16,6 +16,7 @@ from matplotlib.patches import Circle, Wedge, Arc, FancyArrowPatch, Patch
 from trajectory_constructions import STYLE
 
 OUTPUT_DIRECTORY = Path(__file__).resolve().parent / 'figures'
+FONT_SCALE = 1.25
 START = np.array([0., 0.])
 CENTER = np.array([0., 2.70])
 RADIUS = 0.75
@@ -43,7 +44,7 @@ def unit(angle):
 
 def label(ax, point, text, offset=(0, 0), color='black', size=22, **kwargs):
     return ax.annotate(text, point, xytext=offset, textcoords='offset points',
-                       fontsize=size, color=color, zorder=20, **kwargs)
+                       fontsize=size * FONT_SCALE, color=color, zorder=20, **kwargs)
 
 
 def arrow(ax, start, end, color='black', width=1.2, size=9):
@@ -140,7 +141,7 @@ def panel(ax, tau1, letter):
     ax.plot(*points.T, color='black', lw=1, zorder=8)
     arrow(ax, points[-5], points[-1], size=8)
     ax.text(0.02, 0.98, rf'{letter}) $\tau_1={tau1:+d}$',
-            transform=ax.transAxes, fontsize=26, ha='left', va='top')
+            transform=ax.transAxes, fontsize=26 * FONT_SCALE, ha='left', va='top')
     ax.set(xlim=(-2.05, 2.05), ylim=(-1.05, 4.70), aspect='equal')
     ax.axis('off')
     print(f'{letter}) tau1={tau1:+d}: reference={np.degrees(reference):.6f} deg, '
@@ -150,8 +151,8 @@ def panel(ax, tau1, letter):
 
 def create_figure():
     with plt.rc_context(STYLE):
-        figure, axes = plt.subplots(1, 2, figsize=(10, 7.5))
-        figure.subplots_adjust(left=0.04, right=0.96, top=0.98, bottom=0.13, wspace=0.08)
+        figure, axes = plt.subplots(1, 2, figsize=(11, 7.5))
+        figure.subplots_adjust(left=0.04, right=0.96, top=0.98, bottom=0.13, wspace=0.22)
         for ax, tau1, letter in zip(axes, (1, -1), 'ab'):
             panel(ax, tau1, letter)
         figure.canvas.draw()
@@ -176,7 +177,7 @@ def create_figure():
                           'CbCSC_equal', 'CbCSC_opposite', 'CSC_opposite')]
         figure.legend(handles=handles, ncol=2, frameon=False,
                       loc='upper center', bbox_to_anchor=(0.5, positions[0].y0-0.008),
-                      fontsize=21, columnspacing=1.3, labelcolor=legend_colors,
+                      fontsize=21 * FONT_SCALE, columnspacing=1.3, labelcolor=legend_colors,
                       handler_map={FancyArrowPatch: HandlerPatch(patch_func=legend_arrow)})
         return figure
 

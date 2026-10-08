@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Circle
 import numpy as np
 
 from example_exact_set_propagation import local_set, fill_set
@@ -131,6 +131,16 @@ def draw_path(ax,result):
         ax.plot(arc[:,0],arc[:,1],color='#252525',lw=2.,zorder=5)
 
 
+def draw_boundary_poses(ax,result):
+    poses=[(CORRIDOR_BOUNDS[0][0]+r,result.polyline[0,1],'#16803a'),
+           (CORRIDOR_BOUNDS[-1][1]-r,result.polyline[-1,1],'#dc2626')]
+    for x,y,color in poses:
+        ax.add_patch(Circle((x,y),r,fill=False,edgecolor=color,lw=1.3,zorder=8))
+        ax.plot(x,y,marker='o',markersize=5,color=color,zorder=9)
+        ax.arrow(x,y,.75,0,head_width=.20,head_length=.22,
+                 length_includes_head=True,color=color,lw=1.3,zorder=9)
+
+
 def leader(ax,text,anchor,label,color):
     ax.annotate(text,anchor,xytext=label,color=color,fontsize=34,
                 arrowprops=dict(arrowstyle='-',color=color,lw=.9,shrinkA=3,shrinkB=2),zorder=9)
@@ -139,7 +149,7 @@ def leader(ax,text,anchor,label,color):
 def draw_propagating_segments(ax,steps,local):
     for step in steps:
         face,shifted=step['face'],step['shifted']
-        ax.plot(*face.T,color=PROPAGATION,lw=2.1,zorder=6)
+        ax.plot(*face.T,color=PROPAGATION,lw=4.,zorder=6)
         ax.plot(*shifted.T,color=PROPAGATION,lw=1.8,ls=(0,(4,2)),zorder=6)
         # Beyond the translated segment, its endpoint rays bound the half-strip
         # intersected with the next local set. Show these through that set only.
@@ -160,13 +170,11 @@ def draw_propagating_segments(ax,steps,local):
 
 
 def create_figure(result,local,reachable,steps):
-    fig,axes=plt.subplots(1,2,figsize=(23.5,8.4),sharex=True,sharey=True)
-    fig.subplots_adjust(left=.045,right=.99,top=.91,bottom=.27,wspace=.09)
-    labels=[(-6.95,.15),(-5.45,1.4),(-1.9,4.22),(1.65,1.7),(4.6,.6)]
+    fig,axes=plt.subplots(1,2,figsize=(23.5,9.2),sharex=True,sharey=True)
+    fig.subplots_adjust(left=.045,right=.99,top=.91,bottom=.34,wspace=.09)
     for panel,ax in enumerate(axes):
         draw_eroded_union(ax)
-        for j,label in enumerate(labels):
-            ax.text(*label,r'$\mathcal{C}_{%d}$'%(j+1),color='black',fontsize=36,zorder=9)
+        draw_boundary_poses(ax,result)
         if panel==0:
             for a in local:
                 fill_set(ax,a,LOCAL,edgecolor=LOCAL_EDGE,linewidth=1.3,zorder=2)
@@ -187,25 +195,23 @@ def create_figure(result,local,reachable,steps):
     leader(ax,r'$\mathcal{A}_4$',(1.25,.2),(2.25,.65),LOCAL_EDGE)
     leader(ax,r'$\mathcal{R}_4$',(1.55,-.65),(2.45,-1.95),REACHABLE_EDGE)
     ax.set_ylabel('$y$')
-    ax.set_title('a) Reachable-set propagation',fontsize=26,pad=20)
+    ax.set_title('a) Reachable-set propagation',fontsize=32,pad=20)
     ax=axes[1]
     draw_path(ax,result)
     leader(ax,r'$\mathcal{R}_1$',(-3.65,-.65),(-5.9,-2.),REACHABLE_EDGE)
     leader(ax,r'$\mathcal{R}_2$',(-3.5,3.8),(-5.65,3.65),REACHABLE_EDGE)
     leader(ax,r'$\mathcal{R}_3$',(1.55,3.35),(2.5,3.85),REACHABLE_EDGE)
     leader(ax,r'$\mathcal{R}_4$',(1.55,-.65),(2.45,-1.95),REACHABLE_EDGE)
-    ax.set_title('b) Chosen polyline and filleted path',fontsize=26,pad=20)
-    handles=[Patch(facecolor='none',edgecolor='black',linewidth=.8,label='Corridor union'),
-             Patch(facecolor=EROSION,edgecolor=EROSION_EDGE,label=r'Union eroded by disk of radius $r$'),
-             Patch(facecolor=LOCAL,edgecolor=LOCAL_EDGE,label=r'Locally admissible $\mathcal{A}_j$'),
+    ax.set_title('b) Chosen polyline and filleted path',fontsize=32,pad=20)
+    handles=[Patch(facecolor=LOCAL,edgecolor=LOCAL_EDGE,label=r'Locally admissible $\mathcal{A}_j$'),
              Patch(facecolor=REACHABLE,edgecolor=REACHABLE_EDGE,label=r'Reachable $\mathcal{R}_j$'),
              Line2D([],[],color='#252525',lw=2,label='Filleted path'),
              Line2D([],[],color=POLYLINE,lw=1.5,ls=(0,(5,3)),marker='o',
                     markerfacecolor='white',markeredgewidth=1.5,label='Chosen polyline and waypoints'),
-             Line2D([],[],color=PROPAGATION,lw=2.1,label='Origin segment'),
+             Line2D([],[],color=PROPAGATION,lw=4.,label='Origin segment'),
              Line2D([],[],color=PROPAGATION,lw=1.8,ls=(0,(4,2)),label=r'Segment shifted by $2R$')]
-    fig.legend(handles=handles,loc='lower center',bbox_to_anchor=(.5,.015),ncol=4,
-               columnspacing=1.2,handlelength=1.7,handletextpad=.6,frameon=False,fontsize=25)
+    fig.legend(handles=handles,loc='lower center',bbox_to_anchor=(.5,.015),ncol=3,
+               columnspacing=1.2,handlelength=1.7,handletextpad=.6,frameon=False,fontsize=30)
     return fig
 
 

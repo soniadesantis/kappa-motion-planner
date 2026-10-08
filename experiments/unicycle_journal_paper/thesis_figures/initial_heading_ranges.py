@@ -95,18 +95,14 @@ def panel(ax,tau0,tau1,letter):
     ax.plot(*START,'ko',ms=3,zorder=10)
     ax.plot(*CENTER,'ko',ms=3,zorder=10)
     leader_side=-tau1
-    ax.annotate(r'$\mathbf{o}_1$',xy=CENTER,xytext=CENTER+[0.48*leader_side,-0.20],
-                fontsize=15*SYMBOL_FONT_SCALE,ha='center',va='center',
-                arrowprops=dict(arrowstyle='<|-',color='black',lw=0.65,
-                                linestyle='--',shrinkA=0,shrinkB=3,
-                                relpos=(1.0 if leader_side<0 else 0.0,0.5),
-                                mutation_scale=9))
+    label(ax,CENTER+[0.10*leader_side,-0.10],r'$\mathbf{o}_1$',
+          size=15,ha='right' if leader_side<0 else 'left')
     circle_label=CENTER+[-0.40,0.30] if tau1==1 else CENTER+[0.40,0.30]
     label(ax,circle_label,r'$\mathcal{O}_1$',size=17)
     if not equal:
         label(ax,CENTER+[-1.17,0.40],r"$\mathcal{O}'_1$",size=17)
     tangent_colors = {
-        'a': [(1, '#DA3036')],
+        'a': [(1, '#229D39')],
         'b': [(1, '#9EBB22')],
         'c': [(1, '#9EBB22'), (2, '#FF812C')],
         'd': [(1, '#229D39'), (2, '#DA3036')],
@@ -115,6 +111,17 @@ def panel(ax,tau0,tau1,letter):
         theta=alpha-tau1*np.arcsin(multiplier*RADIUS/np.linalg.norm(CENTER-START))
         contact=START+np.sqrt(np.sum((CENTER-START)**2)-(multiplier*RADIUS)**2)*unit(theta)
         ax.plot(*np.array([START,contact]).T,color=color,lw=1.0)
+    # Show theta_ref measured from a horizontal guide, as in the bicycle figure.
+    reference_color=tangent_colors[letter][0][1]
+    vertex=START+1.40*unit(tangent_angle)
+    ax.plot(*np.array([vertex,vertex+np.array([0.48,0.])]).T,
+            color=GREY,lw=0.9,zorder=8)
+    ax.add_patch(Arc(vertex,0.50,0.50,theta1=0,
+                     theta2=np.degrees(tangent_angle),color=GREY,lw=0.9,zorder=8))
+    ax.text(*(vertex+0.48*unit(tangent_angle/2)),r'$\theta_{\mathrm{ref}}$',
+            fontsize=14*SYMBOL_FONT_SCALE,color=reference_color,
+            ha='center',va='center',zorder=12,
+            bbox=dict(facecolor='white',edgecolor='none',pad=0.5))
     arrow(ax,START,1.05*unit(boundary),RED,lw=1.1,mutation_scale=16)
     end=1.12*unit(boundary)
     label(ax,end+[0,-0.29 if letter=='c' else -0.16],r'$\theta_0$',RED,size=14)
@@ -130,7 +137,8 @@ def panel(ax,tau0,tau1,letter):
     ax.annotate(r'$\mathbf{p}_0$',xy=START,
                 xytext=(-0.90 if tau0>0 else 0.90,0.29),
                 fontsize=14*SYMBOL_FONT_SCALE,ha='center',va='center',zorder=12,
-                arrowprops=dict(arrowstyle='<|-',color='black',lw=0.65,
+                arrowprops=dict(arrowstyle='<-',color='black',lw=0.65,
+                                connectionstyle=f'arc3,rad={0.35*tau0}',
                                 linestyle='--',shrinkA=0,shrinkB=3,
                                 relpos=(1.0 if tau0>0 else 0.0,0.5),
                                 mutation_scale=9))
@@ -151,9 +159,9 @@ def create_figure():
         legend_center=(axes[0].get_position().x0+axes[1].get_position().x1)/2
         fig.legend(handles=[
             Patch(facecolor=BLUE,alpha=0.25,edgecolor='none',
-                  label=r'$|\delta|\leq\pi/2-\beta$: {\fontsize{21}{25}\selectfont No initial turn}'),
+                  label=r'$|\gamma|\leq\pi/2-\beta$: {\fontsize{21}{25}\selectfont No initial turn}'),
             Patch(facecolor=ORANGE,alpha=0.22,edgecolor='none',
-                  label=r'$|\delta|>\pi/2-\beta$: {\fontsize{21}{25}\selectfont Initial turn required}'),
+                  label=r'$|\gamma|>\pi/2-\beta$: {\fontsize{21}{25}\selectfont Initial turn required}'),
             FancyArrowPatch((0,0),(1,0),arrowstyle='-|>',color=RED,lw=1.1,
                    label=r'$\theta_0=\alpha-\tau_1\pi/2$'),
         ],loc='center',bbox_to_anchor=(legend_center,0.115),
@@ -163,9 +171,9 @@ def create_figure():
         legend_center=(axes[2].get_position().x0+axes[3].get_position().x1)/2+0.02
         fig.legend(handles=[
             Patch(facecolor=BLUE,alpha=0.25,edgecolor='none',
-                  label=r"$|\delta|\leq\pi/2-(\beta'-\beta)$: {\fontsize{21}{25}\selectfont No initial turn}"),
+                  label=r"$|\gamma|\leq\pi/2-(\beta'-\beta)$: {\fontsize{21}{25}\selectfont No initial turn}"),
             Patch(facecolor=ORANGE,alpha=0.22,edgecolor='none',
-                  label=r"$|\delta|>\pi/2-(\beta'-\beta)$: {\fontsize{21}{25}\selectfont Initial turn required}"),
+                  label=r"$|\gamma|>\pi/2-(\beta'-\beta)$: {\fontsize{21}{25}\selectfont Initial turn required}"),
             FancyArrowPatch((0,0),(1,0),arrowstyle='-|>',color=RED,lw=1.1,
                    label=r"$\theta_0=\alpha-\tau_1(\beta'-\pi/2)$"),
         ],loc='center',bbox_to_anchor=(legend_center,0.115),

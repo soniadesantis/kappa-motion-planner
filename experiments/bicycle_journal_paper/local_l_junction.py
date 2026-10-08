@@ -23,8 +23,6 @@ ROBOT_RADIUS = 0.25
 MINIMUM_TURNING_RADIUS = 1.5
 VERTICAL_WIDTH = 2.0
 HORIZONTAL_WIDTH = 1.6
-OVERLAP_X = 1.4
-OVERLAP_Y = 1.1
 
 
 def create_figure():
@@ -32,14 +30,12 @@ def create_figure():
     r = ROBOT_RADIUS
     R = MINIMUM_TURNING_RADIUS
     w1, w2 = VERTICAL_WIDTH, HORIZONTAL_WIDTH
-    dx, dy = OVERLAP_X, OVERLAP_Y
+    dx, dy = w1, w2
     extent = 6.0  # Corridor ends lie outside the cropped view.
     if not 0 < 2 * r < min(w1, w2):
         raise ValueError("Both corridors must be wider than the robot diameter.")
     if R <= r:
         raise ValueError("The minimum turning radius must exceed the footprint radius.")
-    if not (2 * r < dx < w1 - r and 2 * r < dy < w2 - r):
-        raise ValueError("Use overlap dimensions smaller than the widths by more than r.")
 
     figure_style = {**STYLE,
                     "text.latex.preamble": r"\usepackage{amsmath}\usepackage{bm}"}
@@ -51,24 +47,19 @@ def create_figure():
         center_color = "white"
         ax.add_patch(Rectangle((0, 0), extent, extent,
                                facecolor=center_color, edgecolor="none", zorder=0))
-        original = [(-w1, -dy), (-dx, -dy), (-dx, -w2), (extent, -w2), (extent, 0),
+        original = [(-w1, -w2), (extent, -w2), (extent, 0),
                     (0, 0), (0, extent), (-w1, extent)]
         # The disk erosion of the union offsets the outer walls by r and
         # rounds the concave corner with a radius-r arc centered at the origin.
         corner_arc = PlotPath.arc(180, 270)
-        safe_vertices = [(-w1 + r, -dy + r), (-w1 + r, extent - r),
+        safe_vertices = [(-w1 + r, -w2 + r), (-w1 + r, extent - r),
                          (-r, extent - r), (-r, 0)]
         safe_codes = [PlotPath.MOVETO] + [PlotPath.LINETO] * 3
         safe_vertices.extend(r * corner_arc.vertices[1:])
         safe_codes.extend(corner_arc.codes[1:])
-        safe_vertices.extend([(extent - r, -r), (extent - r, -w2 + r),
-                              (-dx + r, -w2 + r), (-dx + r, -dy)])
-        safe_codes.extend([PlotPath.LINETO] * 4)
-        # The offset ends introduce a second concave corner at (-dx, -dy).
-        offset_arc = PlotPath.arc(0, 90)
-        safe_vertices.extend(r * offset_arc.vertices[1:] + (-dx, -dy))
-        safe_codes.extend(offset_arc.codes[1:])
-        safe_vertices.append((-w1 + r, -dy + r))
+        safe_vertices.extend([(extent - r, -r), (extent - r, -w2 + r)])
+        safe_codes.extend([PlotPath.LINETO] * 2)
+        safe_vertices.append((-w1 + r, -w2 + r))
         safe_codes.append(PlotPath.CLOSEPOLY)
         ax.add_patch(Polygon(original, facecolor=original_color,
                              edgecolor="none", zorder=1))
@@ -76,30 +67,18 @@ def create_figure():
                                facecolor=safe_color, edgecolor=safe_border,
                                linewidth=0.75, zorder=2))
         # Show both original rectangles, including their overlap boundaries.
-        ax.add_patch(Rectangle((-w1, -dy), w1, extent + dy,
+        ax.add_patch(Rectangle((-w1, -w2), w1, extent + w2,
                                fill=False, edgecolor="0.2", linewidth=0.4,
                                zorder=3))
-        ax.add_patch(Rectangle((-dx, -w2), extent + dx, w2,
+        ax.add_patch(Rectangle((-w1, -w2), extent + w1, w2,
                                fill=False, edgecolor="0.2", linewidth=0.4,
                                zorder=3))
         ax.text(-1.4, 2.2, r"$\mathcal C_j$", ha="center",
                 va="center", fontsize=18)
         ax.text(2.0, -1.15, r"$\mathcal C_{j+1}$", ha="center",
                 va="center", fontsize=18)
-        # Width dimensions span the original walls, transverse to each axis.
-        for start, end in (((-w1, 1.8), (0, 1.8)),
-                           ((2.45, -w2), (2.45, 0))):
-            ax.add_patch(FancyArrowPatch(start, end, arrowstyle="<->",
-                                        mutation_scale=10, linewidth=0.65,
-                                        color="0.2", shrinkA=0, shrinkB=0,
-                                        zorder=7))
         label_background = {"facecolor": "white", "edgecolor": "none", "pad": 1}
-        ax.text(-w1 / 2, 1.8, r"$w_j$", ha="center", va="center",
-                fontsize=16, bbox=label_background, zorder=8)
-        ax.text(2.45, -w2 / 2, r"$w_{j+1}$", ha="center", va="center",
-                rotation=90, fontsize=16, bbox=label_background, zorder=8)
-        # Dimension the full overlap, using extension lines so its reduced
-        # extents are distinguishable from the corridor widths above/right.
+        # Dimension the full overlap of the original corridor rectangles.
         dimension_y, dimension_x = -1.95, -2.4
         for x in (-dx, 0):
             ax.plot([x, x], [-dy, dimension_y - 0.08],
@@ -112,9 +91,9 @@ def create_figure():
             ax.add_patch(FancyArrowPatch(start, end, arrowstyle="<->",
                                         mutation_scale=10, linewidth=0.65,
                                         color="0.2", shrinkA=0, shrinkB=0, zorder=7))
-        ax.text(-dx / 2, dimension_y, r"$d_{x,j}$", ha="center", va="center",
+        ax.text(-w1 / 2, dimension_y, r"$d_{x,j}$", ha="center", va="center",
                 fontsize=16, bbox=label_background, zorder=8)
-        ax.text(dimension_x, -dy / 2, r"$d_{y,j}$", ha="center", va="center",
+        ax.text(dimension_x, -w2 / 2, r"$d_{y,j}$", ha="center", va="center",
                 rotation=90, fontsize=16, bbox=label_background, zorder=8)
 
         # Both basis vectors point toward the turn side of their own corridor.
@@ -146,8 +125,8 @@ def create_figure():
         ax.annotate(r"$R-r$", (radial_contact[0] / 2, radial_contact[1] / 2),
                     xytext=(9, -9), textcoords="offset points", fontsize=16,
                     rotation=45, ha="center", va="center")
-        # An illustrative orthogonal passage through the eroded overlap.
-        waypoint = (-0.85, -0.75)
+        # The longitudinal centerlines meet inside the extended overlap.
+        waypoint = (-w1 / 2, -w2 / 2)
         ax.plot([waypoint[0], waypoint[0], extent],
                 [extent, waypoint[1], waypoint[1]],
                 color="0.3", linewidth=0.7, zorder=5)
