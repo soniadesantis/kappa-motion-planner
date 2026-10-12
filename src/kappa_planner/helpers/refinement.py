@@ -175,6 +175,14 @@ class BicycleRefinementFailure:
     transition_index: int | None = None
 
 
+@dataclass(frozen=True)
+class RefinedTrajectoryAssemblyFailure:
+    """Classification of a rejected refined-trajectory assembly."""
+
+    reason: str
+    transition_index: int | None = None
+
+
 
 
 
@@ -438,7 +446,7 @@ def refine_bicycle_baseline(
     # ---------------------------------------------------------------
     # 8. Assemble the complete primitive trajectory.
     # ---------------------------------------------------------------
-    trajectory = assemble_refined_trajectory(
+    trajectory, assembly_failure = assemble_refined_trajectory(
         corridor_list=corridor_list,
         circle_groups=circle_groups,
         active_circle_indices=active_circle_indices,
@@ -448,10 +456,14 @@ def refine_bicycle_baseline(
         bicycle=bicycle,
         r=r,
         safe_union_cache=safe_union_cache,
+        return_failure=True,
     )
 
     if trajectory is None:
-        return failed("refined_trajectory_assembly_failed")
+        return failed(
+            assembly_failure.reason,
+            assembly_failure.transition_index,
+        )
 
     traversal_time = float(
         sum(
@@ -1479,6 +1491,7 @@ def assembled_refinement_arc_is_safe(
     corridor_out,
     bicycle,
     tol=1e-7,
+    return_reason=False,
 ):
     """
     Validate an assembled arc without trajectory/footprint sampling.
@@ -1604,7 +1617,10 @@ def assembled_refinement_arc_is_safe(
             end_coordinate
             < start_coordinate - tol
         ):
-            return False
+            return (
+                False,
+                "arc_ordering_failed",
+            ) if return_reason else False
 
         expected_amplitude = (
             end_coordinate
@@ -1635,7 +1651,10 @@ def assembled_refinement_arc_is_safe(
         expected_amplitude
         - float(arc.iota)
     ) > tol:
-        return False
+        return (
+            False,
+            "arc_ordering_failed",
+        ) if return_reason else False
 
     # Only genuinely new portions require collision checks.
     if prefix_amplitude > tol:
@@ -1652,7 +1671,10 @@ def assembled_refinement_arc_is_safe(
         )
 
         if collision:
-            return False
+            return (
+                False,
+                "arc_collision_failed",
+            ) if return_reason else False
 
     if suffix_amplitude > tol:
         suffix_arc = make_forward_arc_collision_view(
@@ -1668,9 +1690,12 @@ def assembled_refinement_arc_is_safe(
         )
 
         if collision:
-            return False
+            return (
+                False,
+                "arc_collision_failed",
+            ) if return_reason else False
 
-    return True
+    return (True, None) if return_reason else True
 
 
 def finalize_refined_maneuver_sequence(
@@ -1759,6 +1784,7 @@ def assemble_refined_trajectory(
     r,
     safe_union_cache=None,
     tol=1e-9,
+    return_failure=False,
 ):
     """
     Assemble the final boundary-connected refined primitive sequence.
@@ -1772,6 +1798,16 @@ def assemble_refined_trajectory(
     One circular arc is then constructed on every retained circle between its
     incoming and outgoing supporting segments.
     """
+    def failed(reason, transition_index=None):
+        failure = RefinedTrajectoryAssemblyFailure(
+            reason,
+            transition_index,
+        )
+        return (None, failure) if return_failure else None
+
+    def succeeded(trajectory):
+        return (trajectory, None) if return_failure else trajectory
+
     if (
         initial_maneuvers is None
         or final_maneuvers is None
@@ -1779,13 +1815,13 @@ def assemble_refined_trajectory(
         or len(final_maneuvers) == 0
         or len(active_circle_indices) == 0
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     if len(tangents) != max(
         0,
         len(active_circle_indices) - 1,
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     initial_segment = initial_maneuvers[-1]
     final_segment = final_maneuvers[0]
@@ -1796,7 +1832,7 @@ def assemble_refined_trajectory(
         or getattr(final_segment, "label", None)
         != "segment"
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     internal_segments = [
         circle_tangent_to_linear_segment(
@@ -1815,7 +1851,7 @@ def assemble_refined_trajectory(
     if len(supporting_segments) != (
         len(active_circle_indices) + 1
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     arcs = []
 
@@ -1845,9 +1881,12 @@ def assemble_refined_trajectory(
         )
 
         if arc is None:
-            return None
+            return failed(
+                "arc_construction_failed",
+                transition_index,
+            )
 
-        if not assembled_refinement_arc_is_safe(
+        arc_is_safe, arc_failure_reason = assembled_refinement_arc_is_safe(
             arc=arc,
             circle=circle,
             corridor_in=corridor_list[
@@ -1861,8 +1900,13 @@ def assemble_refined_trajectory(
                 tol,
                 1e-7,
             ),
-        ):
-            return None
+            return_reason=True,
+        )
+        if not arc_is_safe:
+            return failed(
+                arc_failure_reason,
+                transition_index,
+            )
 
         arcs.append(
             arc
@@ -1897,9 +1941,9 @@ def assemble_refined_trajectory(
     if not refined_maneuver_sequence_is_continuous(
         trajectory
     ):
-        return None
+        return failed("trajectory_continuity_failed")
 
-    return trajectory
+    return succeeded(trajectory)
 
 
 
@@ -3285,6 +3329,8 @@ def build_and_repair_tangent_chain(
 
     tol=1e-9,
 
+    failure_info=None,
+
 ):
 
     """
@@ -3420,6 +3466,16 @@ def build_and_repair_tangent_chain(
             and is_baseline_circle(circle_2)
 
         ):
+
+            if failure_info is not None:
+
+                failure_info["pair"] = (
+
+                    start_index,
+
+                    end_index,
+
+                )
 
             return None
 
@@ -3767,6 +3823,8 @@ def find_longest_safe_skip_in_block(
 
     tol=1e-9,
 
+    protected_indices=None,
+
 ):
 
     """
@@ -3870,6 +3928,26 @@ def find_longest_safe_skip_in_block(
                 end_position
 
             ]
+
+
+
+            # Restored baseline circles are protected so that the algorithm
+
+            # cannot enter a cycle that repeatedly skips and restores them.
+
+            if protected_indices and any(
+
+                index in protected_indices
+
+                for index in active_circle_indices[
+
+                    start_position + 1 : end_position
+
+                ]
+
+            ):
+
+                continue
 
 
 
@@ -4042,309 +4120,208 @@ def restore_active_circle_block_to_baseline(
 
 
 def simplify_tangent_chain(
-
     circle_groups,
-
     corridor_list,
-
     baseline,
-
     R,
-
     r,
-
     active_circle_indices,
-
     tangents,
-
     safe_union_cache=None,
-
     tol=1e-9,
-
 ):
+    """Simplify a tangent chain using bounded, reversible circle skipping.
 
+    A skipped genuine-turn circle is restored at its validated baseline
+    position if a later repair makes the shortcut that omitted it infeasible.
+    Restored circles are protected from subsequent skips, which prevents
+    skip/restore cycles. Repeated configurations fall back deterministically
+    to the complete baseline circle sequence.
     """
-
-    Remove self-intersections from the tangent chain through local circle
-
-    skipping.
-
-
-
-    For every detected tangent intersection:
-
-
-
-        1. identify the active-circle block involved in the crossing;
-
-        2. try the longest safe direct tangent inside that block, allowing
-
-           one or several intermediate circles to be skipped;
-
-        3. if no safe skip exists, restore all active circles in the block
-
-           to their baseline positions and rebuild the local tangent chain;
-
-        4. repeat until no tangent segments intersect.
-
-
-
-    The intermediate circles are not used as an additional "push direction"
-
-    criterion. Once they are skipped, the relevant requirement for the new
-
-    straight connection is directly tested: the ordered tangent must exist and
-
-    its complete finite segment must lie inside the eroded corridor union.
-
-
-
-    Note that final circular-arc validation between the retained tangency
-
-    points is a separate step and is not performed here.
-
-    """
-
-    active_circle_indices = list(
-
-        active_circle_indices
-
-    )
-
-    tangents = list(
-
-        tangents
-
-    )
-
-
-
+    active_circle_indices = list(active_circle_indices)
+    tangents = list(tangents)
     if safe_union_cache is None:
-
         safe_union_cache = {}
 
+    protected_indices = set()
+    seen_configurations = set()
 
+    def restore_interval(first_index, last_index):
+        """Restore all genuine turns in an inclusive transition interval."""
+        nonlocal active_circle_indices
+        changed = False
+
+        for transition_index in range(first_index, last_index + 1):
+            if baseline.turn_directions[transition_index] == 0:
+                continue
+
+            existing_circle = get_single_circle(
+                circle_groups[transition_index]
+            )
+            if (
+                transition_index not in active_circle_indices
+                or not is_baseline_circle(existing_circle)
+            ):
+                changed = True
+
+            baseline_circle = compute_baseline_turn_circle(
+                baseline=baseline,
+                transition_index=transition_index,
+                R=R,
+                placement_rule="baseline_repair",
+                tol=tol,
+            )
+            if baseline_circle is None:
+                return False, False
+
+            circle_groups[transition_index] = {
+                baseline.turn_directions[transition_index]: baseline_circle
+            }
+            protected_indices.add(transition_index)
+
+        active_circle_indices = sorted(
+            set(active_circle_indices) | protected_indices
+        )
+        return True, changed
+
+    def rebuild_with_reinstatement():
+        """Reinsert turns invalidated by a shortcut before abandoning it."""
+        nonlocal tangents
+
+        while True:
+            failure_info = {}
+            tangents = build_and_repair_tangent_chain(
+                circle_groups=circle_groups,
+                corridor_list=corridor_list,
+                baseline=baseline,
+                R=R,
+                r=r,
+                active_circle_indices=active_circle_indices,
+                safe_union_cache=safe_union_cache,
+                tol=tol,
+                failure_info=failure_info,
+            )
+            if tangents is not None:
+                return True
+
+            failed_pair = failure_info.get("pair")
+            if failed_pair is None:
+                return False
+
+            first_index, last_index = failed_pair
+            missing_turns = [
+                transition_index
+                for transition_index in range(first_index + 1, last_index)
+                if baseline.turn_directions[transition_index] != 0
+                and transition_index not in active_circle_indices
+            ]
+            if not missing_turns:
+                return False
+
+            success, changed = restore_interval(first_index, last_index)
+            if not success or not changed:
+                return False
+
+    def configuration_signature():
+        positions = tuple(
+            (
+                transition_index,
+                tuple(
+                    np.round(
+                        get_single_circle(
+                            circle_groups[transition_index]
+                        ).center,
+                        9,
+                    )
+                ),
+            )
+            for transition_index in active_circle_indices
+        )
+        return (
+            tuple(active_circle_indices),
+            positions,
+            tuple(sorted(protected_indices)),
+        )
+
+    all_turn_indices = [
+        transition_index
+        for transition_index, direction in enumerate(
+            baseline.turn_directions
+        )
+        if direction != 0
+    ]
 
     while True:
-
-
-
-        intersection_pair = (
-
-            find_first_problematic_tangent_intersection(
-
-                tangents=tangents,
-
-                tol=tol,
-
+        signature = configuration_signature()
+        if signature in seen_configurations:
+            success, _ = restore_interval(
+                all_turn_indices[0],
+                all_turn_indices[-1],
             )
-
-        )
-
-
-
-        if intersection_pair is None:
-
-            return (
-
-                active_circle_indices,
-
-                tangents,
-
-            )
-
-
-
-        first_tangent, second_tangent = (
-
-            intersection_pair
-
-        )
-
-
-
-        # Tangent i connects active circles i -> i+1. Therefore the
-
-        # crossing between tangent i and tangent j affects circle
-
-        # positions i through j+1.
-
-        block_start_position = first_tangent
-
-        block_end_position = second_tangent + 1
-
-
-
-        skip_result = find_longest_safe_skip_in_block(
-
-            active_circle_indices=active_circle_indices,
-
-            circle_groups=circle_groups,
-
-            corridor_list=corridor_list,
-
-            r=r,
-
-            block_start_position=block_start_position,
-
-            block_end_position=block_end_position,
-
-            safe_union_cache=safe_union_cache,
-
-            tol=tol,
-
-        )
-
-
-
-        # -----------------------------------------------------------
-
-        # A safe direct tangent exists: remove every active circle
-
-        # strictly between its two endpoint circles.
-
-        # -----------------------------------------------------------
-
-        if skip_result is not None:
-
-
-
-            (
-
-                skip_start_position,
-
-                skip_end_position,
-
-                _,
-
-            ) = skip_result
-
-
-
-            del active_circle_indices[
-
-                skip_start_position + 1 : skip_end_position
-
-            ]
-
-
-
-            tangents = build_and_repair_tangent_chain(
-
-                circle_groups=circle_groups,
-
-                corridor_list=corridor_list,
-
-                baseline=baseline,
-
-                R=R,
-
-                r=r,
-
-                active_circle_indices=active_circle_indices,
-
-                safe_union_cache=safe_union_cache,
-
-                tol=tol,
-
-            )
-
-
-
-            if tangents is None:
-
+            if not success or not rebuild_with_reinstatement():
                 return None
+            if find_first_problematic_tangent_intersection(
+                tangents,
+                tol=tol,
+            ) is not None:
+                return None
+            return active_circle_indices, tangents
 
+        seen_configurations.add(signature)
+        intersection = find_first_problematic_tangent_intersection(
+            tangents=tangents,
+            tol=tol,
+        )
+        if intersection is None:
+            return active_circle_indices, tangents
 
+        first_tangent, second_tangent = intersection
+        block_start = first_tangent
+        block_end = second_tangent + 1
+        skip = find_longest_safe_skip_in_block(
+            active_circle_indices=active_circle_indices,
+            circle_groups=circle_groups,
+            corridor_list=corridor_list,
+            r=r,
+            block_start_position=block_start,
+            block_end_position=block_end,
+            safe_union_cache=safe_union_cache,
+            tol=tol,
+            protected_indices=protected_indices,
+        )
 
+        if skip is not None:
+            skip_start, skip_end, _ = skip
+            del active_circle_indices[skip_start + 1 : skip_end]
+            if not rebuild_with_reinstatement():
+                return None
             continue
 
-
-
-        # -----------------------------------------------------------
-
-        # No safe skip exists. Restore the affected active circles to
-
-        # their baseline positions and rebuild the tangent chain.
-
-        # -----------------------------------------------------------
-
-        success, changed = restore_active_circle_block_to_baseline(
-
-            active_circle_indices=active_circle_indices,
-
-            circle_groups=circle_groups,
-
-            baseline=baseline,
-
-            R=R,
-
-            block_start_position=block_start_position,
-
-            block_end_position=block_end_position,
-
-            tol=tol,
-
-        )
-
-
-
+        first_index = active_circle_indices[block_start]
+        last_index = active_circle_indices[block_end]
+        success, changed = restore_interval(first_index, last_index)
         if not success:
-
             return None
-
-
-
-        # The same intersection persists even though every circle in
-
-        # the affected block is already at its baseline position. At
-
-        # this point the refinement is abandoned in favour of the full
-
-        # validated baseline.
 
         if not changed:
+            first_position = active_circle_indices.index(first_index)
+            last_position = active_circle_indices.index(last_index)
+            left_index = active_circle_indices[
+                max(0, first_position - 1)
+            ]
+            right_index = active_circle_indices[
+                min(len(active_circle_indices) - 1, last_position + 1)
+            ]
+            if left_index == first_index and right_index == last_index:
+                left_index = all_turn_indices[0]
+                right_index = all_turn_indices[-1]
 
+            success, _ = restore_interval(left_index, right_index)
+            if not success:
+                return None
+
+        if not rebuild_with_reinstatement():
             return None
-
-
-
-        tangents = build_and_repair_tangent_chain(
-
-            circle_groups=circle_groups,
-
-            corridor_list=corridor_list,
-
-            baseline=baseline,
-
-            R=R,
-
-            r=r,
-
-            active_circle_indices=active_circle_indices,
-
-            safe_union_cache=safe_union_cache,
-
-            tol=tol,
-
-        )
-
-
-
-        if tangents is None:
-
-            return None
-
-
-
-
-
-# ===================================================================
-
-# Four standard independent-placement rules
-
-# ===================================================================
-
 
 
 def compute_independent_circle_local_position(
