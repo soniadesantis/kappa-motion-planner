@@ -24,6 +24,11 @@ ROOT = Path(__file__).parent
 REASONS = {
     "no_tangent_connection_found": "Internal tangent chain could not be repaired",
     "refined_trajectory_assembly_failed": "Refined arc assembly or validation failed",
+    "arc_construction_failed": "Refined arc construction failed",
+    "arc_ordering_failed": "Refined arc has inadmissible directed ordering",
+    "arc_collision_failed": "Refined arc failed the local collision check",
+    "trajectory_continuity_failed": "Refined trajectory continuity check failed",
+    "trajectory_structure_invalid": "Refined trajectory structure is invalid",
     "boundary_tangent_chain_could_not_be_simplified": "Intersecting boundary tangent could not be simplified",
     "boundary_connection_failed_after_circle_fallback": "Boundary connection failed, including baseline-circle retry",
 }
@@ -75,8 +80,16 @@ def replay_failure(record, bicycle):
                     trace[name] = state
             if name == "assembled_refinement_arc_is_safe":
                 trace["arcs"].append(deepcopy(inputs["arc"]))
-                if not result:
-                    trace["failed_arcs"].append((deepcopy(inputs["arc"]), deepcopy(inputs["circle"])))
+                safe = result[0] if isinstance(result, tuple) else result
+                failure_reason = (
+                    result[1] if isinstance(result, tuple) and len(result) > 1 else None
+                )
+                if not safe:
+                    trace["failed_arcs"].append({
+                        "arc": deepcopy(inputs["arc"]),
+                        "circle": deepcopy(inputs["circle"]),
+                        "reason": failure_reason,
+                    })
             if name == "try_boundary_connection_with_baseline_fallback" and result[0] is None:
                 trace["failed_boundary"] = ("initial" if inputs["initial"] else "final",
                                             inputs["transition_index"])
@@ -125,13 +138,20 @@ def diagnose(record, corridors, trace, bicycle):
             break
         else:
             detail = "Tangent intersections persist after circle skipping and baseline restoration."
-    elif reason == "refined_trajectory_assembly_failed" and trace["failed_arcs"]:
-        arc, circle = trace["failed_arcs"][-1]
+    elif reason in {"refined_trajectory_assembly_failed", "arc_ordering_failed",
+                    "arc_collision_failed"} and trace["failed_arcs"]:
+        rejected = trace["failed_arcs"][-1]
+        arc, circle = rejected["arc"], rejected["circle"]
         highlights.append(("arc", arc))
         groups = state.get("groups", [])
         index = next((j+1 for j, group in enumerate(groups) if group and
                       np.allclose(refinement.get_single_circle(group).center, circle.center)), None)
-        detail = f"Arc at transition {index} fails the directed-arc ordering or corridor-clearance check."
+        if reason == "arc_collision_failed":
+            detail = f"Arc at transition {index} fails the local corridor-clearance check."
+        elif reason == "arc_ordering_failed":
+            detail = f"Arc at transition {index} has inadmissible directed angular ordering."
+        else:
+            detail = f"Arc at transition {index} fails the directed-arc ordering or corridor-clearance check."
     elif reason == "boundary_tangent_chain_could_not_be_simplified":
         state = trace.get("simplify_boundary_tangent_chain", state)
         side = trace.get("failed_skip_side", "boundary")
@@ -201,7 +221,8 @@ def draw_case(ax, record, corridors, baseline, trace, bicycle, fontsize=10, posi
     source = record["refinement"].get("solution_source")
     outcome = "Complete baseline returned" if source == "baseline_fallback" else "No complete baseline or refined trajectory"
     title = "Initial circle positioning" if positioning else REASONS.get(record['refinement']['failure_reason'], 'Refinement failed')
-    ax.set_title(f"Case {record['case']} — {title}",
+    count_prefix = f"n={record['corridor_count']}, " if "corridor_count" in record else ""
+    ax.set_title(f"{count_prefix}case {record['case']} — {title}",
                  fontsize=fontsize, wrap=True)
     caption = detail if positioning else detail+"\n"+outcome
     ax.text(.5, -.035, fill(caption, 65 if fontsize <= 10 else 85),
@@ -216,12 +237,29 @@ def draw_case(ax, record, corridors, baseline, trace, bicycle, fontsize=10, posi
 def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, default=ROOT/"results"/"short_corridors_R1_500.json")
-    parser.add_argument("--corridors", type=int, default=10)
+    parser.add_argument("--corridors", type=int, nargs="+", default=[10])
+    parser.add_argument("--reason", default=None,
+                        help="Only plot this refinement failure reason.")
+    parser.add_argument("--limit-per-count", type=int, default=None,
+                        help="Plot at most this many matching cases per corridor count.")
     parser.add_argument("--output", type=Path, default=ROOT/"figures"/"refinement_failures_n10")
     args = parser.parse_args()
     report = json.loads(args.report.read_text())
-    group = next(g for g in report["groups"] if g["corridors"] == args.corridors)
-    records = [r for r in group["records"] if r["refinement"].get("attempt_status") in ("failed", "error")]
+    records = []
+    for corridor_count in args.corridors:
+        group = next(g for g in report["groups"] if g["corridors"] == corridor_count)
+        matches = [
+            r for r in group["records"]
+            if r["refinement"].get("attempt_status") in ("failed", "error")
+            and (args.reason is None or r["refinement"].get("failure_reason") == args.reason)
+        ]
+        if args.limit_per_count is not None:
+            matches = matches[:args.limit_per_count]
+        for record in matches:
+            record["corridor_count"] = corridor_count
+        records.extend(matches)
+    if not records:
+        raise RuntimeError("No matching refinement failures were found in the report.")
     bicycle = make_fixed_bicycle()
     args.output.mkdir(parents=True, exist_ok=True)
     rows = (len(records)+2)//3
@@ -245,16 +283,21 @@ def main():
                                    Line2D([], [], color="#dc2626", label="Rejected geometry")],
                           loc="lower center", ncol=5, frameon=False, fontsize=11)
         for extension in ("pdf", "png"):
-            individual.savefig(args.output/f"case_{record['case']:03d}.{extension}", dpi=180, bbox_inches="tight")
+            individual.savefig(
+                args.output/f"n{record['corridor_count']}_case_{record['case']:03d}.{extension}",
+                dpi=180, bbox_inches="tight",
+            )
         plt.close(individual)
-        notes.append({"case": record["case"], "reason": record["refinement"]["failure_reason"],
+        notes.append({"corridors": record["corridor_count"], "case": record["case"],
+                      "reason": record["refinement"]["failure_reason"],
                       "detail": detail, "solution_source": record["refinement"].get("solution_source")})
-        print(f"Case {record['case']}: {detail}", flush=True)
+        print(f"n={record['corridor_count']}, case {record['case']}: {detail}", flush=True)
     for ax in list(axes.flat)[len(records):]:
         ax.set_axis_off()
     for ax in list(placement_axes.flat)[len(records):]:
         ax.set_axis_off()
-    figure.suptitle(f"Failed refinement attempts — {args.corridors} corridors ({len(records)} cases)", fontsize=18)
+    counts_label = ", ".join(map(str, args.corridors))
+    figure.suptitle(f"Failed refinement attempts — corridor counts {counts_label} ({len(records)} cases)", fontsize=18)
     figure.legend(handles=[Line2D([], [], color="#8b929e", label="Baseline"),
                            Line2D([], [], color="#2563eb", label="Candidate refinement geometry"),
                            Line2D([], [], color="#dc2626", linewidth=2, label="Rejected connection / arc / pose")],
@@ -263,7 +306,7 @@ def main():
         path = args.output/f"overview.{extension}"
         figure.savefig(path, dpi=180, bbox_inches="tight")
         print(path)
-    placement_figure.suptitle(f"Circle placement before tangent construction — {args.corridors} corridors", fontsize=18)
+    placement_figure.suptitle(f"Circle placement before tangent construction — corridor counts {counts_label}", fontsize=18)
     placement_figure.legend(handles=[Line2D([], [], color="#8b929e", label="Baseline"),
                                      Line2D([], [], color="#7c3aed", marker="o", label="Repositioned circles"),
                                      Line2D([], [], color="#0f766e", marker="o", label="Circles retained at baseline")],

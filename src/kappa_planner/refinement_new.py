@@ -194,6 +194,14 @@ class BicycleRefinementFailure:
     transition_index: int | None = None
 
 
+@dataclass(frozen=True)
+class RefinedTrajectoryAssemblyFailure:
+    """Diagnostic-only classification of trajectory assembly rejection."""
+
+    reason: str
+    transition_index: int | None = None
+
+
 
 
 
@@ -462,7 +470,7 @@ def refine_bicycle_baseline(
     # ---------------------------------------------------------------
     # 8. Assemble the complete primitive trajectory.
     # ---------------------------------------------------------------
-    trajectory = assemble_refined_trajectory(
+    trajectory, assembly_failure = assemble_refined_trajectory(
         corridor_list=corridor_list,
         circle_groups=circle_groups,
         active_circle_indices=active_circle_indices,
@@ -472,10 +480,14 @@ def refine_bicycle_baseline(
         bicycle=bicycle,
         r=r,
         safe_union_cache=safe_union_cache,
+        return_failure=True,
     )
 
     if trajectory is None:
-        return failed("refined_trajectory_assembly_failed")
+        return failed(
+            assembly_failure.reason,
+            assembly_failure.transition_index,
+        )
 
     traversal_time = float(
         sum(
@@ -1512,6 +1524,7 @@ def assembled_refinement_arc_is_safe(
     corridor_out,
     bicycle,
     tol=1e-7,
+    return_reason=False,
 ):
     """
     Validate an assembled arc without trajectory/footprint sampling.
@@ -1637,7 +1650,7 @@ def assembled_refinement_arc_is_safe(
             end_coordinate
             < start_coordinate - tol
         ):
-            return False
+            return (False, "arc_ordering_failed") if return_reason else False
 
         expected_amplitude = (
             end_coordinate
@@ -1668,7 +1681,7 @@ def assembled_refinement_arc_is_safe(
         expected_amplitude
         - float(arc.iota)
     ) > tol:
-        return False
+        return (False, "arc_ordering_failed") if return_reason else False
 
     # Only genuinely new portions require collision checks.
     if prefix_amplitude > tol:
@@ -1685,7 +1698,7 @@ def assembled_refinement_arc_is_safe(
         )
 
         if collision:
-            return False
+            return (False, "arc_collision_failed") if return_reason else False
 
     if suffix_amplitude > tol:
         suffix_arc = make_forward_arc_collision_view(
@@ -1701,9 +1714,9 @@ def assembled_refinement_arc_is_safe(
         )
 
         if collision:
-            return False
+            return (False, "arc_collision_failed") if return_reason else False
 
-    return True
+    return (True, None) if return_reason else True
 
 
 def finalize_refined_maneuver_sequence(
@@ -1792,6 +1805,7 @@ def assemble_refined_trajectory(
     r,
     safe_union_cache=None,
     tol=1e-9,
+    return_failure=False,
 ):
     """
     Assemble the final boundary-connected refined primitive sequence.
@@ -1805,6 +1819,13 @@ def assemble_refined_trajectory(
     One circular arc is then constructed on every retained circle between its
     incoming and outgoing supporting segments.
     """
+    def failed(reason, transition_index=None):
+        failure = RefinedTrajectoryAssemblyFailure(reason, transition_index)
+        return (None, failure) if return_failure else None
+
+    def succeeded(trajectory):
+        return (trajectory, None) if return_failure else trajectory
+
     if (
         initial_maneuvers is None
         or final_maneuvers is None
@@ -1812,13 +1833,13 @@ def assemble_refined_trajectory(
         or len(final_maneuvers) == 0
         or len(active_circle_indices) == 0
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     if len(tangents) != max(
         0,
         len(active_circle_indices) - 1,
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     initial_segment = initial_maneuvers[-1]
     final_segment = final_maneuvers[0]
@@ -1829,7 +1850,7 @@ def assemble_refined_trajectory(
         or getattr(final_segment, "label", None)
         != "segment"
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     internal_segments = [
         circle_tangent_to_linear_segment(
@@ -1848,7 +1869,7 @@ def assemble_refined_trajectory(
     if len(supporting_segments) != (
         len(active_circle_indices) + 1
     ):
-        return None
+        return failed("trajectory_structure_invalid")
 
     arcs = []
 
@@ -1878,9 +1899,9 @@ def assemble_refined_trajectory(
         )
 
         if arc is None:
-            return None
+            return failed("arc_construction_failed", transition_index)
 
-        if not assembled_refinement_arc_is_safe(
+        arc_is_safe, arc_failure_reason = assembled_refinement_arc_is_safe(
             arc=arc,
             circle=circle,
             corridor_in=corridor_list[
@@ -1894,8 +1915,11 @@ def assemble_refined_trajectory(
                 tol,
                 1e-7,
             ),
-        ):
-            return None
+            return_reason=True,
+        )
+
+        if not arc_is_safe:
+            return failed(arc_failure_reason, transition_index)
 
         arcs.append(
             arc
@@ -1930,9 +1954,9 @@ def assemble_refined_trajectory(
     if not refined_maneuver_sequence_is_continuous(
         trajectory
     ):
-        return None
+        return failed("trajectory_continuity_failed")
 
-    return trajectory
+    return succeeded(trajectory)
 
 
 

@@ -56,17 +56,16 @@ CASES_PER_COUNT = 100
 
 # Keep the vehicle fixed in this first experiment.  The bicycle constructor
 # derives max_radius = wheelbase / tan(delta_max).
-FOOTPRINT_RADIUS = 0.5
+FOOTPRINT_RADIUS = 0.25
 ARC_RADIUS = 1.0
-WIDTH_RANGE = (1.5, 10.0)
-WALK_LENGTH_RANGE = (2.0, 20.0)
-INTERIOR_WALK_LENGTH_RANGE = (2.0, 8.0)
+ENDPOINT_WIDTH_RANGE = (4.0, 6.0)
+INTERIOR_WIDTH_RANGE = (1.0, 10.0)
+ENDPOINT_WALK_LENGTH_RANGE = (10.0, 20.0)
+INTERIOR_WALK_LENGTH_RANGE = (2.0, 20.0)
 OVERHANG_RANGE = (0.0, 2.0)
 MAX_CORRIDOR_ATTEMPTS = 500
 MAX_SEQUENCE_RESTARTS = 100
 MAX_BACKTRACKS_PER_CORRIDOR = 100
-POSE_OVERLAP_CLEARANCE_RADII = 2.0
-ENDPOINT_SAMPLING_LENGTH = 1.0
 
 OUTPUT = (
     Path(__file__).resolve().parent
@@ -180,14 +179,20 @@ def sample_validated_corridors(rng, corridor_count, bicycle):
             if j == 0:
                 heading_change = 0
             elif j in (1, corridor_count - 1):
-                # Both boundary attachments need a genuine turning circle.
+                # Boundary attachment requires a terminal transition circle.
+                # Keep endpoint poses arbitrary, but do not generate a problem
+                # outside the supported boundary-connection problem class.
                 heading_change = int(rng.choice([1, -1]))
             else:
                 heading_change = int(rng.choice([0, 1, -1], p=[0.15, 0.425, 0.425]))
             candidate_heading = (heading + heading_change) % 4
             length_range = (
-                WALK_LENGTH_RANGE if j in (0, corridor_count - 1)
+                ENDPOINT_WALK_LENGTH_RANGE if j in (0, corridor_count - 1)
                 else INTERIOR_WALK_LENGTH_RANGE
+            )
+            width_range = (
+                ENDPOINT_WIDTH_RANGE if j in (0, corridor_count - 1)
+                else INTERIOR_WIDTH_RANGE
             )
             # No dimension draw can fit this incoming edge in the outgoing
             # length range. Backtrack immediately rather than retry 500 times.
@@ -197,22 +202,12 @@ def sample_validated_corridors(rng, corridor_count, bicycle):
             )
             for _ in range(0 if impossible_turn else MAX_CORRIDOR_ATTEMPTS):
                 candidate_attempts += 1
-                minimum_width = WIDTH_RANGE[0]
-                if j in (0, corridor_count - 1):
-                    # Reserve a turning diameter plus the circular footprint
-                    # and additional room across the endpoint corridor.
-                    minimum_width = max(
-                        minimum_width,
-                        2 * bicycle.max_radius + bicycle.width + ENDPOINT_SAMPLING_LENGTH,
-                    )
-                if minimum_width >= WIDTH_RANGE[1]:
-                    raise ValueError("Endpoint maneuvering width exceeds WIDTH_RANGE")
-                width = float(rng.uniform(minimum_width, WIDTH_RANGE[1]))
+                width = float(rng.uniform(*width_range))
                 overhang = rng.uniform(*OVERHANG_RANGE, 2)
                 minimum_length = length_range[0]
                 if j and heading_change:
-                    # Contain the complete incoming edge and leave room beyond
-                    # it for the footprint and the existing endpoint sampler.
+                    # Contain the complete incoming edge with footprint-safe
+                    # overlap. Dimensions that cannot do so are resampled.
                     minimum_length = max(
                         minimum_length, widths[-1] + bicycle.width + overhang[0]
                     )
@@ -223,17 +218,6 @@ def sample_validated_corridors(rng, corridor_count, bicycle):
                         continue
                     overhang[0] = rng.uniform(minimum_back, OVERHANG_RANGE[1])
                     minimum_length = max(minimum_length, sum(overhangs[-1]) + bicycle.width)
-                endpoint_clearance = POSE_OVERLAP_CLEARANCE_RADII * bicycle.max_radius
-                if j == 0:
-                    # Reserve space even if the next turning corridor has the
-                    # largest permitted width and occupies this forward end.
-                    minimum_length = max(
-                        minimum_length,
-                        WIDTH_RANGE[1] + bicycle.width + endpoint_clearance
-                        + ENDPOINT_SAMPLING_LENGTH,
-                    )
-                elif j == corridor_count - 1:
-                    minimum_length += endpoint_clearance + ENDPOINT_SAMPLING_LENGTH
                 if minimum_length >= length_range[1]:
                     continue
                 length = float(rng.uniform(minimum_length, length_range[1]))
@@ -308,10 +292,10 @@ def sample_endpoint_pose(rng, corridor, neighbor, bicycle, *, initial):
     """Sample a disk-safe local pose on the outer side of the adjacent overlap.
 
     Local x spans corridor width; local y spans its length. The heading is
-    sampled uniformly in [0, pi] in this same frame, so headings face the
-    forward half-plane. Require two turning radii of clearance beyond the
-    footprint radius. An insufficiently long corridor is rejected rather
-    than relaxing this requirement.
+    sampled uniformly in [0, 2*pi) in this same frame. The reference position
+    is footprint-safe and its disk lies on the terminal side of, and outside,
+    the adjacent corridor overlap. No additional turning-radius clearance is
+    imposed.
     """
     overlap = compute_overlap_two_axis_aligned_corridors(corridor, neighbor)
     if overlap is None:
@@ -332,18 +316,12 @@ def sample_endpoint_pose(rng, corridor, neighbor, bicycle, *, initial):
         high = min(high, min(overlap_y) - radius)
     else:
         low = max(low, max(overlap_y) + radius)
-    available = high - low
-    clearance = POSE_OVERLAP_CLEARANCE_RADII * bicycle.max_radius
-    if available <= clearance + 1e-9:
+    if high <= low + 1e-9:
         return None
-    if initial:
-        high -= clearance
-    else:
-        low += clearance
     relative_pose = [
         float(rng.uniform(-half_width, half_width)),
         float(rng.uniform(low, high)),
-        float(rng.uniform(0.0, np.pi)),
+        float(rng.uniform(0.0, 2.0 * np.pi)),
     ]
     overlap_distance = (
         min(overlap_y) - relative_pose[1]
@@ -352,7 +330,7 @@ def sample_endpoint_pose(rng, corridor, neighbor, bicycle, *, initial):
     return {
         "relative": relative_pose,
         "world": relative_to_absolute_pose(corridor, relative_pose),
-        "minimum_extra_clearance": clearance,
+        "minimum_extra_clearance": 0.0,
         "overlap_clearance": float(overlap_distance - radius),
     }
 
@@ -546,18 +524,21 @@ def summarize_comparison(records):
     }
 
 
-def make_fixed_bicycle():
+def make_fixed_bicycle(
+    arc_radius=ARC_RADIUS,
+    footprint_radius=FOOTPRINT_RADIUS,
+):
     """Create a bicycle with the radii fixed by this experiment."""
     wheelbase = 1.0
-    steering_limit = float(np.arctan(wheelbase / ARC_RADIUS))
+    steering_limit = float(np.arctan(wheelbase / arc_radius))
     bicycle = Bicycle(
-        width=2.0 * FOOTPRINT_RADIUS,
-        length=2.0 * FOOTPRINT_RADIUS,
+        width=2.0 * footprint_radius,
+        length=2.0 * footprint_radius,
         wheelbase=wheelbase,
         delta_max=steering_limit,
         delta_min=-steering_limit,
     )
-    if not np.isclose(bicycle.max_radius, ARC_RADIUS):
+    if not np.isclose(bicycle.max_radius, arc_radius):
         raise RuntimeError("Failed to construct the requested fixed arc radius.")
     return bicycle
 
@@ -1310,6 +1291,8 @@ def main():
         help="Safety cap on generated sequences per corridor count.",
     )
     parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--arc-radius", type=float, default=ARC_RADIUS)
+    parser.add_argument("--footprint-radius", type=float, default=FOOTPRINT_RADIUS)
     parser.add_argument("--output", type=Path, default=OUTPUT)
     parser.add_argument("--figure-output", type=Path, default=FIGURE_OUTPUT)
     parser.add_argument("--comparison-figure-output", type=Path, default=None)
@@ -1327,37 +1310,43 @@ def main():
         or args.representatives < 1
         or not args.corridors
         or min(args.corridors) < 2
+        or args.arc_radius <= 0
+        or args.footprint_radius <= 0
     ):
         parser.error(
             "Use corridor counts >= 2, a positive case count, and a generation "
             "cap at least as large as the case count."
         )
 
-    bicycle = make_fixed_bicycle()
+    bicycle = make_fixed_bicycle(
+        arc_radius=args.arc_radius,
+        footprint_radius=args.footprint_radius,
+    )
     rng = np.random.default_rng(args.seed)
     report = {
         "seed": args.seed,
         "corridor_counts": args.corridors,
         "valid_cases_per_count": args.cases,
         "vehicle": {
-            "footprint_radius": FOOTPRINT_RADIUS,
+            "footprint_radius": args.footprint_radius,
             "width": bicycle.width,
             "arc_radius": bicycle.max_radius,
         },
         "generator": {
             "construction": "coincident_forward_and_far_side_edges_and_collinear_continuation",
-            "width_range": WIDTH_RANGE,
-            "length_range": WALK_LENGTH_RANGE,
+            "endpoint_width_range": ENDPOINT_WIDTH_RANGE,
+            "interior_width_range": INTERIOR_WIDTH_RANGE,
             "interior_length_range": INTERIOR_WALK_LENGTH_RANGE,
-            "endpoint_length_range": WALK_LENGTH_RANGE,
+            "endpoint_length_range": ENDPOINT_WALK_LENGTH_RANGE,
             "overhang_range": OVERHANG_RANGE,
             "straight_probability": 0.15,
             "left_probability": 0.425,
             "right_probability": 0.425,
-            "endpoint_transitions": "mandatory 90-degree turns; left/right equally likely",
-            "minimum_endpoint_width": (
-                2 * bicycle.max_radius + bicycle.width + ENDPOINT_SAMPLING_LENGTH
-            ),
+            "transition_probabilities": {
+                "eligible_interior": {"straight": 0.15, "left": 0.425, "right": 0.425},
+                "boundary_adjacent": {"straight": 0.0, "left": 0.5, "right": 0.5},
+            },
+            "endpoint_transitions": "mandatory left/right turn because boundary attachment requires a terminal transition circle",
             "dimension_sampling": "conditioned on edge containment and safe longitudinal overlap",
             "sideways_offsets": False,
             "nonconsecutive_intersections_allowed": False,
@@ -1366,11 +1355,10 @@ def main():
         },
         "endpoint_sampling": {
             "frame": "corridor-centered; x across width, y along length",
-            "heading_range_radians": [0.0, np.pi],
-            "minimum_overlap_clearance_beyond_footprint": (
-                POSE_OVERLAP_CLEARANCE_RADII * bicycle.max_radius
-            ),
-            "short_corridor_policy": "reserve endpoint length during construction; skip if insufficient",
+            "heading_range_radians": [0.0, 2.0 * np.pi],
+            "minimum_overlap_clearance_beyond_footprint": 0.0,
+            "position_policy": "footprint-safe terminal region outside the adjacent corridor overlap",
+            "short_corridor_policy": "skip if no footprint-safe terminal region exists",
         },
         "comparison_definition": {
             "traversal_time_unit": "seconds",

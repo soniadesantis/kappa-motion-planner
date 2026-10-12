@@ -21,7 +21,7 @@ from kappa_planner.refinement_new import (
 # ===================================================================
 # Select example here when running directly from VS Code
 # ===================================================================
-EXAMPLE_NUM = 36
+EXAMPLE_NUM = 29
 PLOT_RESULTS = True
 # ===================================================================
 # Optional boundary-connection attachment

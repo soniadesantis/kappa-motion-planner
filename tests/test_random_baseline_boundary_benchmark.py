@@ -41,11 +41,12 @@ class RandomBaselineBoundaryBenchmarkTest(unittest.TestCase):
                         pose["relative"], atol=1e-12,
                     )
                     x, y, theta = pose["relative"]
-                    self.assertLessEqual(abs(x) + .5, 2)
-                    self.assertLessEqual(abs(y) + .5, 6)
+                    radius = self.bicycle.width / 2
+                    self.assertLessEqual(abs(x) + radius, 2)
+                    self.assertLessEqual(abs(y) + radius, 6)
                     self.assertGreaterEqual(theta, 0)
-                    self.assertLessEqual(theta, np.pi)
-                    self.assertGreaterEqual(pose["overlap_clearance"], 2 * self.bicycle.max_radius)
+                    self.assertLessEqual(theta, 2 * np.pi)
+                    self.assertGreaterEqual(pose["overlap_clearance"], 0)
                     self.assertLess(y, 3) if initial else self.assertGreater(y, -3)
 
     def assert_structured_connection(self, previous, following, heading, change):
@@ -121,17 +122,20 @@ class RandomBaselineBoundaryBenchmarkTest(unittest.TestCase):
                 for length in sampled["walk_lengths"][1:-1]:
                     self.assertGreaterEqual(length, benchmark.INTERIOR_WALK_LENGTH_RANGE[0])
                     self.assertLessEqual(length, benchmark.INTERIOR_WALK_LENGTH_RANGE[1])
+                for width in sampled["widths"][1:-1]:
+                    self.assertGreaterEqual(width, benchmark.INTERIOR_WIDTH_RANGE[0])
+                    self.assertLessEqual(width, benchmark.INTERIOR_WIDTH_RANGE[1])
+                for width in (sampled["widths"][0], sampled["widths"][-1]):
+                    self.assertGreaterEqual(width, benchmark.ENDPOINT_WIDTH_RANGE[0])
+                    self.assertLessEqual(width, benchmark.ENDPOINT_WIDTH_RANGE[1])
+                for length in (sampled["walk_lengths"][0], sampled["walk_lengths"][-1]):
+                    self.assertGreaterEqual(length, benchmark.ENDPOINT_WALK_LENGTH_RANGE[0])
+                    self.assertLessEqual(length, benchmark.ENDPOINT_WALK_LENGTH_RANGE[1])
                 corridors = benchmark.corridor_worlds_from_bounds(bounds, sampled["headings"])
                 for j in (0, count - 2):
                     self.assertIn(
                         (sampled["headings"][j + 1] - sampled["headings"][j]) % 4,
                         (1, 3),
-                    )
-                for corridor in (corridors[0], corridors[-1]):
-                    self.assertGreaterEqual(
-                        corridor.width,
-                        2 * self.bicycle.max_radius + self.bicycle.width
-                        + benchmark.ENDPOINT_SAMPLING_LENGTH,
                     )
                 for initial in (True, False):
                     corridor, neighbor = (corridors[0], corridors[1]) if initial else (corridors[-1], corridors[-2])
@@ -139,7 +143,7 @@ class RandomBaselineBoundaryBenchmarkTest(unittest.TestCase):
                         self.rng, corridor, neighbor, self.bicycle, initial=initial
                     )
                     self.assertIsNotNone(pose)
-                    self.assertGreaterEqual(pose["overlap_clearance"], 2 * self.bicycle.max_radius)
+                    self.assertGreaterEqual(pose["overlap_clearance"], 0)
                 self.assertEqual(sampled["transverse_offsets"], [0.0] * (count - 1))
                 for j in range(count - 1):
                     change = (sampled["headings"][j + 1] - sampled["headings"][j]) % 4
@@ -147,13 +151,14 @@ class RandomBaselineBoundaryBenchmarkTest(unittest.TestCase):
                     change = -1 if change == 3 else change
                     self.assert_structured_connection(bounds[j], bounds[j + 1], sampled["headings"][j], change)
 
-    def test_short_corridors_are_skipped_without_reducing_clearance(self):
+    def test_short_corridors_are_accepted_when_a_safe_terminal_region_exists(self):
         corridor = CorridorWorld(4, 4, [0, 0], 0)
         neighbor = CorridorWorld(4, 2, [2, 0], 0)
         pose = benchmark.sample_endpoint_pose(
             self.rng, corridor, neighbor, self.bicycle, initial=True
         )
-        self.assertIsNone(pose)
+        self.assertIsNotNone(pose)
+        self.assertGreaterEqual(pose["overlap_clearance"], 0)
         self.assertIsNone(benchmark.sample_endpoint_pose(
             self.rng, corridor, corridor, self.bicycle, initial=True
         ))
